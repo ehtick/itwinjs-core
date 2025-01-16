@@ -6,8 +6,6 @@
 import { RpcProtocolEvent, RpcRequest, RpcRequestFulfillment } from "@itwin/core-common";
 import { ElectronRpcProtocol } from "./ElectronRpcProtocol";
 
-/* eslint-disable deprecation/deprecation */
-
 /** @internal */
 export class ElectronRpcRequest extends RpcRequest {
   private _res: (value: number) => void = () => undefined;
@@ -22,8 +20,8 @@ export class ElectronRpcRequest extends RpcRequest {
       this.protocol.requests.set(this.id, this);
       const request = await this.protocol.serialize(this);
       this.protocol.transport.sendRequest(request);
-    } catch (e) {
-      this.protocol.events.raiseEvent(RpcProtocolEvent.ConnectionErrorReceived, this);
+    } catch {
+      this.protocol.events.raiseEvent(RpcProtocolEvent.ConnectionErrorReceived, this); // eslint-disable-line @typescript-eslint/no-deprecated
     }
 
     return new Promise<number>((resolve) => {

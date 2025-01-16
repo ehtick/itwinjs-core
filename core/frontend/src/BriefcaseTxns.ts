@@ -6,14 +6,15 @@
  * @module IModelConnection
  */
 
-import { BeEvent } from "@itwin/core-bentley";
-import { Point3d, Range3d, Range3dProps, XYZProps } from "@itwin/core-geometry";
+import { BeEvent, IModelStatus } from "@itwin/core-bentley";
 import {
-  ChangedEntities, ChangesetIndexAndId, EcefLocation, EcefLocationProps, GeographicCRS, GeographicCRSProps, IModelStatus, IpcAppChannel, ModelIdAndGeometryGuid,
-  RemoveFunction, RootSubjectProps, TxnNotifications,
+  ChangesetIndexAndId, EcefLocation, EcefLocationProps, GeographicCRS, GeographicCRSProps, ipcAppChannels,
+  ModelIdAndGeometryGuid, NotifyEntitiesChangedArgs, RemoveFunction, RootSubjectProps, TxnNotifications,
 } from "@itwin/core-common";
+import { Point3d, Range3d, Range3dProps, XYZProps } from "@itwin/core-geometry";
 import { BriefcaseConnection } from "./BriefcaseConnection";
 import { IpcApp, NotificationHandler } from "./IpcApp";
+import { EntityChanges, TxnEntityChanges } from "./TxnEntityChanges";
 
 /**
  * Base class for notification handlers for events from the backend that are specific to a [[BriefcaseConnection]].
@@ -23,7 +24,7 @@ import { IpcApp, NotificationHandler } from "./IpcApp";
 export abstract class BriefcaseNotificationHandler extends NotificationHandler {
   constructor(private _key: string) { super(); }
   public abstract get briefcaseChannelName(): string;
-  public get channelName() { return `${this.briefcaseChannelName}:${this._key}`; }
+  public get channelName() { return `${this.briefcaseChannelName}/${this._key}`; }
 }
 
 /** Manages local changes to a [[BriefcaseConnection]] via [Txns]($docs/learning/InteractiveEditing.md).
@@ -37,18 +38,18 @@ export class BriefcaseTxns extends BriefcaseNotificationHandler implements TxnNo
 
   /** @internal */
   public get briefcaseChannelName() {
-    return IpcAppChannel.Txns;
+    return ipcAppChannels.txns;
   }
 
   /** Event raised after Txn validation or changeset application to indicate the set of changed elements.
    * @note If there are many changed elements in a single Txn, the notifications are sent in batches so this event *may be called multiple times* per Txn.
    */
-  public readonly onElementsChanged = new BeEvent<(changes: Readonly<ChangedEntities>) => void>();
+  public readonly onElementsChanged = new BeEvent<(changes: TxnEntityChanges) => void>();
 
   /** Event raised after Txn validation or changeset application to indicate the set of changed models.
    * @note If there are many changed models in a single Txn, the notifications are sent in batches so this event *may be called multiple times* per Txn.
    */
-  public readonly onModelsChanged = new BeEvent<(changes: Readonly<ChangedEntities>) => void>();
+  public readonly onModelsChanged = new BeEvent<(changes: TxnEntityChanges) => void>();
 
   /** Event raised after the geometry within one or more [[GeometricModelState]]s is modified by applying a changeset or validation of a transaction.
    * A model's geometry can change as a result of:
@@ -70,6 +71,16 @@ export class BriefcaseTxns extends BriefcaseNotificationHandler implements TxnNo
    * @see [[onCommit]] for the event raised before the operation.
    */
   public readonly onCommitted = new BeEvent<(hasPendingTxns: boolean, time: number) => void>();
+
+  /** Event raised for a read-only briefcase that was opened with the `watchForChanges` flag enabled when changes made by another connection are applied to the briefcase.
+   * @see [[onReplayedExternalTxns]] for the event raised after all such changes have been applied.
+   */
+  public readonly onReplayExternalTxns = new BeEvent<() => void>();
+
+  /** Event raised for a read-only briefcase that was opened with the `watchForChanges` flag enabled when changes made by another connection are applied to the briefcase.
+   * @see [[onReplayExternalTxns]] for the event raised before the changes are applied.
+   */
+  public readonly onReplayedExternalTxns = new BeEvent<() => void>();
 
   /** Event raised after a changeset has been applied to the briefcase.
    * Changesets may be applied as a result of [[BriefcaseConnection.pullChanges]], or by undo/redo operations.
@@ -207,13 +218,13 @@ export class BriefcaseTxns extends BriefcaseNotificationHandler implements TxnNo
   }
 
   /** @internal */
-  public notifyElementsChanged(changed: ChangedEntities): void {
-    this.onElementsChanged.raiseEvent(changed);
+  public notifyElementsChanged(changed: NotifyEntitiesChangedArgs): void {
+    this.onElementsChanged.raiseEvent(new EntityChanges(changed));
   }
 
   /** @internal */
-  public notifyModelsChanged(changed: ChangedEntities): void {
-    this.onModelsChanged.raiseEvent(changed);
+  public notifyModelsChanged(changed: NotifyEntitiesChangedArgs): void {
+    this.onModelsChanged.raiseEvent(new EntityChanges(changed));
   }
 
   /** @internal */
@@ -229,6 +240,16 @@ export class BriefcaseTxns extends BriefcaseNotificationHandler implements TxnNo
   /** @internal */
   public notifyCommitted(hasPendingTxns: boolean, time: number) {
     this.onCommitted.raiseEvent(hasPendingTxns, time);
+  }
+
+  /** @internal */
+  public notifyReplayExternalTxns() {
+    this.onReplayExternalTxns.raiseEvent();
+  }
+
+  /** @internal */
+  public notifyReplayedExternalTxns() {
+    this.onReplayedExternalTxns.raiseEvent();
   }
 
   /** @internal */

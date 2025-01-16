@@ -6,20 +6,20 @@
  * @module Polyface
  */
 
-import { SmallSystem } from "../../numerics/Polynomials";
+import { Geometry } from "../../Geometry";
+import { Angle } from "../../geometry3d/Angle";
 import { GrowableXYZArray } from "../../geometry3d/GrowableXYZArray";
 import { Point3d, Vector3d } from "../../geometry3d/Point3dVector3d";
 import { PolygonOps } from "../../geometry3d/PolygonOps";
+import { PolylineCompressionContext } from "../../geometry3d/PolylineCompressionByEdgeOffset";
 import { Ray3d } from "../../geometry3d/Ray3d";
+import { XYAndZ } from "../../geometry3d/XYZProps";
+import { SmallSystem } from "../../numerics/SmallSystem";
 import { HalfEdge, HalfEdgeGraph, HalfEdgeMask } from "../../topology/Graph";
 import { HalfEdgeGraphFromIndexedLoopsContext } from "../../topology/HalfEdgeGraphFromIndexedLoopsContext";
 import { IndexedPolyface } from "../Polyface";
 import { PolyfaceBuilder } from "../PolyfaceBuilder";
-import { XYAndZ } from "../../geometry3d/XYZProps";
-import { Geometry } from "../../Geometry";
 import { OffsetMeshOptions } from "../PolyfaceQuery";
-import { PolylineCompressionContext } from "../../geometry3d/PolylineCompressionByEdgeOffset";
-import { Angle } from "../../geometry3d/Angle";
 
 function isDefinedAndTrue(value: boolean | undefined): boolean {
   if (value === undefined)
@@ -550,7 +550,7 @@ export class OffsetMeshContext {
       node.isMaskSet(this.outsideEndOfChamferFace) ? "(@sling)" : "",
       node.isMaskSet(this.outsideOfChamferFace) ? "(@chamfer)" : "",
       this.getCoordinateString(node, showXYZ, showFaceSuccessorXYZ),
-      "]"
+      "]",
     );
     return v;
   }
@@ -628,7 +628,7 @@ export class OffsetMeshContext {
         }
       }
       return 0.0;
-    }
+    },
     );
   }
 
@@ -640,7 +640,7 @@ export class OffsetMeshContext {
         nodeAroundVertex.setMask(this._offsetCoordinatesReassigned);
       }
       return 0.0;
-    }
+    },
     );
   }
 
@@ -678,7 +678,7 @@ export class OffsetMeshContext {
       if (sectorData)
         data.accumulateNormal(node, sectorData.normal, inactiveNodeMask);
       return 0.0;
-    }
+    },
     );
     if (!data.finishNormalAveraging()) {
       return undefined;
@@ -688,7 +688,7 @@ export class OffsetMeshContext {
       if (sectorData)
         data.recordDeviation(sectorData.normal, !node.isMaskSet(inactiveNodeMask));
       return 0.0;
-    }
+    },
     );
     return data.maxDeviationRadians;
   }
@@ -699,7 +699,7 @@ export class OffsetMeshContext {
     distance: number): boolean {
     const maxDeviationRadians = this.computeAverageNormalAndMaxDeviationAroundVertex(vertexSeed, data);
     if (OffsetMeshContext.stringDebugFunction) {
-      OffsetMeshContext.stringDebugFunction(`XYZ ${HalfEdge.nodeToIdXYZString(vertexSeed)} Average Normal ${data.averageNormal.toJSON()}`);
+      OffsetMeshContext.stringDebugFunction(`XYZ ${HalfEdge.nodeToIdXYZString(vertexSeed)} Average Normal ${JSON.stringify(data.averageNormal.toJSON())}`);
       OffsetMeshContext.stringDebugFunction(`           angle ratio ${data.radiansSum / (2 * Math.PI)}   maxDeviation ${data.maxDeviationRadiansFromAverage}`);
     }
     if (maxDeviationRadians !== undefined && maxDeviationRadians <= maxAllowedDeviationRadians) {
@@ -1005,7 +1005,7 @@ export class OffsetMeshContext {
         vertexSeed = vertexSeedA;
       if (OffsetMeshContext.stringDebugFunction !== undefined) {
         OffsetMeshContext.stringDebugFunction("");
-        OffsetMeshContext.stringDebugFunction(` VERTEX LOOP   ${vertexSeed.getPoint3d().toJSON()} `);
+        OffsetMeshContext.stringDebugFunction(` VERTEX LOOP   ${JSON.stringify(vertexSeed.getPoint3d().toJSON())} `);
         vertexSeed.sumAroundVertex(
           (node: HalfEdge) => { OffsetMeshContext.stringDebugFunction!(this.inspectMasks(node, false, true)); return 0; });
       }
@@ -1152,7 +1152,7 @@ export class OffsetMeshContext {
     sourceNode: HalfEdge,
     destinationStartNode: HalfEdge,
     description: string,
-    workPoint: Point3d
+    workPoint: Point3d,
   ) {
     if (OffsetMeshContext.stringDebugFunction !== undefined)
       OffsetMeshContext.stringDebugFunction(`    ${description} ${this.inspectMasks(sourceNode)} to ${this.inspectMasks(destinationStartNode)}} `);

@@ -9,7 +9,7 @@
 import { assert, BeEvent, compareStrings, DbOpcode, DuplicatePolicy, GuidString, Id64Set, Id64String, SortedArray } from "@itwin/core-bentley";
 import { Range3d } from "@itwin/core-geometry";
 import {
-  EditingScopeNotifications, ElementGeometryChange, IpcAppChannel, ModelGeometryChanges, ModelGeometryChangesProps, RemoveFunction,
+  EditingScopeNotifications, ElementGeometryChange, ipcAppChannels, ModelGeometryChanges, ModelGeometryChangesProps, RemoveFunction,
 } from "@itwin/core-common";
 import { BriefcaseNotificationHandler } from "./BriefcaseTxns";
 import { BriefcaseConnection } from "./BriefcaseConnection";
@@ -53,7 +53,7 @@ class ModelChanges extends SortedArray<ElementGeometryChange> {
  * @public
  */
 export class GraphicalEditingScope extends BriefcaseNotificationHandler implements EditingScopeNotifications {
-  public get briefcaseChannelName() { return IpcAppChannel.EditingScope; }
+  public get briefcaseChannelName() { return ipcAppChannels.editingScope; }
 
   /** Maps model Id to accumulated changes to geometric elements within the associated model. */
   private readonly _geometryChanges = new Map<Id64String, ModelChanges>();
@@ -203,7 +203,7 @@ export class GraphicalEditingScope extends BriefcaseNotificationHandler implemen
 
     if (deletedIds) {
       this.iModel.selectionSet.remove(deletedIds);
-      this.iModel.hilited.setHilite(deletedIds, false);
+      this.iModel.hilited.remove({ elements: deletedIds });
     }
 
     this.onGeometryChanges.raiseEvent(changes, this);

@@ -30,6 +30,7 @@ export enum QueryRowFormat {
    */
   UseJsPropertyNames,
 }
+
 /**
  * Specify limit or range of rows to return
  * @public
@@ -41,16 +42,35 @@ export interface QueryLimit {
   /** Offset from which to return rows */
   offset?: number;
 }
-/** @beta */
+
+/** @public */
 export interface QueryPropertyMetaData {
+  /** The class name is set to empty if the property is a generated one, otherwise, it is the name of the ECClass that the property is contained within. */
   className: string;
+  /** Access string is the property's alias if the property is a generated one, otherwise it is the ECSQL property path. */
+  accessString?: string;
+  /** True if the property is a generated one. False, if the property directly refers to one of the classes in the FROM or JOIN clauses.
+   * Note: Using a column alias always generates a property. So in the ECSQL <c>SELECT AssetID, Length * Breadth AS Area FROM myschema.Cubicle</c> the first column (AssetID) would not be a generated property, but the second (Area) would be.
+   */
   generated: boolean;
+  /** The index of the property value if the result is formatted as an array */
   index: number;
+  /** The JSON name is the property's alias if the property is a generated one, otherwise, it is the ECSQL property path for the system property.
+   * The JSON names are unique and _%d is added for duplicate property JSON names to make them unique.
+   */
   jsonName: string;
+  /** The name is the property's alias if the property is a generated one, otherwise, it is the name of the property. */
   name: string;
+  /** If this property is a PrimitiveECProperty, extend type is the extended type name of this property, if it is not defined locally will be inherited from base property if one exists, otherwise extend type is set to an empty string.
+   * @deprecated in 4.11 Use extendedType instead
+   */
   extendType: string;
+  /** If this property is a PrimitiveECProperty, extended type is the extended type name of this property, if it is not defined locally will be inherited from base property if one exists, otherwise extended type will be undefined. */
+  extendedType?: string;
+  /** The type name is set to 'navigation' if the property is a navigation property, otherwise, it is the type name for the property. */
   typeName: string;
 }
+
 /** @beta */
 export interface DbRuntimeStats {
   cpuTime: number;
@@ -59,6 +79,7 @@ export interface DbRuntimeStats {
   memLimit: number;
   memUsed: number;
 }
+
 /**
  * Quota hint for the query.
  * @public
@@ -70,6 +91,7 @@ export interface QueryQuota {
   /** Max memory allowed in bytes. This is hint and may not be honoured but help in prioritize request */
   memory?: number;
 }
+
 /**
  * Config for all request made to concurrent query engine.
  * @public
@@ -93,6 +115,7 @@ export interface BaseReaderOptions {
    */
   delay?: number;
 }
+
 /**
  * ECSql query config
  * @public
@@ -292,7 +315,7 @@ export class BlobOptionsBuilder {
 }
 
 /** @internal */
-enum QueryParamType {
+export enum QueryParamType {
   Boolean = 0,
   Double = 1,
   Id = 2,
@@ -308,23 +331,48 @@ enum QueryParamType {
   Blob = 10,
   Struct = 11,
 }
+
 /**
+ * Bind values to an ECSQL query.
+ *
+ * All binding class methods accept an `indexOrName` parameter as a `string | number` type and a value to bind to it.
+ * A binding must be mapped either by a positional index or a string/name. See the examples below.
+ *
+ * @example
+ * Parameter By Index:
+ * ```sql
+ * SELECT a, v FROM test.Foo WHERE a=? AND b=?
+ * ```
+ * The first `?` is index 1 and the second `?` is index 2. The parameter index starts with 1 and not 0.
+ *
+ * @example
+ * Parameter By Name:
+ * ```sql
+ * SELECT a, v FROM test.Foo WHERE a=:name_a AND b=:name_b
+ * ```
+ * Using "name_a" as the `indexOrName` will bind the provided value to `name_a` in the query. And the same goes for
+ * using "name_b" and the `name_b` binding respectively.
+ *
+ * @see
+ * - [ECSQL Parameters]($docs/learning/ECSQL.md#ecsql-parameters)
+ * - [ECSQL Parameter Types]($docs/learning/ECSQLParameterTypes)
+ * - [ECSQL Code Examples]($docs/learning/backend/ECSQLCodeExamples#parameter-bindings)
+ *
  * @public
- * QueryBinder allow to bind values to a ECSQL query.
- * */
+ */
 export class QueryBinder {
   private _args = {};
   private verify(indexOrName: string | number) {
     if (typeof indexOrName === "number") {
       if (indexOrName < 1)
         throw new Error("expect index to be >= 1");
+      return;
     }
-    if (typeof indexOrName === "string") {
-      if (!/^[a-zA-Z_]+\w*$/i.test(indexOrName)) {
-        throw new Error("expect named parameter to meet identifier specification");
-      }
+    if (!/^[a-zA-Z_]+\w*$/i.test(indexOrName)) {
+      throw new Error("expect named parameter to meet identifier specification");
     }
   }
+
   /**
    * Bind boolean value to ECSQL statement.
    * @param indexOrName Specify parameter index or its name used in ECSQL statement.
@@ -343,6 +391,7 @@ export class QueryBinder {
     });
     return this;
   }
+
   /**
    * Bind blob value to ECSQL statement.
    * @param indexOrName Specify parameter index or its name used in ECSQL statement.
@@ -361,6 +410,7 @@ export class QueryBinder {
     });
     return this;
   }
+
   /**
    * Bind double value to ECSQL statement.
    * @param indexOrName Specify parameter index or its name used in ECSQL statement.
@@ -378,6 +428,7 @@ export class QueryBinder {
     });
     return this;
   }
+
   /**
    * Bind @typedef Id64String value to ECSQL statement.
    * @param indexOrName Specify parameter index or its name used in ECSQL statement.
@@ -395,6 +446,7 @@ export class QueryBinder {
     });
     return this;
   }
+
   /**
    * Bind @type OrderedId64Iterable to ECSQL statement.
    * @param indexOrName Specify parameter index or its name used in ECSQL statement.
@@ -413,6 +465,7 @@ export class QueryBinder {
     });
     return this;
   }
+
   /**
    * Bind integer to ECSQL statement.
    * @param indexOrName Specify parameter index or its name used in ECSQL statement.
@@ -430,6 +483,7 @@ export class QueryBinder {
     });
     return this;
   }
+
   /**
    * Bind struct to ECSQL statement. Struct specified as object.
    * @param indexOrName Specify parameter index or its name used in ECSQL statement.
@@ -447,6 +501,7 @@ export class QueryBinder {
     });
     return this;
   }
+
   /**
    * Bind long to ECSQL statement.
    * @param indexOrName Specify parameter index or its name used in ECSQL statement.
@@ -464,6 +519,7 @@ export class QueryBinder {
     });
     return this;
   }
+
   /**
    * Bind string to ECSQL statement.
    * @param indexOrName Specify parameter index or its name used in ECSQL statement.
@@ -481,6 +537,7 @@ export class QueryBinder {
     });
     return this;
   }
+
   /**
    * Bind null to ECSQL statement.
    * @param indexOrName Specify parameter index or its name used in ECSQL statement.
@@ -497,6 +554,7 @@ export class QueryBinder {
     });
     return this;
   }
+
   /**
    * Bind @type Point2d to ECSQL statement.
    * @param indexOrName Specify parameter index or its name used in ECSQL statement.
@@ -514,6 +572,7 @@ export class QueryBinder {
     });
     return this;
   }
+
   /**
    * Bind @type Point3d to ECSQL statement.
    * @param indexOrName Specify parameter index or its name used in ECSQL statement.
@@ -531,6 +590,7 @@ export class QueryBinder {
     });
     return this;
   }
+
   private static bind(params: QueryBinder, nameOrId: string | number, val: any) {
     if (typeof val === "boolean") {
       params.bindBoolean(nameOrId, val);
@@ -546,14 +606,15 @@ export class QueryBinder {
       params.bindPoint3d(nameOrId, val);
     } else if (val instanceof Array && val.length > 0 && typeof val[0] === "string" && Id64.isValidId64(val[0])) {
       params.bindIdSet(nameOrId, val);
-    } else if (typeof val === "object" && !Array.isArray(val)) {
-      params.bindStruct(nameOrId, val);
     } else if (typeof val === "undefined" || val === null) {
       params.bindNull(nameOrId);
+    } else if (typeof val === "object" && !Array.isArray(val)) {
+      params.bindStruct(nameOrId, val);
     } else {
       throw new Error("unsupported type");
     }
   }
+
   /**
    * Allow bulk bind either parameters by index as value array or by parameter names as object.
    * @param args if array of values is provided then array index is used as index. If object is provided then object property name is used as parameter name of reach value.
@@ -576,7 +637,10 @@ export class QueryBinder {
     }
     return params;
   }
-  public serialize(): object { return this._args; }
+
+  public serialize(): object {
+    return this._args;
+  }
 }
 
 /** @internal */
@@ -584,12 +648,14 @@ export enum DbRequestKind {
   BlobIO = 0,
   ECSql = 1
 }
+
 /** @internal */
 export enum DbResponseKind {
   BlobIO = DbRequestKind.BlobIO,
   ECSql = DbRequestKind.ECSql,
   NoResult = 2
 }
+
 /** @internal */
 export enum DbResponseStatus {
   Done = 1,  /* query ran to completion. */
@@ -605,27 +671,32 @@ export enum DbResponseStatus {
   Error_BlobIO_OpenFailed = Error + 5, /*  class or property or instance specified was not found or property as not of type blob.*/
   Error_BlobIO_OutOfRange = Error + 6, /*  range specified is invalid based on size of blob.*/
 }
+
 /** @internal */
 export enum DbValueFormat {
   ECSqlNames = 0,
   JsNames = 1
 }
+
 /** @internal */
 export interface DbRequest extends BaseReaderOptions {
   kind?: DbRequestKind;
 }
+
 /** @internal */
 export interface DbQueryRequest extends DbRequest, QueryOptions {
   valueFormat?: DbValueFormat;
   query: string;
   args?: object;
 }
+
 /** @internal */
 export interface DbBlobRequest extends DbRequest, BlobOptions {
   className: string;
   accessString: string;
   instanceId: Id64String;
 }
+
 /** @internal */
 export interface DbResponse {
   stats: DbRuntimeStats;
@@ -633,17 +704,20 @@ export interface DbResponse {
   kind: DbResponseKind;
   error?: string;
 }
+
 /** @internal */
 export interface DbQueryResponse extends DbResponse {
   meta: QueryPropertyMetaData[];
   data: any[];
   rowCount: number;
 }
+
 /** @internal */
 export interface DbBlobResponse extends DbResponse {
   data?: Uint8Array;
   rawBlobSize: number;
 }
+
 /** @public */
 export class DbQueryError extends BentleyError {
   public constructor(public readonly response: any, public readonly request?: any, rc?: DbResult) {
@@ -658,6 +732,7 @@ export class DbQueryError extends BentleyError {
     }
   }
 }
+
 /** @internal */
 export interface DbRequestExecutor<TRequest extends DbRequest, TResponse extends DbResponse> {
   execute(request: TRequest): Promise<TResponse>;

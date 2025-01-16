@@ -6,12 +6,13 @@
  * @module Bspline
  */
 
+import { VariantCurveExtendParameter } from "../curve/CurveExtendMode";
 import { CurveIntervalRole, CurveLocationDetail } from "../curve/CurveLocationDetail";
 import { CurvePrimitive } from "../curve/CurvePrimitive";
 import { CurveOffsetXYHandler } from "../curve/internalContexts/CurveOffsetXYHandler";
 import { PlaneAltitudeRangeContext } from "../curve/internalContexts/PlaneAltitudeRangeContext";
-import { OffsetOptions } from "../curve/internalContexts/PolygonOffsetContext";
 import { LineString3d } from "../curve/LineString3d";
+import { OffsetOptions } from "../curve/OffsetOptions";
 import { StrokeCountMap } from "../curve/Query/StrokeCountMap";
 import { StrokeOptions } from "../curve/StrokeOptions";
 import { Geometry, PlaneAltitudeEvaluator } from "../Geometry";
@@ -102,19 +103,43 @@ export abstract class BSplineCurve3dBase extends CurvePrimitive {
   public get numSpan(): number { return this._bcurve.numSpan; }
   /** Return the number of poles */
   public get numPoles(): number { return this._bcurve.numPoles; }
+  /** Return live reference to the packed control point coordinates of the curve. */
+  public get polesRef(): Float64Array { return this._bcurve.packedData; }
+  /** Return live reference to the knots of the curve. */
+  public get knotsRef(): Float64Array { return this._bcurve.knots.knots; }
+  /** Number of components per pole.
+   * * 3 for conventional (x,y,z) curve
+   * * 4 for weighted (wx,wy,wz,w) curve
+   */
+  public get poleDimension(): number { return this._bcurve.poleLength; }
   /**
- * return a simple array form of the knots.  optionally replicate the first and last
- * in classic over-clamped manner
- */
+   * return a simple array form of the knots.  optionally replicate the first and last
+   * in classic over-clamped manner
+   */
   public copyKnots(includeExtraEndKnot: boolean): number[] { return this._bcurve.knots.copyKnots(includeExtraEndKnot); }
 
-  /**
- * Set the flag indicating the bspline might be suitable for having wrapped "closed" interpretation.
- */
+  /** Get the flag indicating the curve might be suitable for having wrapped "closed" interpretation. */
+  public getWrappable(): BSplineWrapMode {
+    return this._bcurve.knots.wrappable;
+  }
+  /** Set the flag indicating the curve might be suitable for having wrapped "closed" interpretation. */
   public setWrappable(value: BSplineWrapMode) {
     this._bcurve.knots.wrappable = value;
   }
-
+  /**
+   * Test knots and control points to determine if it is possible to close (aka "wrap") the curve.
+   * @returns the manner in which it is possible to close the curve. See `BSplineWrapMode` for particulars of each mode.
+   */
+  public get isClosableCurve(): BSplineWrapMode {
+    const mode = this._bcurve.knots.wrappable;
+    if (mode === BSplineWrapMode.None)
+      return BSplineWrapMode.None;
+    if (!this._bcurve.knots.testClosable(mode))
+      return BSplineWrapMode.None;
+    if (!this._bcurve.testClosablePolygon(mode))
+      return BSplineWrapMode.None;
+    return mode;
+  }
   /** Evaluate at a position given by fractional position within a span. */
   public abstract evaluatePointInSpan(spanIndex: number, spanFraction: number, result?: Point3d): Point3d;
   /** Evaluate at a position given by fractional position within a span. */
@@ -213,13 +238,14 @@ export abstract class BSplineCurve3dBase extends CurvePrimitive {
    * * If the space point is exactly on the curve, this is the reverse of fractionToPoint.
    * * Since CurvePrimitive should always have start and end available as candidate points, this method should always succeed
    * @param spacePoint point in space
-   * @param _extend ignored. A BSplineCurve3dBase cannot be extended.
-   * @returns Returns a CurveLocationDetail structure that holds the details of the close point.
+   * @param _extend ignored (pass false). A BSplineCurve3dBase cannot be extended.
+   * @param result optional pre-allocated detail to populate and return.
+   * @returns details of the closest point.
    */
-  public override closestPoint(spacePoint: Point3d, _extend: boolean): CurveLocationDetail | undefined {
+  public override closestPoint(spacePoint: Point3d, _extend: VariantCurveExtendParameter, result?: CurveLocationDetail): CurveLocationDetail | undefined {
     // seed at start point -- final point comes with final bezier perpendicular step.
     const point = this.fractionToPoint(0);
-    const result = CurveLocationDetail.createCurveFractionPointDistance(this, 0.0, point, point.distance(spacePoint));
+    result = CurveLocationDetail.createCurveFractionPointDistance(this, 0.0, point, point.distance(spacePoint), result);
 
     let span: BezierCurve3dH | undefined;
     const numSpans = this.numSpan;
@@ -446,6 +472,9 @@ export class BSplineCurve3d extends BSplineCurve3dBase {
       return undefined;
 
     let numPoles = poles instanceof Float64Array ? poles.length / 3 : poles.length;
+    if (numPoles < 2)
+      return undefined;
+
     const startPoint = Point3d.createZero();
     const endPoint = Point3d.createZero();
     let hasClosurePoint = false;
@@ -454,8 +483,8 @@ export class BSplineCurve3d extends BSplineCurve3dBase {
         startPoint.set(poles[0], poles[1], poles[2]);
         endPoint.set(poles[3 * numPoles - 3], poles[3 * numPoles - 2], poles[3 * numPoles - 1]);
       } else if (poles instanceof GrowableXYZArray) {
-        startPoint.set(poles.float64Data()[0], poles.float64Data()[1], poles.float64Data()[2]);
-        endPoint.set(poles.float64Data()[3 * numPoles - 3], poles.float64Data()[3 * numPoles - 2], poles.float64Data()[3 * numPoles - 1]);
+        poles.getPoint3dAtUncheckedPointIndex(0, startPoint);
+        poles.getPoint3dAtUncheckedPointIndex(numPoles - 1, endPoint);
       } else {
         startPoint.setFromPoint3d(poles[0]);
         endPoint.setFromPoint3d(poles[numPoles - 1]);
@@ -474,14 +503,17 @@ export class BSplineCurve3d extends BSplineCurve3dBase {
     // append degree wraparound poles
     const curve = new BSplineCurve3d(numPoles + degree, order, knots);
     if (poles instanceof Float64Array) {
-      for (let i = 0; i < 3 * numPoles; i++)
-        curve._bcurve.packedData[i] = poles[i];
-      for (let i = 0; i < 3 * degree; i++)
-        curve._bcurve.packedData[3 * numPoles + i] = poles[i];
+      let i = 0;
+      for (let j = 0; j < 3 * numPoles; j++)
+        curve._bcurve.packedData[i++] = poles[j];
+      for (let j = 0; j < 3 * degree; j++)
+        curve._bcurve.packedData[i++] = poles[j];
     } else if (poles instanceof GrowableXYZArray) {
-      curve._bcurve.packedData = poles.float64Data().slice(0, 3 * numPoles);
-      for (let i = 0; i < 3 * degree; i++)
-        curve._bcurve.packedData[3 * numPoles + i] = poles.float64Data()[i];
+      let i = 0;
+      for (let j = 0; j < 3 * numPoles; j++)
+        curve._bcurve.packedData[i++] = poles.float64Data()[j];
+      for (let j = 0; j < 3 * degree; j++)
+        curve._bcurve.packedData[i++] = poles.float64Data()[j];
     } else {
       let i = 0;
       for (let j = 0; j < numPoles; j++) {
@@ -514,44 +546,50 @@ export class BSplineCurve3d extends BSplineCurve3dBase {
     return BSplineCurveOps.createThroughPoints(options.fitPoints, 4);  // temporary
   }
 
-  /** Create a bspline with given knots.
-   * * Only two knot count conditions are recognized; all others return undefined:
+  /**
+   * Create a bspline with given knots.
+   * * The poles have several variants:
+   *    * Float64Array(3 * numPoles) in blocks of [x,y,z]
+   *    * Point3d[]
+   *    * number[][], with inner dimension 3
+   * * Two count conditions are recognized:
    *    * If poleArray.length + order === knotArray.length, the first and last are assumed to be the extraneous knots of classic clamping.
    *    * If poleArray.length + order === knotArray.length + 2, the knots are in modern form.
    */
-  public static create(poleArray: Float64Array | Point3d[], knotArray: Float64Array | number[], order: number): BSplineCurve3d | undefined {
+  public static create(poleArray: Float64Array | Point3d[] | number[][], knotArray: Float64Array | number[], order: number): BSplineCurve3d | undefined {
     if (order < 2)
       return undefined;
 
     let numPoles = poleArray.length;
-    if (poleArray instanceof Float64Array) {
-      numPoles /= 3;  // blocked as xyz
-    }
+    if (poleArray instanceof Float64Array)
+      numPoles = Math.floor(numPoles / 3);  // blocked as xyz
     if (numPoles < order)
       return undefined;
 
     const numKnots = knotArray.length;
-    let skipFirstAndLast;
-    if (numPoles + order === numKnots)
-      skipFirstAndLast = true;  // classic (first/last knots extraneous)
-    else if (numPoles + order === numKnots + 2)
-      skipFirstAndLast = false; // modern
-    else
+    const skipFirstAndLast = (numPoles + order === numKnots);   // classic over-clamped input knots
+    if (!skipFirstAndLast && numPoles + order !== numKnots + 2) // modern knots
       return undefined;
-
     const knots = KnotVector.create(knotArray, order - 1, skipFirstAndLast);
+
     const curve = new BSplineCurve3d(numPoles, order, knots);
 
     let i = 0;
     if (poleArray instanceof Float64Array) {
       for (const coordinate of poleArray)
         curve._bcurve.packedData[i++] = coordinate;
-    } else {
-      for (const p of poleArray) {
+    } else if (poleArray[0] instanceof Point3d) {
+      for (const p of poleArray as Point3d[]) {
         curve._bcurve.packedData[i++] = p.x;
         curve._bcurve.packedData[i++] = p.y;
         curve._bcurve.packedData[i++] = p.z;
       }
+    } else if (Array.isArray(poleArray[0]) && poleArray[0].length === 3) {
+      for (const point of poleArray as number[][])
+        for (const coord of point)
+          curve._bcurve.packedData[i++] = coord;
+    } else {
+      return undefined; // unexpected poleArray type
     }
     return curve;
   }
@@ -690,19 +728,11 @@ export class BSplineCurve3d extends BSplineCurve3dBase {
     }
   }
   /**
-   * Test knots, control points, and wrappable flag to see if all agree for a possible wrapping.
-   * @returns the manner of closing.   Se BSplineWrapMode for particulars of each mode.
-   *
+   * Test knots and control points to determine if it is possible to close (aka "wrap") the curve.
+   * @returns the manner in which it is possible to close the curve. See `BSplineWrapMode` for particulars of each mode.
    */
-  public get isClosable(): BSplineWrapMode {
-    const mode = this._bcurve.knots.wrappable;
-    if (mode === BSplineWrapMode.None)
-      return BSplineWrapMode.None;
-    if (!this._bcurve.knots.testClosable(mode))
-      return BSplineWrapMode.None;
-    if (!this._bcurve.testCloseablePolygon(mode))
-      return BSplineWrapMode.None;
-    return mode;
+   public get isClosable(): BSplineWrapMode {
+    return this.isClosableCurve;
   }
   /**
    * Return a BezierCurveBase for this curve.  The concrete return type may be BezierCurve3d or BezierCurve3dH according to this type.
@@ -752,12 +782,6 @@ export class BSplineCurve3d extends BSplineCurve3dBase {
     return undefined;
   }
 
-  /**
-   * Set the flag indicating the bspline might be suitable for having wrapped "closed" interpretation.
-   */
-  public override setWrappable(value: BSplineWrapMode) {
-    this._bcurve.knots.wrappable = value;
-  }
   /** Second step of double dispatch:  call `handler.handleBSplineCurve3d(this)` */
   public dispatchToGeometryHandler(handler: GeometryHandler): any {
     return handler.handleBSplineCurve3d(this);

@@ -83,7 +83,7 @@ export class TentativePoint {
   public showTentative(): void {
     if (this.isSnapped) {
       IModelApp.viewManager.invalidateDecorationsAllViews();
-      IModelApp.accuSnap.displayToolTip(this._viewPoint, this.viewport!, undefined); // eslint-disable-line @typescript-eslint/no-floating-promises
+      IModelApp.accuSnap.displayToolTip(this._viewPoint, this.viewport!, undefined);
     } else {
       this.viewport!.invalidateDecorations();
     }
@@ -240,7 +240,17 @@ export class TentativePoint {
           const vp = ev.viewport!;
           if (vp.isSnapAdjustmentRequired) {
             IModelApp.toolAdmin.adjustPointToACS(point, vp, false);
-            const hit = new HitDetail(point, vp, HitSource.TentativeSnap, point, "", HitPriority.Unknown, 0, 0);
+            const hit = new HitDetail({
+              testPoint: point,
+              viewport: vp,
+              hitSource: HitSource.TentativeSnap,
+              hitPoint: point,
+              sourceId: "",
+              priority: HitPriority.Unknown,
+              distXY: 0,
+              distFraction: 0,
+            });
+
             const snap = new SnapDetail(hit);
             this.setCurrSnap(snap);
             IModelApp.toolAdmin.adjustSnapPoint();

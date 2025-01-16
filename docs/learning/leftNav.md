@@ -1,3 +1,12 @@
+---
+matchChildUrls:
+  - geometry
+  - ui
+  - common
+  - frontend
+  - backend
+---
+
 ### [The iTwin.js Library](./index.md)
 
 - [Frontend](./frontend/index.md)
@@ -5,21 +14,13 @@
 - [Common](./common/index.md)
 - [Geometry](./geometry/index.md)
 - [Presentation](../presentation/index.md)
-- [UI](./ui/index.md)
-
----
-
-&nbsp;
+- [UI](../ui/index.md)
 
 ### [Base Infrastructure Schemas (BIS)](../bis/index.md)
 
 - [Guide](../bis/guide/intro/overview.md)
 - [Domain Schemas](../bis/domains/index.md)
 - [Engineering Content (EC)](../bis/ec/index.md)
-
----
-
-&nbsp;
 
 ### Helpful links
 

@@ -53,15 +53,12 @@ export * from "./appui-abstract/statusbar/StatusBarItemsManager";
 
 export * from "./appui-abstract/utils/callbacks";
 export * from "./appui-abstract/utils/misc";
-export * from "./appui-abstract/utils/isLetter";
 export * from "./appui-abstract/utils/IconSpecUtilities";
 export * from "./appui-abstract/utils/PointProps";
 export * from "./appui-abstract/utils/UiError";
 export * from "./appui-abstract/utils/UiEventDispatcher";
 export * from "./appui-abstract/utils/UiEvent";
-export * from "./appui-abstract/utils/filter/charCode";
 export * from "./appui-abstract/utils/filter/filters";
-export * from "./appui-abstract/utils/filter/strings";
 
 export * from "./appui-abstract/widget/AbstractWidgetProps";
 export * from "./appui-abstract/widget/StagePanel";
@@ -69,7 +66,7 @@ export * from "./appui-abstract/widget/WidgetState";
 
 /** @docs-package-description
  * The appui-abstract package contains abstractions for UI controls, such as toolbars, buttons and menus.
- * For more information, see [learning about appui-abstract]($docs/learning/ui/abstract/index.md).
+ * For more information, see [UI]($docs/ui/index.md).
  */
 /**
  * @docs-group-description Backstage

@@ -3,21 +3,27 @@
 * See LICENSE.md in the project root for license terms and full copyright notice.
 *--------------------------------------------------------------------------------------------*/
 
-import { assert, expect } from "chai";
+import * as chai from "chai";
+import * as chaiAsPromised from "chai-as-promised";
 import { restore as sinonRestore, spy as sinonSpy } from "sinon";
 import { AccessToken, Guid, GuidString, Id64, Id64Arg } from "@itwin/core-bentley";
-import { Code, IModel, IModelError, LocalBriefcaseProps, PhysicalElementProps, RequestNewBriefcaseProps } from "@itwin/core-common";
-import { LockState } from "../../BackendHubAccess";
+import { Code, IModel, IModelError, LocalBriefcaseProps, LockState, PhysicalElementProps, RequestNewBriefcaseProps } from "@itwin/core-common";
 import { BriefcaseManager } from "../../BriefcaseManager";
 import { PhysicalObject } from "../../domains/GenericElements";
 import { PhysicalElement } from "../../Element";
 import { BriefcaseDb, SnapshotDb } from "../../IModelDb";
 import { IModelHost } from "../../IModelHost";
 import { ElementOwnsChildElements } from "../../NavigationRelationship";
-import { ServerBasedLocks } from "../../ServerBasedLocks";
+import { ServerBasedLocks } from "../../internal/ServerBasedLocks";
 import { HubMock } from "../../HubMock";
 import { ExtensiveTestScenario, IModelTestUtils } from "../IModelTestUtils";
 import { KnownTestLocations } from "../KnownTestLocations";
+import { ChannelControl } from "../../core-backend";
+import { _releaseAllLocks } from "../../internal/Symbols";
+
+const expect = chai.expect;
+const assert = chai.assert;
+chai.use(chaiAsPromised);
 
 describe("Server-based locks", () => {
   const createVersion0 = async () => {
@@ -25,7 +31,7 @@ describe("Server-based locks", () => {
     const sourceDb = SnapshotDb.createEmpty(dbName, { rootSubject: { name: "server lock test" } });
     assert.isFalse(sourceDb.locks.isServerBased);
     await ExtensiveTestScenario.prepareDb(sourceDb);
-    ExtensiveTestScenario.populateDb(sourceDb);
+    await ExtensiveTestScenario.populateDb(sourceDb);
     sourceDb.saveChanges();
     sourceDb.close();
     return dbName;
@@ -43,14 +49,17 @@ describe("Server-based locks", () => {
 
     const iModelProps = {
       iModelName: "server locks test",
-      iTwinId: Guid.createValue(),
+      iTwinId: HubMock.iTwinId,
       version0: await createVersion0(),
     };
 
-    iModelId = await IModelHost.hubAccess.createNewIModel(iModelProps);
+    iModelId = await HubMock.createNewIModel(iModelProps);
     const args: RequestNewBriefcaseProps = { iTwinId: iModelProps.iTwinId, iModelId };
     briefcase1Props = await BriefcaseManager.downloadBriefcase({ accessToken: "test token", ...args });
     briefcase2Props = await BriefcaseManager.downloadBriefcase({ accessToken: "test token2", ...args });
+  });
+  after(() => {
+    HubMock.shutdown();
   });
 
   const assertSharedLocks = (locks: ServerBasedLocks, ids: Id64Arg) => {
@@ -71,6 +80,7 @@ describe("Server-based locks", () => {
     const lockSpy = sinonSpy(IModelHost.hubAccess, "acquireLocks");
     let bc1 = await BriefcaseDb.open({ fileName: briefcase1Props.fileName });
     assert.isTrue(bc1.locks.isServerBased);
+    bc1.channels.addAllowedChannel(ChannelControl.sharedChannelName);
     let bc2 = await BriefcaseDb.open({ fileName: briefcase2Props.fileName });
     assert.isTrue(bc2.locks.isServerBased);
 
@@ -100,19 +110,19 @@ describe("Server-based locks", () => {
     await expect(bc2.acquireSchemaLock()).rejectedWith(IModelError, exclusiveLockError, "acquire schema exclusive");
     await expect(bc2Locks.acquireLocks({ shared: childEl.model })).rejectedWith(IModelError, exclusiveLockError);
 
-    await bc1Locks.releaseAllLocks();
+    await bc1Locks[_releaseAllLocks]();
     await bc1Locks.acquireLocks({ exclusive: parentId, shared: parentId });
     assertLockCounts(bc1Locks, 3, 1);
     assertSharedLocks(bc1Locks, [modelId, IModel.rootSubjectId]);
     assertExclusiveLocks(bc1Locks, [parentId, child1, child2]); // acquiring exclusive lock on parent implicitly holds exclusive lock on children
 
-    await bc1Locks.releaseAllLocks();
+    await bc1Locks[_releaseAllLocks]();
     await bc1Locks.acquireLocks({ exclusive: modelId });
     assertLockCounts(bc1Locks, 2, 1);
     assertSharedLocks(bc1Locks, [modelId, IModel.rootSubjectId]);
     assertExclusiveLocks(bc1Locks, [modelId, parentId, child1, child2]); // acquiring exclusive lock on model implicitly holds exclusive lock on members
 
-    await bc1Locks.releaseAllLocks();
+    await bc1Locks[_releaseAllLocks]();
     lockSpy.resetHistory();
     await bc1Locks.acquireLocks({ shared: child1 });
     assert.equal(lockSpy.callCount, 1);
@@ -140,12 +150,16 @@ describe("Server-based locks", () => {
     assertLockCounts(bc1Locks, 4, 1);
     assertLockCounts(bc2Locks, 5, 0);
 
+    const childElJson = childEl.toJSON();
     // if we close and reopen the briefcase, the local locks database should still be intact
     bc1.close();
     bc2.close();
 
     bc1 = await BriefcaseDb.open({ fileName: briefcase1Props.fileName });
+    bc1.channels.addAllowedChannel(ChannelControl.sharedChannelName);
     bc2 = await BriefcaseDb.open({ fileName: briefcase2Props.fileName });
+    bc2.channels.addAllowedChannel(ChannelControl.sharedChannelName);
+
     bc1Locks = bc1.locks as ServerBasedLocks;
     bc2Locks = bc2.locks as ServerBasedLocks;
 
@@ -157,7 +171,7 @@ describe("Server-based locks", () => {
     assertExclusiveLocks(bc1Locks, child1);
     assert.isFalse(bc2Locks.holdsExclusiveLock(child1));
 
-    await bc2Locks.releaseAllLocks(); // release all locks from bc2 so we can test expected failures below
+    await bc2Locks[_releaseAllLocks](); // release all locks from bc2 so we can test expected failures below
     assertLockCounts(bc2Locks, 0, 0);
 
     await expect(bc2Locks.acquireLocks({ exclusive: [IModel.dictionaryId, parentId] })).rejectedWith(IModelError, sharedLockError);
@@ -167,15 +181,15 @@ describe("Server-based locks", () => {
     assertSharedLocks(bc2Locks, IModel.rootSubjectId); // it should also acquire the shared lock on the rootSubject
     assertLockCounts(bc2Locks, 1, 1);
 
-    await bc1Locks.releaseAllLocks();
-    await bc2Locks.releaseAllLocks();
+    await bc1Locks[_releaseAllLocks]();
+    await bc2Locks[_releaseAllLocks]();
     lockSpy.resetHistory();
 
     const physicalProps: PhysicalElementProps = {
       classFullName: PhysicalObject.classFullName,
       model: modelId,
       parent: new ElementOwnsChildElements(parentId),
-      category: childEl.category,
+      category: childElJson.category,
       code: Code.createEmpty(),
     };
     assert.throws(() => bc1.elements.insertElement(physicalProps), IModelError, "shared lock"); // insert requires shared lock on model
@@ -183,10 +197,10 @@ describe("Server-based locks", () => {
     const newElId = bc1.elements.insertElement(physicalProps);
     assertExclusiveLocks(bc1Locks, newElId);
 
-    childEl.userLabel = "new user label";
-    assert.throws(() => bc1.elements.updateElement(childEl.toJSON()), "exclusive lock");
+    childElJson.userLabel = "new user label";
+    assert.throws(() => bc1.elements.updateElement(childElJson), "exclusive lock");
     await bc1Locks.acquireLocks({ exclusive: child1 });
-    bc1.elements.updateElement(childEl.toJSON());
+    bc1.elements.updateElement(childElJson);
     bc1.saveChanges();
 
     bc1.elements.deleteElement(child1); // make sure delete now works
@@ -204,7 +218,114 @@ describe("Server-based locks", () => {
     await bc2.pullChanges({ accessToken: accessToken2 });
     await bc2Locks.acquireLocks({ exclusive: child1, shared: child1 });
     const child2El = bc2.elements.getElement<PhysicalElement>(child1);
-    assert.equal(child2El.userLabel, childEl.userLabel);
 
+    assert.equal(child2El.userLabel, childElJson.userLabel);
+    await bc1.locks.releaseAllLocks();
+    await bc2.locks.releaseAllLocks();
+    bc1.close();
+    bc2.close();
+  });
+
+  describe("releaseAllLocks", () => {
+    let bc: BriefcaseDb;
+    let locks: ServerBasedLocks;
+    let elemId: string;
+
+    beforeEach(async () => {
+      bc = await BriefcaseDb.open({ fileName: briefcase1Props.fileName });
+      expect(bc.locks.isServerBased).to.be.true;
+      locks = bc.locks as ServerBasedLocks;
+      bc.channels.addAllowedChannel(ChannelControl.sharedChannelName);
+      elemId = IModelTestUtils.queryByUserLabel(bc, "ChildObject1B");
+      expect(elemId).not.to.equal("0");
+    });
+
+    afterEach(() => bc.close());
+
+    function expectLocked(): void {
+      expect(locks.getLockCount(LockState.Exclusive)).least(1);
+      expect(locks.getLockCount(LockState.Shared)).to.equal(0);
+    }
+
+    function expectUnlocked(): void {
+      expect(locks.getLockCount(LockState.Exclusive)).to.equal(0);
+      expect(locks.getLockCount(LockState.Shared)).to.equal(0);
+    }
+
+    function write(): void {
+      const elem = bc.elements.getElement(elemId);
+      elem.jsonProperties.testProp = Guid.createValue();
+      elem.update();
+    }
+
+    async function push(retainLocks?: true): Promise<void> {
+      return bc.pushChanges({ retainLocks, accessToken: "token", description: "changes" });
+    }
+
+    it("releases all locks", async () => {
+      expectUnlocked();
+      await bc.acquireSchemaLock();
+      expectLocked();
+      await locks.releaseAllLocks();
+      expectUnlocked();
+    });
+
+    it("is called when pushChanges is called with no local changes", async () => {
+      await bc.acquireSchemaLock();
+      expectLocked();
+      await push();
+      expectUnlocked();
+    });
+
+    it("is called when pushing changes", async () => {
+      await bc.acquireSchemaLock();
+      expectLocked();
+      write();
+      bc.saveChanges();
+      await push();
+      expectUnlocked();
+    });
+
+    it("is not called when pushChanges is called with no local changes if retainLocks is specified", async () => {
+      await bc.acquireSchemaLock();
+      expectLocked();
+      await push(true);
+      expectLocked();
+      await locks.releaseAllLocks();
+      expectUnlocked();
+    });
+
+    it("is not called when pushing changes if retainLocks is specified", async () => {
+      await bc.acquireSchemaLock();
+      expectLocked();
+      write();
+      bc.saveChanges();
+      await push(true);
+      expectLocked();
+      await locks.releaseAllLocks();
+      expectUnlocked();
+    });
+
+    it("throws if briefcase has unpushed changes", async () => {
+      expectUnlocked();
+      await bc.acquireSchemaLock();
+      expectLocked();
+      write();
+      bc.saveChanges();
+      await expect(locks.releaseAllLocks()).to.eventually.be.rejectedWith("local changes");
+      await push();
+      expectUnlocked();
+    });
+
+    it("throws if briefcase has unsaved changes", async () => {
+      expectUnlocked();
+      await bc.acquireSchemaLock();
+      write();
+      await expect(locks.releaseAllLocks()).to.eventually.be.rejectedWith("local changes");
+      expectLocked();
+      bc.abandonChanges();
+      await locks.releaseAllLocks();
+      expectUnlocked();
+    });
   });
 });

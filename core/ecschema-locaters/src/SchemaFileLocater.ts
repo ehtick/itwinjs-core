@@ -2,15 +2,14 @@
 * Copyright (c) Bentley Systems, Incorporated. All rights reserved.
 * See LICENSE.md in the project root for license terms and full copyright notice.
 *--------------------------------------------------------------------------------------------*/
-
-import * as fs from "fs";
-import * as glob from "glob";
-import * as path from "path";
-import { Schema, SchemaContext, SchemaKey, SchemaMatchType } from "@itwin/ecschema-metadata";
-
 /** @packageDocumentation
  * @module Locaters
  */
+
+import * as fs from "fs";
+import { globSync } from "glob";
+import * as path from "path";
+import { Schema, SchemaContext, SchemaKey, SchemaMatchType } from "@itwin/ecschema-metadata";
 
 const formatString = (format: string, ...args: string[]) => {
   return format.replace(/{(\d+)}/g, (match, theNumber) => {
@@ -165,8 +164,8 @@ export abstract class SchemaFileLocater {
   private addCandidateSchemaKeys(foundFiles: FileSchemaKey[], schemaPath: string, fileFilter: string, desiredKey: Readonly<SchemaKey>, matchType: SchemaMatchType, format: string) {
     const fullPath = path.join(schemaPath, fileFilter);
 
-    const result = new glob.GlobSync(fullPath, { sync: true });
-    for (const match of result.found) {
+    const result = globSync(fullPath, { windowsPathsNoEscape: true });
+    for (const match of result) {
       let fileName = path.basename(match, (`.ecschema.${format}`));
       // TODO: should this be moved or handled elsewhere?
       // Handles two version file names - SchemaKey.parseString supports only 3 version names.

@@ -65,11 +65,38 @@ export abstract class Property implements CustomAttributeContainerProps {
 
   public get isReadOnly() { return this._isReadOnly || false; }
 
-  public get priority() { return this._priority || 0; }
+  public get priority(): number {
+    if (this._priority === undefined) {
+      const baseProperty = this.class.getInheritedPropertySync(this.name);
+      if (undefined !== baseProperty) {
+        return baseProperty.priority;
+      }
+    }
 
-  public get category(): LazyLoadedPropertyCategory | undefined { return this._category; }
+    return this._priority || 0;
+  }
 
-  public get kindOfQuantity(): LazyLoadedKindOfQuantity | undefined { return this._kindOfQuantity; }
+  public get category(): LazyLoadedPropertyCategory | undefined {
+    if (this._category === undefined) {
+      const baseProperty = this.class.getInheritedPropertySync(this.name);
+      if (undefined !== baseProperty) {
+        return baseProperty.category;
+      }
+    }
+
+    return this._category;
+  }
+
+  public get kindOfQuantity(): LazyLoadedKindOfQuantity | undefined {
+    if (this._kindOfQuantity === undefined) {
+      const baseProperty = this.class.getInheritedPropertySync(this.name);
+      if (undefined !== baseProperty) {
+        return baseProperty.kindOfQuantity;
+      }
+    }
+
+    return this._kindOfQuantity;
+  }
 
   public get propertyType() { return this._type; }
 
@@ -82,15 +109,27 @@ export abstract class Property implements CustomAttributeContainerProps {
   public get schema(): Schema { return this._class.schema; }
 
   public getCategorySync(): PropertyCategory | undefined {
-    if (!this._category)
+    if (!this._category){
+      const baseProperty = this.class.getInheritedPropertySync(this.name);
+      if (undefined !== baseProperty){
+        return baseProperty.getCategorySync();
+      }
+
       return undefined;
+    }
 
     return this.class.schema.lookupItemSync(this._category);
   }
 
   public getKindOfQuantitySync(): KindOfQuantity | undefined {
-    if (!this._kindOfQuantity)
+    if (!this._kindOfQuantity){
+      const baseProperty = this.class.getInheritedPropertySync(this.name);
+      if (undefined !== baseProperty){
+        return baseProperty.getKindOfQuantitySync();
+      }
+
       return undefined;
+    }
 
     return this.class.schema.lookupItemSync(this._kindOfQuantity);
   }
@@ -108,12 +147,12 @@ export abstract class Property implements CustomAttributeContainerProps {
       schemaJson.label = this.label;
     if (this._isReadOnly !== undefined)
       schemaJson.isReadOnly = this._isReadOnly;
-    if (this.category !== undefined)
-      schemaJson.category = this.category.fullName; // needs to be fully qualified name
+    if (this._category !== undefined)
+      schemaJson.category = this._category.fullName; // needs to be fully qualified name
     if (this._priority !== undefined)
       schemaJson.priority = this._priority;
-    if (this.kindOfQuantity !== undefined)
-      schemaJson.kindOfQuantity = this.kindOfQuantity.fullName;
+    if (this._kindOfQuantity !== undefined)
+      schemaJson.kindOfQuantity = this._kindOfQuantity.fullName;
     const customAttributes = serializeCustomAttributes(this.customAttributes);
     if (customAttributes !== undefined)
       schemaJson.customAttributes = customAttributes;
@@ -132,17 +171,17 @@ export abstract class Property implements CustomAttributeContainerProps {
     if (undefined !== this.isReadOnly)
       itemElement.setAttribute("readOnly", String(this.isReadOnly));
 
-    if (undefined !== this.category) {
-      const category = await this.category;
+    if (undefined !== this._category) {
+      const category = await this._category;
       const categoryName = XmlSerializationUtils.createXmlTypedName(this.schema, category.schema, category.name);
       itemElement.setAttribute("category", categoryName);
     }
 
-    if (undefined !== this.priority)
-      itemElement.setAttribute("priority", this.priority.toString());
+    if (undefined !== this._priority)
+      itemElement.setAttribute("priority", this._priority.toString());
 
-    if (undefined !== this.kindOfQuantity) {
-      const kindOfQuantity = await this.kindOfQuantity;
+    if (undefined !== this._kindOfQuantity) {
+      const kindOfQuantity = await this._kindOfQuantity;
       const kindOfQuantityName = XmlSerializationUtils.createXmlTypedName(this.schema, kindOfQuantity.schema, kindOfQuantity.name);
       itemElement.setAttribute("kindOfQuantity", kindOfQuantityName);
     }
@@ -212,6 +251,52 @@ export abstract class Property implements CustomAttributeContainerProps {
       this._customAttributes = new Map<string, CustomAttribute>();
 
     this._customAttributes.set(customAttribute.className, customAttribute);
+  }
+
+  protected setName(name: ECName) {
+    this._name = name;
+  }
+
+  /**
+   * @internal Used in schema editing.
+   */
+  protected setDescription(description: string) {
+    this._description = description;
+  }
+
+  /**
+   * @internal Used in schema editing.
+   */
+  protected setLabel(label: string) {
+    this._label = label;
+  }
+
+  /**
+   * @internal Used in schema editing.
+   */
+  protected setIsReadOnly(isReadOnly: boolean) {
+    this._isReadOnly = isReadOnly;
+  }
+
+  /**
+   * @internal Used in schema editing.
+   */
+  protected setPriority(priority: number) {
+    this._priority = priority;
+  }
+
+  /**
+   * @internal Used in schema editing.
+   */
+  protected setCategory(category: LazyLoadedPropertyCategory) {
+    this._category = category;
+  }
+
+  /**
+   * @internal Used in schema editing.
+   */
+  protected setKindOfQuantity(kindOfQuantity: LazyLoadedKindOfQuantity) {
+    this._kindOfQuantity = kindOfQuantity;
   }
 
   /**
@@ -327,6 +412,40 @@ export abstract class PrimitiveOrEnumPropertyBase extends Property {
     if (undefined !== propertyBaseProps.extendedTypeName) {
       this._extendedTypeName = propertyBaseProps.extendedTypeName;
     }
+  }
+  /**
+   * @internal Used in schema editing.
+   */
+  protected setExtendedTypeName(extendedTypeName: string) {
+    this._extendedTypeName = extendedTypeName;
+  }
+
+  /**
+   * @internal Used in schema editing.
+   */
+  protected setMinLength(minLength: number) {
+    this._minLength = minLength;
+  }
+
+  /**
+   * @internal Used in schema editing.
+   */
+  protected setMaxLength(maxLength: number) {
+    this._maxLength = maxLength;
+  }
+
+  /**
+   * @internal Used in schema editing.
+   */
+  protected setMinValue(minValue: number) {
+    this._minValue = minValue;
+  }
+
+  /**
+   * @internal Used in schema editing.
+   */
+  protected setMaxValue(maxValue: number) {
+    this._maxValue = maxValue;
   }
 
   public override async fromJSON(propertyBaseProps: PrimitiveOrEnumPropertyBaseProps) {
@@ -523,6 +642,20 @@ export abstract class ArrayProperty extends Property {
 
   public get minOccurs() { return this._minOccurs; }
   public get maxOccurs() { return this._maxOccurs; }
+
+  /**
+   * @internal Used in schema editing.
+   */
+  protected setMinOccurs(minOccurs: number) {
+    this._minOccurs = minOccurs;
+  }
+
+  /**
+   * @internal Used in schema editing.
+   */
+  protected setMaxOccurs(maxOccurs: number) {
+    this._maxOccurs = maxOccurs;
+  }
 }
 
 // eslint-disable-next-line @typescript-eslint/naming-convention
@@ -575,6 +708,19 @@ const ArrayPropertyMixin = <T extends Constructor<Property>>(Base: T) => {
       return itemElement;
     }
 
+    /**
+     * @internal Used in schema editing.
+     */
+    protected setMinOccurs(minOccurs: number) {
+      this._minOccurs = minOccurs;
+    }
+
+    /**
+     * @internal Used in schema editing.
+    */
+    protected setMaxOccurs(maxOccurs: number) {
+      this._maxOccurs = maxOccurs;
+    }
   } as Constructor<Property> as typeof Base & Constructor<ArrayProperty>;
 };
 

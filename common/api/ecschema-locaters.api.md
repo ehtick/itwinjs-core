@@ -21,6 +21,13 @@ export class FileSchemaKey extends SchemaKey {
 }
 
 // @beta
+export class PublishedSchemaXmlFileLocater extends SchemaXmlFileLocater implements ISchemaLocater {
+    constructor(knownBackendAssetsDir: string);
+    addSchemaSearchPath(_schemaPath: string): void;
+    addSchemaSearchPaths(_schemaPaths: string[]): void;
+}
+
+// @beta
 export abstract class SchemaFileLocater {
     constructor();
     addSchemaSearchPath(schemaPath: string): void;
@@ -52,11 +59,25 @@ export class SchemaJsonFileLocater extends SchemaFileLocater implements ISchemaL
 }
 
 // @beta
+export namespace SchemaXml {
+    export function writeFile(schema: Schema, outputPath: string): Promise<void>;
+    export function writeString(schema: Schema): Promise<string>;
+}
+
+// @beta
 export class SchemaXmlFileLocater extends SchemaFileLocater implements ISchemaLocater {
     getSchema<T extends Schema>(key: SchemaKey, matchType: SchemaMatchType, context: SchemaContext): Promise<T | undefined>;
     getSchemaInfo(schemaKey: SchemaKey, matchType: SchemaMatchType, context: SchemaContext): Promise<SchemaInfo | undefined>;
     getSchemaKey(data: string): SchemaKey;
     getSchemaSync<T extends Schema>(key: SchemaKey, matchType: SchemaMatchType, context: SchemaContext): T | undefined;
+}
+
+// @beta
+export class SchemaXmlStringLocater extends SchemaStringLocater implements ISchemaLocater {
+    getSchema<T extends Schema>(schemaKey: SchemaKey, matchType: SchemaMatchType, context: SchemaContext): Promise<T | undefined>;
+    getSchemaInfo(schemaKey: SchemaKey, matchType: SchemaMatchType, context: SchemaContext): Promise<SchemaInfo | undefined>;
+    getSchemaKey(schemaXml: string): SchemaKey;
+    getSchemaSync<T extends Schema>(schemaKey: SchemaKey, matchType: SchemaMatchType, context: SchemaContext): T | undefined;
 }
 
 // @internal

@@ -199,10 +199,10 @@ export class PropertyMetaData implements PropertyMetaDataProps {
           return jsonObj; // this works even for arrays or strings that are JSON because the parsed JSON is already the right type
 
         case PrimitiveTypeCode.Point2d:
-          return this.createValueOrArray(Point2d.fromJSON, jsonObj);
+          return this.createValueOrArray((obj) => Point2d.fromJSON(obj), jsonObj);
 
         case PrimitiveTypeCode.Point3d:
-          return this.createValueOrArray(Point3d.fromJSON, jsonObj);
+          return this.createValueOrArray((obj) => Point3d.fromJSON(obj), jsonObj);
       }
     }
     if (this.isNavigation)
@@ -219,6 +219,7 @@ export class PropertyMetaData implements PropertyMetaDataProps {
 
 /** @beta */
 export interface EntityMetaDataProps {
+  classId: Id64String;
   ecclass: string;
   description?: string;
   modifier?: string;
@@ -235,6 +236,8 @@ export interface EntityMetaDataProps {
  * @beta
  */
 export class EntityMetaData implements EntityMetaDataProps {
+  /** The Id of the class in the [[IModelDb]] from which the metadata was obtained. */
+  public readonly classId: Id64String;
   /** The Entity name */
   public readonly ecclass: string;
   public readonly description?: string;
@@ -248,6 +251,7 @@ export class EntityMetaData implements EntityMetaDataProps {
   public readonly properties: { [propName: string]: PropertyMetaData };
 
   public constructor(jsonObj: EntityMetaDataProps) {
+    this.classId = jsonObj.classId;
     this.ecclass = jsonObj.ecclass;
     this.description = jsonObj.description;
     this.modifier = jsonObj.modifier;

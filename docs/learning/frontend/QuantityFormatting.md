@@ -45,20 +45,11 @@ To add custom labels use [QuantityFormatter.addAlternateLabels]($frontend) as sh
 A units provider is used to define all available units and provides conversion factors between units. The [QuantityFormatter]($frontend) has a default units provider [BasicUnitsProvider]($frontend) that only defines units needed by the set of QuantityTypes the formatter supports. Most IModels contain a `Units` schema. If this is the case, an SchemaUnitsProvider may be defined when an IModel is opened. The parent application must opt-in to using an IModel specific UnitsProvider using the following technique:
 
 ```ts
-    // Reset QuantityFormatter UnitsProvider with new iModelConnection
-    try{
-      const schemaLocater = new ECSchemaRpcLocater(iModelConnection);
-      const context = new SchemaContext();
-      context.addLocater(schemaLocater);
-      await IModelApp.quantityFormatter.setUnitsProvider(new SchemaUnitProvider(context));
-    } catch (_) {
-      // in case IModel does not have a Units schema reset to use BasicUnitsProvider
-      await IModelApp.quantityFormatter.resetToUseInternalUnitsProvider();
-    }
-
-    // ready to store the IModelConnection in the IModelApps redux store
-    UiFramework.setIModelConnection(iModelConnection, true);
+    const schemaLocater = new ECSchemaRpcLocater(iModelConnection);
+    await IModelApp.quantityFormatter.setUnitsProvider(new SchemaUnitProvider(context));
 ```
+
+If errors occur while configuring the units provider, they are caught within the [QuantityFormatter.setUnitsProvider]($frontend) method, and the code reverts back to the [BasicUnitsProvider] described above.
 
 ### Measure Tools
 
@@ -325,3 +316,38 @@ The composite format below we will provide a unit in meters and produce a format
 #### AlternateUnitLabelsProvider
 
 The [AlternateUnitLabelsProvider]($quantity) interface allows users to specify a set of alternate labels which may be encountered during parsing of strings. By default only the input unit label and the labels of other units in the same Unit Family/Phenomenon, as well as the label of units in a Composite format are used.
+
+### Mathematical operation parsing
+
+The quantity formatter supports parsing mathematical operations. The operation is solved, formatting every values present, according to the specified format. This makes it possible to process several different units at once.
+```Typescript
+// Operation containing many units (feet, inches, yards).
+const mathematicalOperation = "5 ft + 12 in + 1 yd -1 ft 6 in";
+
+// Asynchronous implementation
+const quantityProps = await Parser.parseIntoQuantity(mathematicalOperation, format, unitsProvider);
+quantityProps.magnitude // 7.5 (feet)
+
+// Synchronous implementation
+const parseResult = Parser.parseToQuantityValue(mathematicalOperation, format, feetConversionSpecs);
+parseResult.value // 7.5 (feet)
+```
+
+#### Limitations
+Only plus(`+`) and minus(`-`) signs are supported for now.
+Other operators will end up returning a parsing error or an invalid input result.
+
+#### Usage
+The parsing of mathematical operations is disabled by default.
+To enable it, you can override the default QuantityFormatter. Ex :
+```Typescript
+  // App specific
+  const quantityType = QuantityType.LengthEngineering;
+
+  // Default props for the desired quantityType
+  const props = IModelApp.quantityFormatter.getFormatPropsByQuantityType(quantityType);
+
+  // Override the formatter and enable mathematical operations.
+  await IModelApp.quantityFormatter.setOverrideFormat(quantityType, { ...props, allowMathematicOperations: true });
+```
+

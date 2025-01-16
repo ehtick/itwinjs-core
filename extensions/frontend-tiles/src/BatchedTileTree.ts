@@ -3,37 +3,58 @@
 * See LICENSE.md in the project root for license terms and full copyright notice.
 *--------------------------------------------------------------------------------------------*/
 
-import { BeTimePoint } from "@itwin/core-bentley";
-import { RenderMode, RenderSchedule, ViewFlagOverrides } from "@itwin/core-common";
+import { BeTimePoint, Id64Set, Id64String } from "@itwin/core-bentley";
+import { BatchType, RenderMode, RenderSchedule, ViewFlagOverrides } from "@itwin/core-common";
 import {
-  Tile, TileDrawArgs, TileTree, TileTreeParams,
+  acquireImdlDecoder, ImdlDecoder, IModelApp, Tile, TileDrawArgs, TileTree, TileTreeParams,
 } from "@itwin/core-frontend";
 import { BatchedTile, BatchedTileParams } from "./BatchedTile";
-import { BatchedTilesetReader } from "./BatchedTilesetReader";
+import { BatchedTilesetReader, ModelMetadata } from "./BatchedTilesetReader";
+import { frontendTilesOptions } from "./FrontendTiles";
+
+const defaultViewFlags: ViewFlagOverrides = {
+  renderMode: RenderMode.SmoothShade,
+  visibleEdges: false,
+};
 
 /** @internal */
 export interface BatchedTileTreeParams extends TileTreeParams {
   rootTile: BatchedTileParams;
   reader: BatchedTilesetReader;
   script?: RenderSchedule.Script;
+  models: Map<Id64String, ModelMetadata>;
+  modelGroups: Id64Set[] | undefined;
 }
-
-const viewFlagOverrides: ViewFlagOverrides = {
-  renderMode: RenderMode.SmoothShade,
-  visibleEdges: false,
-};
 
 /** @internal */
 export class BatchedTileTree extends TileTree {
   private readonly _rootTile: BatchedTile;
   public readonly reader: BatchedTilesetReader;
   public readonly scheduleScript?: RenderSchedule.Script;
+  public readonly decoder: ImdlDecoder;
+  public readonly modelGroups: Id64Set[] | undefined;
 
   public constructor(params: BatchedTileTreeParams) {
     super(params);
     this._rootTile = new BatchedTile(params.rootTile, this);
     this.reader = params.reader;
     this.scheduleScript = params.script;
+    this.modelGroups = params.modelGroups;
+
+    this.decoder = acquireImdlDecoder({
+      type: BatchType.Primary,
+      timeline: this.scheduleScript,
+      iModel: this.iModel,
+      batchModelId: this.modelId,
+      is3d: true,
+      containsTransformNodes: false,
+      noWorker: !IModelApp.tileAdmin.decodeImdlInWorker,
+    });
+  }
+
+  public override dispose(): void {
+    this.decoder.release();
+    super.dispose();
   }
 
   public override get rootTile(): BatchedTile {
@@ -49,7 +70,7 @@ export class BatchedTileTree extends TileTree {
   }
 
   public override get viewFlagOverrides(): ViewFlagOverrides {
-    return viewFlagOverrides;
+    return frontendTilesOptions.enableEdges ?{ } : defaultViewFlags;
   }
 
   // eslint-disable-next-line @typescript-eslint/naming-convention

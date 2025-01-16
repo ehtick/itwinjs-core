@@ -11,6 +11,7 @@ import { Entity } from "./Entity";
 import { IModelDb } from "./IModelDb";
 import { ECSqlStatement } from "./ECSqlStatement";
 import { DbResult, Id64String } from "@itwin/core-bentley";
+import { _verifyChannel } from "./internal/Symbols";
 
 /** Argument for the `ElementAspect.onXxx` static methods
  * @beta
@@ -42,17 +43,15 @@ export interface OnAspectIdArg extends OnAspectArg {
  * @public
  */
 export class ElementAspect extends Entity {
-  /** @internal */
   public static override get className(): string { return "ElementAspect"; }
   public element: RelatedElement;
 
-  /** @internal */
+  /** Construct an aspect from its JSON representation and its containing iModel. */
   constructor(props: ElementAspectProps, iModel: IModelDb) {
     super(props, iModel);
     this.element = RelatedElement.fromJSON(props.element)!; // eslint-disable-line @typescript-eslint/no-non-null-assertion
   }
 
-  /** @internal */
   public override toJSON(): ElementAspectProps {
     const val = super.toJSON() as ElementAspectProps;
     val.element = this.element;
@@ -65,7 +64,9 @@ export class ElementAspect extends Entity {
    * @beta
    */
   protected static onInsert(arg: OnAspectPropsArg): void {
-    arg.iModel.channels.verifyChannel(arg.model);
+    const { props, iModel } = arg;
+    iModel.channels[_verifyChannel](arg.model);
+    iModel.locks.checkExclusiveLock(props.element.id, "element", "insert aspect");
   }
 
   /** Called after a new ElementAspect was inserted.
@@ -80,7 +81,9 @@ export class ElementAspect extends Entity {
    * @beta
    */
   protected static onUpdate(arg: OnAspectPropsArg): void {
-    arg.iModel.channels.verifyChannel(arg.model);
+    const { props, iModel } = arg;
+    iModel.channels[_verifyChannel](arg.model);
+    iModel.locks.checkExclusiveLock(props.element.id, "element", "update aspect");
   }
 
   /** Called after an ElementAspect was updated.
@@ -95,7 +98,10 @@ export class ElementAspect extends Entity {
    * @beta
    */
   protected static onDelete(arg: OnAspectIdArg): void {
-    arg.iModel.channels.verifyChannel(arg.model);
+    const { aspectId, iModel } = arg;
+    iModel.channels[_verifyChannel](arg.model);
+    const { element } = iModel.elements.getAspect(aspectId);
+    iModel.locks.checkExclusiveLock(element.id, "element", "delete aspect");
   }
 
   /** Called after an ElementAspect was deleted.
@@ -104,12 +110,10 @@ export class ElementAspect extends Entity {
    */
   protected static onDeleted(_arg: OnAspectIdArg): void { }
 }
-
 /** An Element Unique Aspect is an ElementAspect where there can be only zero or one instance of the Element Aspect class per Element.
  * @public
  */
 export class ElementUniqueAspect extends ElementAspect {
-  /** @internal */
   public static override get className(): string { return "ElementUniqueAspect"; }
 }
 
@@ -117,7 +121,6 @@ export class ElementUniqueAspect extends ElementAspect {
  * @public
  */
 export class ElementMultiAspect extends ElementAspect {
-  /** @internal */
   public static override get className(): string { return "ElementMultiAspect"; }
 }
 
@@ -125,7 +128,6 @@ export class ElementMultiAspect extends ElementAspect {
  * @public
  */
 export class ChannelRootAspect extends ElementUniqueAspect {
-  /** @internal */
   public static override get className(): string { return "ChannelRootAspect"; }
   /** Insert a ChannelRootAspect on the specified element.
    * @deprecated in 4.0 use [[ChannelControl.makeChannelRoot]]. This method does not enforce the rule that channels may not nest and is therefore dangerous.
@@ -141,7 +143,6 @@ export class ChannelRootAspect extends ElementUniqueAspect {
  * @public
  */
 export class ExternalSourceAspect extends ElementMultiAspect {
-  /** @internal */
   public static override get className(): string { return "ExternalSourceAspect"; }
 
   /** An element that scopes the combination of `kind` and `identifier` to uniquely identify the object from the external source.
@@ -168,7 +169,7 @@ export class ExternalSourceAspect extends ElementMultiAspect {
   /** The source of the imported/synchronized object. Should point to an instance of [ExternalSource]($backend). */
   public source?: RelatedElement;
 
-  /** @internal */
+  /** Construct an aspect from its JSON representation and its containing iModel. */
   constructor(props: ExternalSourceAspectProps, iModel: IModelDb) {
     super(props, iModel);
     this.scope = RelatedElement.fromJSON(props.scope)!; // eslint-disable-line @typescript-eslint/no-non-null-assertion
@@ -223,7 +224,6 @@ export class ExternalSourceAspect extends ElementMultiAspect {
     return found;
   }
 
-  /** @internal */
   public override toJSON(): ExternalSourceAspectProps {
     const val = super.toJSON() as ExternalSourceAspectProps;
     val.scope = this.scope;
@@ -247,7 +247,7 @@ export class ExternalSourceAspect extends ElementMultiAspect {
 }
 
 /** @public */
-export namespace ExternalSourceAspect { // eslint-disable-line no-redeclare
+export namespace ExternalSourceAspect {
   /** Standard values for the `Kind` property of `ExternalSourceAspect`.
    * @public
    */

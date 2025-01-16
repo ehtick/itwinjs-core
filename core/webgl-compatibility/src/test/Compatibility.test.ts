@@ -34,7 +34,7 @@ class OverriddenFunctions {
       const ctx = this.origCreateContext(canvas, useWebGL2, useContextAttributes ? attr : undefined);
       if (undefined !== ctx && undefined !== newGetParameter) {
         const origGetParameter = ctx.getParameter; // eslint-disable-line @typescript-eslint/unbound-method
-        ctx.getParameter = (pname: number) => { // eslint-disable-line @typescript-eslint/unbound-method
+        ctx.getParameter = (pname: number) => {
           const result = newGetParameter(ctx, pname);
           if (result !== undefined)
             return result;
@@ -51,7 +51,7 @@ class OverriddenFunctions {
   }
 }
 
-// NB: These tests run in chromium via puppeteer. On non-Windows platforms, it uses software rendering. On Windows, it uses hardware rendering if available.
+// NB: These tests run in chromium via playwright. On non-Windows platforms, it uses software rendering. On Windows, it uses hardware rendering if available.
 describe("Render Compatibility", () => {
   let overriddenFunctions: OverriddenFunctions;
 

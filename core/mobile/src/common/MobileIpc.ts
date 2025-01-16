@@ -16,7 +16,7 @@ import { MobileRpcRequest } from "./MobileRpcRequest";
 
 const IPC = "__ipc__";
 
-class IpcInterface extends RpcInterface { // eslint-disable-line deprecation/deprecation
+class IpcInterface extends RpcInterface {
   public static interfaceName = IPC;
   public static interfaceVersion = "0.0.0";
   public async send() { }
@@ -39,7 +39,7 @@ export class MobileIpcTransport extends IpcWebSocketTransport {
     if (message.type === IpcWebSocketMessageType.Send || message.type === IpcWebSocketMessageType.Invoke) {
       this.sendToBackend(message); // eslint-disable-line @typescript-eslint/no-floating-promises
     } else if (message.type === IpcWebSocketMessageType.Push || message.type === IpcWebSocketMessageType.Response) {
-      this.sendToFrontend(message); // eslint-disable-line @typescript-eslint/no-floating-promises
+      this.sendToFrontend(message);
     }
   }
 
@@ -68,9 +68,9 @@ export class MobileIpcTransport extends IpcWebSocketTransport {
     request.dispose();
   }
 
-  private async sendToFrontend(message: IpcWebSocketMessage) {
+  private sendToFrontend(message: IpcWebSocketMessage) {
     MobileEventLoop.addTask();
-    const result = await RpcMarshaling.serialize(this._protocol, message);
+    const result = RpcMarshaling.serialize(this._protocol, message);
     MobileEventLoop.removeTask();
 
     const fulfillment: RpcRequestFulfillment = { result, rawResult: message, interfaceName: IPC, id: message.channel, status: 0 };

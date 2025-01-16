@@ -11,9 +11,8 @@ import { BentleyError, GuidString, Logger } from "@itwin/core-bentley";
 import { RpcActivity } from "@itwin/core-common";
 import { TelemetryClientLoggerCategory } from "./TelemetryClientLoggerCategory";
 
-/**
- * @alpha
- * Represents a particular occurrence of an event that can be tracked through various telemetry services
+/** Represents a particular occurrence of an event that can be tracked through various telemetry services
+ * @internal
  */
 export class TelemetryEvent {
   public constructor(
@@ -55,12 +54,12 @@ export class TelemetryEvent {
   }
 }
 
-/** @alpha */
+/** @internal */
 export interface TelemetryClient {
-  postTelemetry(requestContext: RpcActivity, telemetryEvent: TelemetryEvent): Promise<void>; // eslint-disable-line deprecation/deprecation
+  postTelemetry(requestContext: RpcActivity, telemetryEvent: TelemetryEvent): Promise<void>;
 }
 
-/** @alpha */
+/** @internal */
 export class TelemetryManager {
   protected readonly _clients: Set<TelemetryClient>;
 
@@ -68,7 +67,7 @@ export class TelemetryManager {
     this._clients = new Set<TelemetryClient>(clients);
   }
 
-  public async postTelemetry(requestContext: RpcActivity, telemetryEvent: TelemetryEvent): Promise<void> { // eslint-disable-line deprecation/deprecation
+  public async postTelemetry(requestContext: RpcActivity, telemetryEvent: TelemetryEvent): Promise<void> {
     const postPerClient = async (subClient: TelemetryClient) => {
       try {
         await subClient.postTelemetry(requestContext, telemetryEvent);

@@ -12,6 +12,7 @@ export * from "./BriefcaseTxns";
 export * from "./CategorySelectorState";
 export * from "./ChangeFlags";
 export * from "./CheckpointConnection";
+export * from "./common";
 export * from "./ContextRealityModelState";
 export * from "./CoordSystem";
 export * from "./DecorationsCache";
@@ -24,20 +25,14 @@ export * from "./EntityState";
 export * from "./EnvironmentDecorations";
 export * from "./FeatureOverrideProvider";
 export * from "./FlashSettings";
-export * from "./FrontendLoggerCategory";
 export * from "./FrontendHubAccess";
 export * from "./Frustum2d";
 export * from "./FrustumAnimator";
 export * from "./FuzzySearch";
 export * from "./GeoServices";
 export * from "./GlobeAnimator";
-export * from "./gltf/GltfSchema";
 export * from "./GraphicalEditingScope";
 export * from "./HitDetail";
-export * from "./ImageUtil";
-export * from "./imdl/ImdlSchema";
-export * from "./imdl/ImdlModel";
-export * from "./imdl/ImdlParser";
 export * from "./IModelApp";
 export * from "./IModelConnection";
 export * from "./IModelRoutingContext";
@@ -55,6 +50,7 @@ export * from "./PerModelCategoryVisibility";
 export * from "./PlanarClipMaskState";
 export * from "./SelectionSet";
 export * from "./SheetViewState";
+export * from "./SpatialClassifiersState";
 export * from "./SpatialViewState";
 export * from "./Sprites";
 export * from "./StandardView";
@@ -70,7 +66,6 @@ export * from "./ViewManager";
 export * from "./Viewport";
 export * from "./ViewportSync";
 export * from "./ViewPose";
-export * from "./ViewRect";
 export * from "./ViewState";
 export * from "./ViewStatus";
 export * from "./extension/Extension";
@@ -84,33 +79,43 @@ export * from "./quantity-formatting/BaseUnitFormattingSettingsProvider";
 export * from "./quantity-formatting/LocalUnitFormatProvider";
 export * from "./quantity-formatting/QuantityTypesEditorSpecs";
 export * from "./render/CanvasDecoration";
+export * from "./render/CreateRenderMaterialArgs";
+export * from "./render/CreateTextureArgs";
 export * from "./render/Decorations";
 export * from "./render/FeatureSymbology";
 export * from "./render/FrameStats";
 export * from "./render/GraphicBranch";
 export * from "./render/GraphicBuilder";
-export * from "./render/GraphicPrimitive";
-export * from "./render/InstancedGraphicParams";
+export * from "./render/GraphicTemplate";
+export * from "./render/MeshArgs";
 export * from "./render/MockRender";
 export * from "./render/ParticleCollectionBuilder";
 export * from "./render/Pixel";
+export * from "./render/PolylineArgs";
 export * from "./render/RealityMeshGraphicParams";
 export * from "./render/RealityMeshParams";
 export * from "./render/RenderClipVolume";
 export * from "./render/RenderGraphic";
-export * from "./render/RenderMaterial";
 export * from "./render/RenderMemory";
 export * from "./render/RenderPlan";
 export * from "./render/RenderPlanarClassifier";
-export * from "./render/RenderTarget";
 export * from "./render/RenderSystem";
-export * from "./render/RenderTexture";
+export * from "./render/RenderTarget";
 export * from "./render/Scene";
 export * from "./render/ScreenSpaceEffectBuilder";
 export * from "./render/VisibleFeature";
+export * from "./render/webgl/IModelFrameLifecycle";
 export * from "./render/webgl/PerformanceMetrics";
 export * from "./render/webgl/Target";
-export * from "./render/webgl/IModelFrameLifecycle";
+export type {
+  TxnEntityChange,
+  TxnEntityChangeIterable,
+  TxnEntityChangeType,
+  TxnEntityChanges,
+  TxnEntityChangesFilterOptions,
+  TxnEntityMetadata,
+  TxnEntityMetadataCriterion,
+} from "./TxnEntityChanges";
 export * from "./tile/internal";
 export * from "./tools/AccuDrawTool";
 export * from "./tools/ClipViewTool";
@@ -126,11 +131,16 @@ export * from "./tools/ToolSettings";
 export * from "./tools/ToolAdmin";
 export * from "./tools/ToolAssistance";
 export * from "./tools/ViewTool";
+export * from "./workers/RegisterWorker";
 export * from "./BackgroundMapGeometry";
 export * from "./ViewCreator2d";
 export * from "./ViewCreator3d";
 export * from "./LocalhostIpcApp";
+export * from "./request/utils";
 export * from "./RealityDataSource";
+
+export * from "./internal/cross-package";
+
 // TODO/FIX: "./extension/ExtensionRuntime" import has to be last to avoid circular dependency errors.
 import "./extension/ExtensionRuntime";
 

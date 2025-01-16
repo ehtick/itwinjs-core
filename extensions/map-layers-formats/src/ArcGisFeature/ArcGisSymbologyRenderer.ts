@@ -5,183 +5,110 @@
 
 import { Logger } from "@itwin/core-bentley";
 import { ColorDef } from "@itwin/core-common";
+import { EsriClassBreaksRenderer, EsriPMS, EsriRenderer, EsriSFS, EsriSimpleRenderer, EsriSLS, EsriSLSStyle, EsriSMS, EsriSymbol, EsriUniqueValueRenderer } from "./EsriSymbology";
+import { FeatureAttributeDrivenSymbology, FeatureSymbologyRenderer } from "@itwin/core-frontend";
+import { Angle } from "@itwin/core-geometry";
+import { FeatureDefaultSymbology } from "../Feature/FeatureSymbology";
 import { ArcGisFeatureGeometryType } from "./ArcGisFeatureQuery";
 
-// Convert a channel array [r, g, b, a] to ColorDef
-function colorFromArray(channels?: number[]) {
-  if (channels && channels.length === 4) {
-    // Alpha channel is reversed, 255 = opaque
-    return ColorDef.from(channels[0], channels[1], channels[2], 255 - channels[3]);
-  }
-  return undefined;
-}
-
+/** @internal */
 const loggerCategory =  "MapLayersFormats.ArcGISFeature";
 
 /** @internal */
-export type EsriSymbolType = "esriSFS" | "esriPMS" | "esriSLS" | "esriSMS" | "esriTS" | "CIMSymbolReference";
-interface EsriSymbol {
-  type: EsriSymbolType;
+export type ArcGisSymbologyRendererType = "simple" | "attributeDriven";
+
+/** Feature Symbology renderer applicable to an HTML 2D Canvas
+ * @internal
+ */
+export interface FeatureSymbologyCanvasRenderer extends FeatureSymbologyRenderer {
+  applyFillStyle(context: CanvasRenderingContext2D): void;
+  applyStrokeStyle(context: CanvasRenderingContext2D): void;
+  drawPoint(context: CanvasRenderingContext2D, ptX: number, ptY: number): void;
 }
 
 /** @internal */
-export type EsriSLSStyle = "esriSLSDash" | "esriSLSDashDot" | "esriSLSDashDotDot" | "esriSLSDot" | "esriSLSLongDash" | "esriSLSLongDashDot" |
-"esriSLSNull" | "esriSLSShortDash" | "esriSLSShortDashDot" | "esriSLSShortDashDotDot" | "esriSLSShortDot" | "esriSLSSolid";
+export abstract class ArcGisSymbologyCanvasRenderer implements FeatureSymbologyCanvasRenderer {
 
-interface EsriSLSProps {
-  color: number[];
-  type: EsriSymbolType;
-  width: number;
-  style: EsriSLSStyle;
-}
+  public abstract readonly renderer?: EsriRenderer;
 
-/** @internal */
-export class EsriSLS implements EsriSymbol {
-  public readonly props: EsriSLSProps;
+  public abstract get symbol(): EsriSymbol;
+  public abstract set symbol(symbol: EsriSymbol|undefined);
+  public abstract get defaultSymbol(): EsriSymbol;
+  public activeGeometryType: string = "";
+  public abstract isAttributeDriven(): this is FeatureAttributeDrivenSymbology;
+  public abstract applyFillStyle(context: CanvasRenderingContext2D): void;
+  public abstract applyStrokeStyle(context: CanvasRenderingContext2D): void;
+  public abstract drawPoint(context: CanvasRenderingContext2D, ptX: number, ptY: number): void;
 
-  public get color() { return colorFromArray(this.props.color); }
-  public get type() { return this.props.type; }
-  public get width() { return this.props.width; }
-  public get style() { return this.props.style; }
-
-  constructor(json: EsriSLSProps) {
-    this.props = json;
-  }
-
-  public static fromJSON(json: EsriSLSProps) {
-    return new EsriSLS(json);
-  }
-}
-
-interface EsriPMSProps {
-  type: EsriSymbolType;
-  url: string;
-  imageData: string;
-  contentType: string;
-  width?: number;
-  height?: number;
-  xoffset?: number;
-  yoffset?: number;
-  angle?: number;
-}
-
-/** @internal */
-export class EsriPMS implements EsriSymbol {
-  public readonly props: EsriPMSProps;
-  private _image: HTMLImageElement;
-
-  public get type() { return this.props.type; }
-  public get url() { return this.props.url; }
-  public get imageData() { return this.props.imageData; }
-  public get imageUrl() { return `data:${this.contentType};base64,${this.imageData}`; }
-  public get image() { return this._image; }
-  public get contentType() { return this.props.contentType; }
-  public get width() { return this.props.width; }
-  public get height() { return this.props.height; }
-  public get xoffset() { return this.props.xoffset; }
-  public get yoffset() { return this.props.yoffset; }
-  public get angle() { return this.props.angle; }
-
-  constructor(json: EsriPMSProps) {
-    this.props = json;
-    this._image = new Image();
-    this._image.src = this.imageUrl;
-  }
-
-  public static fromJSON(json: EsriPMSProps) {
-    return new EsriPMS(json);
-  }
-}
-
-/** @internal */
-export type EsriSFSStyleProps = "esriSFSBackwardDiagonal" | "esriSFSCross" | "esriSFSDiagonalCross" | "esriSFSForwardDiagonal" | "esriSFSHorizontal" | "esriSFSNull" | "esriSFSSolid" | "esriSFSVertical";
-interface EsriSFSProps {
-  color?: number[];
-  type: EsriSymbolType;
-  style: EsriSFSStyleProps;
-  outline?: EsriSLSProps;
-}
-
-/** @internal */
-export class EsriSFS implements EsriSymbol {
-  public readonly props: EsriSFSProps;
-  private _outline: EsriSLS | undefined;
-
-  public get color() { return colorFromArray(this.props.color); }
-  public get type() { return this.props.type; }
-  public get style() { return this.props.style; }
-  public get outline() { return this._outline; }
-  constructor(json: EsriSFSProps) {
-    this.props = json;
-    if (json.outline)
-      this._outline = EsriSLS.fromJSON(json.outline);
-  }
-
-  public static fromJSON(json: EsriSFSProps): EsriSFS {
-    return new EsriSFS(json);
-  }
-}
-
-/** @internal */
-export class ArcGisSymbologyRenderer {
-  private _symbol: EsriSymbol | undefined;
-
-  private static readonly defaultPMS: EsriPMSProps = {
-    type: "esriPMS",
-    url: "",
-    contentType: "image/png",
-    imageData: "iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAAXNSR0IArs4c6QAAAmBJREFUOE+Nk01IVFEUx//n3jfvOZOaJkMtiiJ7o9RG3LgoqKhFSFJBTS1ahFBBi0ijfJXCIyQr+hBbSIsoW7iQoKKFCw2CkAI3tZAgy8Ei+xhoTCbnje/NPfHGnA816KzuPR+/c8/HJRQJE7o+VUhym0DcCOYGgBQEXjOLlyqo+nHanCkMoaL4rslKjZwOQLT4ek3Mmz3FACFNLB67ut6M1nWphbg8wI6VyJK5KEH0EQFVJRKbwzokAW++p/ErraAYSQK3u47bC3vLnA+ZB9i2gHF0oyQMCfCGNaUa+vauxs71wWz2V18cnBj8gQ8J1/eeBnHUa4sMFQDGdGno+4gwEAoQzjVUon3rqlx1KY9x7+0MWobjAPg3QJ2eZV4tAEyFNCN5FkSXyw2B3j1hRGvLcgBXMV5MptA4MOXr0gT0u5bZnAf0jBsyiSgJPAxqhON1K3FlRxUMvwFAtv7u0Wl0jvwEmJNEuOhakTt5wKEBifr6Oo14BIBRpgt07w6jcVMIngKGY7NofR5HwlF+zDcpsC193vyYB/innvHywCzdZfAR/+onX1segBTAxHzzfPE7/8yzzIPLjJE1LTixHZx5CtCK4gXLzovBiDPUsYxVM7gUkB3nWKlm6DYEnQGzXARxCOK+a1WfKtQXb6LNAvr7iCboCUA1Ocdsdv5KLPe7F6pH/w3wLbc+BwOuc5IZ1wEE/jonQbjptZn24tKKX7BgvR2r0NKZRwDvAqCI+Z30VJPTURv7P4A9psuQcYAUPwAoReBLrmX2Lmls7i8sZ7kWLwuoxA1FVJGxzMPLufi6P2r+2xFbOUjGAAAAAElFTkSuQmCC",
-    width: 16,
-    height: 16,
-    xoffset: -8,
-    yoffset: -16,
-  };
-
-  private static readonly defaultSLS: EsriSLSProps = {
-    type: "esriSLS",
-    color: [0, 0, 0, 255],
-    width: 1,
-    style: "esriSLSSolid",
-  };
-
-  private static readonly defaultSFS: EsriSFSProps = {
-    type: "esriSFS",
-    color:  [0, 0, 0, 255],
-    style: "esriSFSSolid",
-  };
-
-  constructor(geometryType: ArcGisFeatureGeometryType, rendererDefinition: any) {
-    let symbol;
-    if (rendererDefinition?.symbol !== undefined) {
-      symbol = rendererDefinition.symbol;
-    } else if (rendererDefinition?.defaultSymbol !== undefined) {
-      symbol = rendererDefinition?.defaultSymbol;
+  public static create(renderer: EsriRenderer|undefined, defaultSymbol: FeatureDefaultSymbology, geometryType?: ArcGisFeatureGeometryType): ArcGisSymbologyCanvasRenderer {
+    if (renderer?.type === "uniqueValue") {
+      return new ArcGisUniqueValueSymbologyRenderer(renderer as EsriUniqueValueRenderer, defaultSymbol, geometryType);
+    } else if (renderer?.type === "classBreaks") {
+      return new ArcGisClassBreaksSymbologyRenderer(renderer as EsriClassBreaksRenderer, defaultSymbol, geometryType);
+    } else {
+      return new ArcGisSimpleSymbologyRenderer(renderer, defaultSymbol, geometryType);
     }
+  }
+}
 
-    if (symbol !== undefined) {
-      if (symbol.type === "esriSFS") {
-        this._symbol = EsriSFS.fromJSON(symbol);
-      } else if (symbol.type === "esriSLS") {
-        this._symbol = EsriSLS.fromJSON(symbol);
-      } else if (symbol.type === "esriPMS") {
-        this._symbol = EsriPMS.fromJSON(symbol);
-      }
-    }
+/** @internal */
+export class ArcGisDashLineStyle {
+  // ESRI does not provide any values for their line style definition, those values have been
+  // determined by pixel-peeping tiles rendered by ArcGIS servers.
+  // Available line styles are documented here: https://developers.arcgis.com/web-map-specification/objects/esriSLS_symbol/
+  private static _dashLineLength = 6;
+  private static _dashGapLength = 3;
+  private static _dashShortLineLength = 3;
+  private static _dashShortGapLength = 3;
+  private static _dashLongLineLength = 12;
+  private static _dashLongLineDotDotLength = 18;
+  private static _dashLongGapLength = 6;
+  private static _dotLineLength = 2;
+  private static _dotGapLength = 3;
+  private static _shortDotLineLength = 1;
+  private static _shortDotGapLength = 2;
+  public static dashValues = {
+    esriSLSDash : [this._dashLineLength, this._dashGapLength],
+    esriSLSDashDot : [this._dashLineLength, this._dotGapLength, this._dotLineLength, this._dotGapLength],
+    esriSLSDashDotDot : [this._dashLongLineLength, this._dotGapLength, this._dotLineLength, this._dotGapLength, this._dotLineLength, this._dotGapLength],
+    esriSLSDot : [this._dashLineLength, this._dotGapLength],
+    esriSLSLongDash : [this._dashLongLineLength, this._dashLongGapLength],
+    esriSLSLongDashDot : [this._dashLongLineDotDotLength, this._dashGapLength, this._dotLineLength, this._dashGapLength],
+    esriSLSShortDash : [this._dashShortLineLength, this._dashShortGapLength],
+    esriSLSShortDashDot : [this._dashShortLineLength, this._dashShortGapLength, this._dotLineLength, this._dashShortGapLength],
+    esriSLSShortDashDotDot :  [this._dashLineLength, this._dashShortGapLength, this._dotLineLength, this._dashGapLength, this._dotLineLength, this._dashShortGapLength],
+    esriSLSShortDot : [this._shortDotLineLength, this._shortDotGapLength],
+  };
 
-    // If '_symbol' is still undefined at this point, that means we could not find
-    // any symbology definition from the metadata, let's use some default symbology
-    // so that we display at least something.
-    if (this._symbol === undefined) {
-      Logger.logWarning(loggerCategory, "Symbology definition not supported, using default symbology");
-      if (geometryType === "esriGeometryPoint" || geometryType === "esriGeometryMultipoint") {
-        this._symbol = EsriPMS.fromJSON(ArcGisSymbologyRenderer.defaultPMS);
-      } else if (geometryType === "esriGeometryLine" || geometryType === "esriGeometryPolyline") {
-        this._symbol = EsriSLS.fromJSON(ArcGisSymbologyRenderer.defaultSLS);
-      } else if (geometryType === "esriGeometryPolygon") {
-        this._symbol = EsriSFS.fromJSON(ArcGisSymbologyRenderer.defaultSFS);
-      } else {
-        Logger.logError(loggerCategory, "Could not determine default symbology: geometry type not supported");
-      }
+}
+
+/** @internal */
+export class ArcGisSimpleSymbologyRenderer extends ArcGisSymbologyCanvasRenderer {
+
+  protected _symbol: EsriSymbol|undefined;
+  protected _defaultSymbol: FeatureDefaultSymbology;
+
+  public override isAttributeDriven(): this is FeatureAttributeDrivenSymbology {return false;}
+  public lineWidthScaleFactor = 2;    // This is value is empirical, this might need to be adjusted
+
+  public get symbol(): EsriSymbol {return (this._symbol ?? this.defaultSymbol);}
+  public set symbol(symbol: EsriSymbol|undefined) {this._symbol = symbol;}
+
+  public get defaultSymbol() {return this._defaultSymbol.getSymbology(this.activeGeometryType) as EsriSymbol;}
+  public override readonly renderer?: EsriRenderer;
+
+  public constructor(renderer: EsriRenderer|undefined, defaultSymbol: FeatureDefaultSymbology, geometryType?: ArcGisFeatureGeometryType) {
+    super();
+    this._defaultSymbol = defaultSymbol;
+
+    // ArcGIS service normally advertise upfront he geometry of all features.  It's always possible to opt-out, but then
+    // you will have to set the activeGeometryType before rendering.
+    if (geometryType)
+      this.activeGeometryType = geometryType;
+    this.renderer = renderer;
+
+    if (this.renderer?.type === "simple") {
+      this._symbol = (this.renderer as EsriSimpleRenderer).symbol;
     }
   }
 
@@ -189,13 +116,35 @@ export class ArcGisSymbologyRenderer {
     if (!context)
       return;
 
-    if (this._symbol?.type === "esriSFS") {
-      const sfs = this._symbol as EsriSFS;
-      if (sfs.style === "esriSFSSolid" && sfs.color) {
-        context.fillStyle = sfs.color.toRgbaString();
-      } else {
-        context.fillStyle = ColorDef.from(200, 0, 0, 100).toRgbaString();  // default color is red?
+    const fillColor = this.getFillColor();
+    if (fillColor) {
+      context.fillStyle = fillColor.toRgbaString();
+    } else {
+      Logger.logTrace(loggerCategory, `Could not apply fill style`);
+    }
+  }
+
+  private getFillColor() {
+    const symbol = this.symbol;
+    let fillColor: ColorDef | undefined;
+    if (symbol.type === "esriSFS") {
+      const sfs = symbol as EsriSFS;
+      if (sfs.color) {
+        fillColor = sfs.color;
       }
+    } else  if (symbol.type === "esriSMS") {
+      const sms = symbol as EsriSMS;
+      if (sms.color) {
+        fillColor = sms.color;
+      }
+    }
+
+    return fillColor;
+  }
+
+  private applyLineDash(context: CanvasRenderingContext2D, slsStyle: EsriSLSStyle) {
+    if (slsStyle !== "esriSLSSolid" && slsStyle !== "esriSLSNull") {
+      context.setLineDash(ArcGisDashLineStyle.dashValues[slsStyle]);
     }
   }
 
@@ -203,47 +152,316 @@ export class ArcGisSymbologyRenderer {
     if (!context)
       return;
 
+    // Stroke style can be from SFS's outline style or a SLS's color
     let sls: EsriSLS | undefined;
-    if (this._symbol?.type === "esriSFS") {
-      const sfs = this._symbol as EsriSFS;
-      if (sfs.outline && sfs.outline.style === "esriSLSSolid") {
+    const symbol = this.symbol;
+    if (symbol.type === "esriSFS") {
+      const sfs = this.symbol as EsriSFS;
+      if (sfs.outline) {
         sls = sfs.outline;
       }
-    } else if (this._symbol?.type === "esriSLS") {
-      sls = this._symbol as EsriSLS;
+    } else if (symbol.type === "esriSLS") {
+      sls = this.symbol as EsriSLS;
+    } else if (symbol.type === "esriSMS") {
+      const sms = this.symbol as EsriSMS;
+      if (sms.outline) {
+        sls = sms.outline;
+      }
     }
 
     if (sls) {
-      if (sls.color)
+
+      context.lineWidth = (sls.width > 0 ? sls.width : 1);
+      if (symbol.type === "esriSLS")
+        context.lineWidth *= this.lineWidthScaleFactor;
+      if (sls.color) {
         context.strokeStyle = sls.color.toRgbaString();
-      context.lineWidth = sls.width;     // TODO: Should we scale this value here?
+      }
+      if (sls.style) {
+        this.applyLineDash(context, sls.style);
+      }
+    } else {
+      Logger.logTrace(loggerCategory, `Could not apply stroke style`);
     }
+
+  }
+  /**
+  * Draw a simple marker
+  * @param x x-axis coordinate in the destination canvas at which to place the center of the marker
+  * @param y y-axis coordinate in the destination canvas at which to place the center of the marker
+  * @param size size of the marker
+  * @public
+  */
+  public drawSimpleMarker(context: CanvasRenderingContext2D, sms: EsriSMS, x: number, y: number, size: number) {
+    const halfSize = sms.size * 0.5;
+    if (sms.angle) {
+      context.save();
+      context.translate(x,y);
+      const angle = Angle.createDegrees(sms.angle);
+      context.rotate(angle.radians);
+      context.translate(-x,-y);
+    }
+
+    if (sms.style === "esriSMSSquare") {
+
+      const dx = x + (-0.5 * size);
+      const dy = y + (-0.5 * size);
+      if (sms.color) {
+        this.applyFillStyle(context);
+        context.fillRect(dx, dy, size, size);
+      }
+      if (sms.outline) {
+        this.applyStrokeStyle(context);
+        context.strokeRect(dx, dy, size, size);
+      }
+
+    } else if (sms.style === "esriSMSCircle") {
+      context.beginPath();
+      context.arc(x, y, size*0.5, 0, 2*Math.PI);
+      context.closePath();
+      if (sms.color) {
+        this.applyFillStyle(context);
+        context.fill();
+      }
+      if (sms.outline) {
+        this.applyStrokeStyle(context);
+        context.stroke();
+      }
+    } else if (sms.style === "esriSMSCross") {
+      context.beginPath();
+      context.moveTo(x-halfSize, y);
+      context.lineTo(x+halfSize, y);
+      context.moveTo(x, y-halfSize);
+      context.lineTo(x, y+halfSize);
+      if (sms.outline) {
+        this.applyStrokeStyle(context);
+      }
+      context.stroke();
+    } else if (sms.style === "esriSMSDiamond") {
+      context.beginPath();
+
+      context.moveTo(x, y-halfSize);
+      context.lineTo(x+halfSize, y);
+      context.lineTo(x, y+halfSize);
+      context.lineTo(x-halfSize, y);
+      context.closePath();
+      if (sms.color) {
+        this.applyFillStyle(context);
+        context.fill();
+      }
+      if (sms.outline) {
+        this.applyStrokeStyle(context);
+      }
+      context.stroke();
+    } else if (sms.style === "esriSMSTriangle") {
+      context.beginPath();
+      context.moveTo(x, y-halfSize);
+      context.lineTo(x+halfSize, y+halfSize);
+      context.lineTo(x-halfSize, y+halfSize);
+
+      context.closePath();
+      if (sms.color) {
+        this.applyFillStyle(context);
+        context.fill();
+      }
+      if (sms.outline) {
+        this.applyStrokeStyle(context);
+      }
+      context.stroke();
+    } else if(sms.style === "esriSMSX") {
+      context.beginPath();
+      context.moveTo(x-halfSize, y-halfSize);
+      context.lineTo(x+halfSize, y+halfSize);
+      context.moveTo(x-halfSize, y+halfSize);
+      context.lineTo(x+halfSize, y-halfSize);
+      if (sms.outline) {
+        this.applyStrokeStyle(context);
+      }
+      context.stroke();
+    }
+    if (sms.angle)
+      context.restore();
   }
 
   public drawPoint(context: CanvasRenderingContext2D, ptX: number, ptY: number) {
     if (!context)
       return;
 
-    if (this._symbol?.type === "esriPMS") {
-      const pms = this._symbol as EsriPMS;
+    const symbol = this.symbol;
+
+    if (symbol.type === "esriPMS") {
+      const pms = this.symbol as EsriPMS;
+      const angleDegrees = pms.angle;
+
+      // We scale up a little a bit the size of symbol.
+      // const width = pms.width === undefined ? pms.width : pms.width * 1.25;
+      // const height = pms.height === undefined ? pms.height : pms.height * 1.25;
+      const width =  pms.width;
+      const height = pms.height;
+
       let xOffset = 0, yOffset = 0;
+
+      // Center the marker around the anchor point
+      if (width)
+        xOffset = width * -0.5;
+      if (height)
+        yOffset = height * -0.5;
+
+      // Add additional offset
       if (pms.xoffset)
-        xOffset = pms.xoffset;
-      else if (pms.width)
-        xOffset = pms.width * -0.5;  // if no offset center in the middle
-
+        xOffset += pms.xoffset;
       if (pms.yoffset)
-        yOffset = pms.yoffset;
-      else if (pms.height)
-        yOffset = pms.height * -0.5; // if no offset center in the middle
+        yOffset += pms.yoffset;
 
-      if (pms.width && pms.height) {
-        context.drawImage(pms.image, ptX + xOffset, ptY + yOffset, pms.width, pms.height);
-      } else {
-        context.drawImage(pms.image, ptX + xOffset, ptY + yOffset);
+      const dx = ptX + xOffset;
+      const dy = ptY + yOffset;
+
+      if (angleDegrees) {
+        context.save();
+        context.translate(ptX, ptY);
+        const angle = Angle.createDegrees(angleDegrees);
+        context.rotate(angle.radians);
+        context.translate(-ptX, -ptY);
       }
 
-      // TODO: marker rotation angle
+      if (width && height) {
+        context.drawImage(pms.image, dx, dy, width, height);
+      } else {
+        context.drawImage(pms.image, dx, dy);
+      }
+
+      if (angleDegrees)
+        context.restore();
+
+    } else if (symbol.type === "esriSMS") {
+      const sms = this.symbol as EsriSMS;
+
+      let xOffset = 0;
+      let yOffset = 0;
+
+      if (sms.xoffset)
+        xOffset += sms.xoffset;
+
+      if (sms.yoffset)
+        yOffset += sms.yoffset;
+
+      this.drawSimpleMarker(context, sms, ptX + xOffset, ptY + yOffset, sms.size);
+    }
+  }
+}
+
+/** @internal */
+export class ArcGisUniqueValueSymbologyRenderer extends ArcGisSimpleSymbologyRenderer implements FeatureAttributeDrivenSymbology {
+  public override isAttributeDriven(): this is FeatureAttributeDrivenSymbology {return true;}
+  protected _activeFeatureAttributes:  {[key: string]: any} | undefined;
+  protected uvRenderer: EsriUniqueValueRenderer;
+  private _defaultRenderSymbol: EsriSymbol|undefined;
+
+  public override get defaultSymbol() {return this._defaultRenderSymbol ?? super.defaultSymbol;}
+
+  public get rendererFields() {
+    if (this.uvRenderer.field1)
+      return [this.uvRenderer.field1];
+    else
+      return undefined;
+  }
+
+  public  constructor(renderer: EsriUniqueValueRenderer, defaultSymbol: FeatureDefaultSymbology, geometryType?: ArcGisFeatureGeometryType) {
+    super(renderer, defaultSymbol, geometryType);
+
+    this.uvRenderer = (this.renderer as EsriUniqueValueRenderer);
+    this._defaultRenderSymbol = this.uvRenderer.defaultSymbol;
+  }
+
+  public setActiveFeatureAttributes(attributes: { [key: string]: any }) {
+    this._activeFeatureAttributes = attributes;
+
+    let newSymbolApplied = false;
+    if (this._activeFeatureAttributes) {
+      if (this.uvRenderer.field1 && Object.keys(this._activeFeatureAttributes).includes(this.uvRenderer.field1)) {
+
+        const queryValue = this._activeFeatureAttributes[this.uvRenderer.field1];
+
+        if (queryValue !== null && queryValue !== undefined) {
+          for (const uvi of this.uvRenderer.uniqueValueInfos) {
+          // Strangely, ArcGIS documentation says 'value' is a string,
+          // not too sure if a comparison on other types is possible, or its always forced to string properties?
+            if (uvi.value  === queryValue.toString()) {
+              this.symbol = uvi.symbol ;
+              newSymbolApplied = true;
+              break;
+            }
+          }
+        }
+      }
+    }
+
+    // Fallback to default symbology to make sure we render something
+    if (!newSymbolApplied) {
+      this.symbol = undefined;
+    }
+  }
+}
+
+/** @internal */
+export class ArcGisClassBreaksSymbologyRenderer extends ArcGisSimpleSymbologyRenderer implements FeatureAttributeDrivenSymbology {
+  public override isAttributeDriven(): this is FeatureAttributeDrivenSymbology {return true;}
+  protected _activeFeatureAttributes:  {[key: string]: any} | undefined;
+  protected cbRenderer: EsriClassBreaksRenderer;
+  private _defaultRenderSymbol: EsriSymbol|undefined;
+
+  public override get defaultSymbol() {return this._defaultRenderSymbol ?? super.defaultSymbol;}
+
+  public get rendererFields() {
+    if (this.cbRenderer)
+      return [this.cbRenderer.field];
+    else
+      return undefined;
+  }
+
+  public constructor(renderer: EsriClassBreaksRenderer, defaultSymbol: FeatureDefaultSymbology, geometryType?: ArcGisFeatureGeometryType) {
+    super(renderer, defaultSymbol, geometryType);
+
+    this.cbRenderer = (this.renderer as EsriClassBreaksRenderer);
+    this._defaultRenderSymbol = this.cbRenderer.defaultSymbol;
+  }
+
+  public setActiveFeatureAttributes(attributes: { [key: string]: any }) {
+    this._activeFeatureAttributes = attributes;
+
+    const newSymbolApplied = false;
+    if (this._activeFeatureAttributes) {
+      if (Object.keys(this._activeFeatureAttributes).includes(this.cbRenderer.field)) {
+
+        const queryValue = this._activeFeatureAttributes[this.cbRenderer.field];
+
+        if (queryValue !== null && queryValue !== undefined) {
+          let currentMinValue: number|undefined;
+          let currentClassIdx = 0;
+          do {
+            const currentClass = this.cbRenderer.classBreakInfos[currentClassIdx];
+            if (currentClass.classMinValue !== undefined) {
+              currentMinValue = currentClass.classMinValue;
+            } else if (currentClass.classMinValue === undefined && currentClassIdx > 0) {
+              currentMinValue = this.cbRenderer.classBreakInfos[currentClassIdx-1].classMaxValue;
+            } else {
+              currentMinValue = this.cbRenderer.minValue;
+            }
+
+            if ( queryValue >=  currentMinValue
+              && queryValue <=  currentClass.classMaxValue) {
+              this.symbol = currentClass.symbol;
+              return;
+            }
+          }
+          while (++currentClassIdx < this.cbRenderer.classBreakInfos.length);
+        }
+      }
+
+      // Fallback to default symbology to make sure we render something
+      if (!newSymbolApplied) {
+        this.symbol = this.defaultSymbol;
+      }
     }
   }
 }

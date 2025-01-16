@@ -84,23 +84,21 @@ export class Transform implements BeJSONFunctions {
         return;
       }
       if (Geometry.isArrayOfNumberArray(json, 3, 4)) {
-        const data = json as number[][];
         this._matrix.setRowValues(
-          data[0][0], data[0][1], data[0][2],
-          data[1][0], data[1][1], data[1][2],
-          data[2][0], data[2][1], data[2][2]
+          json[0][0], json[0][1], json[0][2],
+          json[1][0], json[1][1], json[1][2],
+          json[2][0], json[2][1], json[2][2],
         );
-        this._origin.set(data[0][3], data[1][3], data[2][3]);
+        this._origin.set(json[0][3], json[1][3], json[2][3]);
         return;
       }
       if (Geometry.isNumberArray(json, 12)) {
-        const data = json as number[];
         this._matrix.setRowValues(
-          data[0], data[1], data[2],
-          data[4], data[5], data[6],
-          data[8], data[9], data[10]
+          json[0], json[1], json[2],
+          json[4], json[5], json[6],
+          json[8], json[9], json[10],
         );
-        this._origin.set(data[3], data[7], data[11]);
+        this._origin.set(json[3], json[7], json[11]);
         return;
       }
     }
@@ -112,7 +110,7 @@ export class Transform implements BeJSONFunctions {
    * @param other Transform to compare to.
    */
   public isAlmostEqual(other: Readonly<Transform>): boolean {
-    return this.origin.isAlmostEqual(other.origin) && this.matrix.isAlmostEqual(other.matrix);
+    return this === other || this.origin.isAlmostEqual(other.origin) && this.matrix.isAlmostEqual(other.matrix);
   }
   /**
    * Test for near equality with `other` Transform. Comparison uses the `isAlmostEqual` methods on the `origin` part
@@ -155,7 +153,7 @@ export class Transform implements BeJSONFunctions {
     }
     return new Transform(
       Point3d.createFrom(this._origin),
-      this._matrix.clone()
+      this._matrix.clone(),
     );
   }
   /**
@@ -184,7 +182,7 @@ export class Transform implements BeJSONFunctions {
     qxx: number, qxy: number, qxz: number, ax: number,
     qyx: number, qyy: number, qyz: number, ay: number,
     qzx: number, qzy: number, qzz: number, az: number,
-    result?: Transform
+    result?: Transform,
   ): Transform {
     if (result) {
       result._origin.set(ax, ay, az);
@@ -193,7 +191,7 @@ export class Transform implements BeJSONFunctions {
     }
     return new Transform(
       Point3d.create(ax, ay, az),
-      Matrix3d.createRowValues(qxx, qxy, qxz, qyx, qyy, qyz, qzx, qzy, qzz)
+      Matrix3d.createRowValues(qxx, qxy, qxz, qyx, qyy, qyz, qzx, qzy, qzz),
     );
   }
   /** Create a Transform with all zeros */
@@ -203,7 +201,7 @@ export class Transform implements BeJSONFunctions {
   /**
    * Create a Transform with translation provided by x,y,z parts.
    * * Translation Transform maps any vector `v` to `v + p` where `p = (x,y,z)`
-   * * Visualization can be found at https://www.itwinjs.org/sandbox/SaeedTorabi/CubeMove
+   * * Visualization can be found at https://www.itwinjs.org/sandbox/SaeedTorabi/CubeTransform
    * @param x x part of translation
    * @param y y part of translation
    * @param z z part of translation
@@ -216,7 +214,7 @@ export class Transform implements BeJSONFunctions {
   /**
    * Create a Transform with specified `translation` part.
    * * Translation Transform maps any vector `v` to `v + translation`
-   * * Visualization can be found at https://www.itwinjs.org/sandbox/SaeedTorabi/CubeMove
+   * * Visualization can be found at https://www.itwinjs.org/sandbox/SaeedTorabi/CubeTransform
    * @param translation x,y,z parts of the translation
    * @param result optional pre-allocated Transform
    * @returns new or updated transform
@@ -259,14 +257,14 @@ export class Transform implements BeJSONFunctions {
   }
   /**
    * Create a Transform using the given `origin` and `matrix`.
-   * * This is a the appropriate construction when the columns of the matrix are coordinate axes of a
-   * local-to-world mapping.
-   * * This function is a closely related to `createFixedPointAndMatrix` whose point input is the fixed point
+   * * This is the appropriate construction when the columns of the matrix are coordinate axes of a
+   * local-to-world mapping, and the given point is the axes' origin in world coordinates.
+   * * This function is closely related to `createFixedPointAndMatrix` whose point input is the fixed point
    * of the world-to-world transformation.
    * * If origin is `undefined`, (0,0,0) is used. If matrix is `undefined` the identity matrix is used.
    */
   public static createOriginAndMatrix(
-    origin: XYZ | undefined, matrix: Matrix3d | undefined, result?: Transform
+    origin: XYZ | undefined, matrix: Matrix3d | undefined, result?: Transform,
   ): Transform {
     if (result) {
       result._origin.setFromPoint3d(origin);
@@ -276,12 +274,12 @@ export class Transform implements BeJSONFunctions {
     return Transform.createRefs(
       origin ? origin.cloneAsPoint3d() : Point3d.createZero(),
       matrix === undefined ? Matrix3d.createIdentity() : matrix.clone(),
-      result
+      result,
     );
   }
   /** Create a Transform using the given `origin` and columns of the `matrix`. If `undefined` zero is used. */
   public setOriginAndMatrixColumns(
-    origin: XYZ | undefined, vectorX: Vector3d | undefined, vectorY: Vector3d | undefined, vectorZ: Vector3d | undefined
+    origin: XYZ | undefined, vectorX: Vector3d | undefined, vectorY: Vector3d | undefined, vectorZ: Vector3d | undefined,
   ): void {
     if (origin !== undefined)
       this._origin.setFrom(origin);
@@ -289,7 +287,7 @@ export class Transform implements BeJSONFunctions {
   }
   /** Create a Transform using the given `origin` and columns of the `matrix` */
   public static createOriginAndMatrixColumns(
-    origin: XYZ, vectorX: Vector3d, vectorY: Vector3d, vectorZ: Vector3d, result?: Transform
+    origin: XYZ, vectorX: Vector3d, vectorY: Vector3d, vectorZ: Vector3d, result?: Transform,
   ): Transform {
     if (result)
       result.setOriginAndMatrixColumns(origin, vectorX, vectorY, vectorZ);
@@ -302,7 +300,7 @@ export class Transform implements BeJSONFunctions {
    * @see [[Matrix3d.createRigidFromColumns]] for details of how the matrix is created to be rigid.
    */
   public static createRigidFromOriginAndColumns(
-    origin: XYZ | undefined, vectorX: Vector3d, vectorY: Vector3d, axisOrder: AxisOrder, result?: Transform
+    origin: XYZ | undefined, vectorX: Vector3d, vectorY: Vector3d, axisOrder: AxisOrder, result?: Transform,
   ): Transform | undefined {
     const matrix = Matrix3d.createRigidFromColumns(vectorX, vectorY, axisOrder, result ? result._matrix : undefined);
     if (!matrix)
@@ -328,7 +326,7 @@ export class Transform implements BeJSONFunctions {
    * where `f` is the fixedPoint (i.e., `Tp = M*(p-f) + f`).
    */
   public static createFixedPointAndMatrix(
-    fixedPoint: XYAndZ | undefined, matrix: Matrix3d, result?: Transform
+    fixedPoint: XYAndZ | undefined, matrix: Matrix3d, result?: Transform,
   ): Transform {
     if (fixedPoint) {
       /**
@@ -342,10 +340,10 @@ export class Transform implements BeJSONFunctions {
   }
   /**
    * Create a transform with the specified `matrix` and points `a` and `b`. The returned Transform maps
-   * point `p` to `M*(p-a) + b` (i.e., `Tp = M*(p-a) + b`), so maps `a` to 'b'.
+   * point `p` to `M*(p-a) + b` (i.e., `Tp = M*(p-a) + b`), so maps `a` to `b`.
    */
   public static createMatrixPickupPutdown(
-    matrix: Matrix3d, a: Point3d, b: Point3d, result?: Transform
+    matrix: Matrix3d, a: Point3d, b: Point3d, result?: Transform,
   ): Transform {
     // we define the origin o = b - M*a so Tp = M*p + o = M*p + (b - M*a) = M*(p-a) + b
     const origin = Matrix3d.xyzMinusMatrixTimesXYZ(b, matrix, a);
@@ -355,7 +353,7 @@ export class Transform implements BeJSONFunctions {
    * Create a Transform which leaves the fixedPoint unchanged and scales everything else around it by
    * a single scale factor. The returned Transform maps a point `p` to `M*p + (f - M*f)`
    * where `f` is the fixedPoint and M is the scale matrix (i.e., `Tp = M*(p-f) + f`).
-   * * Visualization can be found at https://www.itwinjs.org/sandbox/SaeedTorabi/CubeScale
+   * * Visualization can be found at https://www.itwinjs.org/sandbox/SaeedTorabi/CubeTransform
    */
   public static createScaleAboutPoint(fixedPoint: Point3d, scale: number, result?: Transform): Transform {
     const matrix = Matrix3d.createScale(scale, scale, scale);
@@ -365,6 +363,20 @@ export class Transform implements BeJSONFunctions {
      */
     const origin = Matrix3d.xyzMinusMatrixTimesXYZ(fixedPoint, matrix, fixedPoint);
     return Transform.createRefs(origin, matrix, result);
+  }
+  /**
+   * Return a transformation which flattens space onto a plane, sweeping along a direction which may be different
+   * from the plane normal.
+   * * See [Matrix3d.createFlattenAlongVectorToPlane] for math details.
+   * @param sweepVector sweep direction. If same as `planeNormal`, the resulting transformation flattens to the plane.
+   * @param planePoint any point on the plane
+   * @param planeNormal vector normal to the plane.
+   */
+  public static createFlattenAlongVectorToPlane(sweepVector: Vector3d, planePoint: XYAndZ, planeNormal: Vector3d): Transform | undefined {
+    const matrix = Matrix3d.createFlattenAlongVectorToPlane(sweepVector, planeNormal);
+    if (matrix === undefined)
+      return undefined;
+    return Transform.createFixedPointAndMatrix(planePoint, matrix);
   }
   /**
    * Transform the input 2d point (using `Tp = M*p + o`).
@@ -422,8 +434,7 @@ export class Transform implements BeJSONFunctions {
     return Matrix3d.xyzPlusMatrixTimesWeightedCoordinates(this._origin, this._matrix, x, y, z, w, result);
   }
   /**
-   * Transform the homogeneous point. Return as new `Float64Array` with size 4, or in the pre-allocated result (if
-   * result is given).
+   * Transform the homogeneous point. Return as new `Float64Array` with size 4, or in the pre-allocated `result` of sufficient size.
    * * If `p = (x,y,z)` then this method computes `Tp = M*p + o*w` and returns the `Float64Array` formed by `Tp`
    * in the first 3 numbers of the array and `w` as the fourth.
    * * Logically, this is multiplication by the 4x4 matrix formed from the 3x4 instance augmented with fourth row 0001.
@@ -432,7 +443,7 @@ export class Transform implements BeJSONFunctions {
     return Matrix3d.xyzPlusMatrixTimesWeightedCoordinatesToFloat64Array(this._origin, this._matrix, x, y, z, w, result);
   }
   /**
-   * * Transform the point. Return as new `Float64Array` with size 3, or in the pre-allocated result (if result is given).
+   * * Transform the point. Return as new `Float64Array` with size 3, or in the pre-allocated `result` of sufficient size.
    * * If `p = (x,y,z)` then this method computes `Tp = M*p + o` and returns it as the first 3 elements of the array.
    */
   public multiplyXYZToFloat64Array(x: number, y: number, z: number, result?: Float64Array): Float64Array {
@@ -454,7 +465,7 @@ export class Transform implements BeJSONFunctions {
       (x * coffs[1]) + (y * coffs[4]) + (z * coffs[7]),
       (x * coffs[2]) + (y * coffs[5]) + (z * coffs[8]),
       (x * origin.x) + (y * origin.y) + (z * origin.z) + w,
-      result
+      result,
     );
   }
   /** For each point in the array, replace point by the transformed point (using `Tp = M*p + o`) */
@@ -480,7 +491,7 @@ export class Transform implements BeJSONFunctions {
       point.x - this._origin.x,
       point.y - this._origin.y,
       point.z - this._origin.z,
-      result
+      result,
     );
   }
   /**
@@ -501,7 +512,7 @@ export class Transform implements BeJSONFunctions {
       weightedPoint.y - w * this.origin.y,
       weightedPoint.z - w * this.origin.z,
       w,
-      result
+      result,
     );
   }
   /**
@@ -516,7 +527,7 @@ export class Transform implements BeJSONFunctions {
       x - this._origin.x,
       y - this._origin.y,
       z - this._origin.z,
-      result
+      result,
     );
   }
   /**
@@ -564,13 +575,13 @@ export class Transform implements BeJSONFunctions {
     const originY = this.origin.y;
     const originZ = this.origin.z;
     if (result) {
-      const n = Transform.matchArrayLengths(points, result, Point3d.createZero);
+      const n = Transform.matchArrayLengths(points, result, () => Point3d.createZero());
       for (let i = 0; i < n; i++)
         this._matrix.multiplyInverseXYZAsPoint3d(
           points[i].x - originX,
           points[i].y - originY,
           points[i].z - originZ,
-          result[i]
+          result[i],
         );
       return result;
     }
@@ -580,8 +591,8 @@ export class Transform implements BeJSONFunctions {
         this._matrix.multiplyInverseXYZAsPoint3d(
           point.x - originX,
           point.y - originY,
-          point.z - originZ
-        )!
+          point.z - originZ,
+        )!,
       );
     return result;
   }
@@ -599,7 +610,7 @@ export class Transform implements BeJSONFunctions {
         point.x - this.origin.x,
         point.y - this.origin.y,
         point.z - this.origin.z,
-        point
+        point,
       );
     return true;
   }
@@ -610,7 +621,7 @@ export class Transform implements BeJSONFunctions {
    */
   public multiplyPoint2dArray(points: Point2d[], result?: Point2d[]): Point2d[] {
     if (result) {
-      const n = Transform.matchArrayLengths(points, result, Point2d.createZero);
+      const n = Transform.matchArrayLengths(points, result, () => Point2d.createZero());
       for (let i = 0; i < n; i++)
         Matrix3d.xyPlusMatrixTimesXY(this._origin, this._matrix, points[i], result[i]);
       return result;
@@ -627,7 +638,7 @@ export class Transform implements BeJSONFunctions {
    */
   public multiplyPoint3dArray(points: Point3d[], result?: Point3d[]): Point3d[] {
     if (result) {
-      const n = Transform.matchArrayLengths(points, result, Point3d.createZero);
+      const n = Transform.matchArrayLengths(points, result, () => Point3d.createZero());
       for (let i = 0; i < n; i++)
         Matrix3d.xyzPlusMatrixTimesXYZ(this._origin, this._matrix, points[i], result[i]);
       return result;
@@ -673,13 +684,13 @@ export class Transform implements BeJSONFunctions {
       transformA._origin,
       transformA._matrix,
       transformB._origin,
-      this._origin as Point3d
+      this._origin as Point3d,
     );
     transformA._matrix.multiplyMatrixMatrix(transformB._matrix, this._matrix);
   }
   /**
    * Multiply `this` Transform times `other` Transform.
-   * * **Note:** If `this = [A   a]` and `other = [B   b]` then `this * other` is defined as [A*B   Ab+a] because:
+   * * **Note:** If `this = [A   a]` and `other = [B   b]` then `this * other` is defined as `[A*B   Ab+a]` because:
    * ```
    * equation
    * \begin{matrix}
@@ -688,14 +699,14 @@ export class Transform implements BeJSONFunctions {
    * \text{product}& \blockTransform{A}{a}\blockTransform{B}{b}=\blockTransform{AB}{Ab + a}
    * \end{matrix}
    * ```
-   * @param other the 'other` Transform to be multiplied to `this` Transform.
+   * @param other the `other` Transform to be multiplied to `this` Transform.
    * @param result optional preallocated `result` to reuse.
    */
   public multiplyTransformTransform(other: Transform, result?: Transform) {
     if (!result)
       return Transform.createRefs(
         Matrix3d.xyzPlusMatrixTimesXYZ(this._origin, this._matrix, other._origin),
-        this._matrix.multiplyMatrixMatrix(other._matrix)
+        this._matrix.multiplyMatrixMatrix(other._matrix),
       );
     result.setMultiplyTransformTransform(this, other);
     return result;
@@ -718,7 +729,7 @@ export class Transform implements BeJSONFunctions {
     if (!result)
       return Transform.createRefs(
         this._origin.cloneAsPoint3d(),
-        this._matrix.multiplyMatrixMatrix(other)
+        this._matrix.multiplyMatrixMatrix(other),
       );
     this._matrix.multiplyMatrixMatrix(other, result._matrix);
     result._origin.setFrom(this._origin);
@@ -769,7 +780,7 @@ export class Transform implements BeJSONFunctions {
     }
     return Transform.createRefs(
       matrixInverse.multiplyXYZ(-this._origin.x, -this._origin.y, -this._origin.z),
-      matrixInverse
+      matrixInverse,
     );
   }
   /**

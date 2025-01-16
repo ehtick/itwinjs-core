@@ -9,12 +9,29 @@
 import { AccessToken, GuidString, Id64String, IModelHubStatus } from "@itwin/core-bentley";
 import {
   BriefcaseId, ChangesetFileProps, ChangesetIdWithIndex, ChangesetIndex, ChangesetIndexAndId, ChangesetIndexOrId, ChangesetProps, ChangesetRange,
-  IModelError, IModelVersion, LocalDirName, LocalFileName,
+  LockState as CommonLockState, IModelError, IModelVersion,
+  LocalDirName, LocalFileName,
 } from "@itwin/core-common";
 import { CheckpointProps, DownloadRequest, ProgressFunction } from "./CheckpointManager";
-import { TokenArg } from "./IModelDb";
+import type { TokenArg } from "./IModelDb";
 
-/** The state of a lock.
+/** Exception thrown if lock cannot be acquired.
+ * @beta
+*/
+export class LockConflict extends IModelError {
+  public constructor(
+    /** Id of Briefcase holding lock */
+    public readonly briefcaseId: BriefcaseId,
+    /** Alias of Briefcase holding lock */
+    public readonly briefcaseAlias: string,
+    msg: "shared lock is held" | "exclusive lock is already held",
+  ) {
+    super(IModelHubStatus.LockOwnedByAnotherBriefcase, msg);
+  }
+}
+
+/** The state of a lock. See [Acquiring locks on elements.]($docs/learning/backend/ConcurrencyControl.md#acquiring-locks-on-elements).
+ * @deprecated in 4.7 Use [LockState]($common)
  * @public
  */
 export enum LockState {
@@ -26,21 +43,6 @@ export enum LockState {
    * Holding an exclusive lock on an "owner" (a model or a parent element), implicitly exclusively locks all its members.
    */
   Exclusive = 2,
-}
-
-/** Exception thrown if lock cannot be acquired.
- * @beta
-*/
-export class LockConflict extends IModelError {
-  public constructor(
-    /** Id of Briefcase holding lock */
-    public readonly briefcaseId: BriefcaseId,
-    /** Alias of Briefcase holding lock */
-    public readonly briefcaseAlias: string,
-    msg: "shared lock is held" | "exclusive lock is already held"
-  ) {
-    super(IModelHubStatus.LockOwnedByAnotherBriefcase, msg);
-  }
 }
 
 /**
@@ -61,7 +63,7 @@ export interface V2CheckpointAccessProps {
 }
 
 /** @internal */
-export type LockMap = Map<Id64String, LockState>;
+export type LockMap = Map<Id64String, CommonLockState>;
 
 /**
  * The properties of a lock that may be obtained from a lock server.
@@ -71,7 +73,7 @@ export interface LockProps {
   /** The elementId for the lock */
   readonly id: Id64String;
   /** the lock state */
-  readonly state: LockState;
+  readonly state: CommonLockState;
 }
 
 /**
@@ -221,7 +223,7 @@ export interface BackendHubAccess {
    * @deprecated in 3.x. V1 checkpoints are deprecated. Download V2 checkpoint using [[V2CheckpointManager.downloadCheckpoint]].
    * @internal
    */
-  downloadV1Checkpoint: (arg: CheckpointArg) => Promise<ChangesetIndexAndId>; // eslint-disable-line deprecation/deprecation
+  downloadV1Checkpoint: (arg: CheckpointArg) => Promise<ChangesetIndexAndId>; // eslint-disable-line @typescript-eslint/no-deprecated
 
   /**
    * Get the access props for a V2 checkpoint. Returns undefined if no V2 checkpoint exists.
@@ -232,6 +234,7 @@ export interface BackendHubAccess {
   /**
    * acquire one or more locks. Throws if unsuccessful. If *any* lock cannot be obtained, no locks are acquired
    * @internal
+   * @throws ConflictingLocksError if one or more requested locks are held by other briefcases.
    */
   acquireLocks: (arg: BriefcaseDbArg, locks: LockMap) => Promise<void>;
 

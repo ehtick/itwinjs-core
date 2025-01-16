@@ -4,8 +4,8 @@
 *--------------------------------------------------------------------------------------------*/
 
 import * as path from "path";
-import { Project as ITwin, ProjectsAccessClient, ProjectsSearchableProperty } from "@itwin/projects-client";
-import { IModelHost, IModelJsFs, V1CheckpointManager } from "@itwin/core-backend";
+import { ITwin, ITwinsAccessClient, ITwinsAPIResponse, ITwinSubClass } from "@itwin/itwins-client";
+import { IModelHost, IModelJsFs, IModelNative, V1CheckpointManager } from "@itwin/core-backend";
 import { AccessToken, ChangeSetStatus, GuidString, Logger, OpenMode, PerfLogger } from "@itwin/core-bentley";
 import { BriefcaseIdValue, ChangesetFileProps, ChangesetProps } from "@itwin/core-common";
 import { TestUserCredentials, TestUsers, TestUtility } from "@itwin/oidc-signin-tool";
@@ -59,7 +59,9 @@ export class HubUtility {
   public static async getTestITwinId(accessToken: AccessToken): Promise<GuidString> {
     if (undefined !== HubUtility.iTwinId)
       return HubUtility.iTwinId;
-    return HubUtility.getITwinIdByName(accessToken, HubUtility.testITwinName);
+
+    HubUtility.iTwinId = await HubUtility.getITwinIdByName(accessToken, HubUtility.testITwinName);
+    return HubUtility.iTwinId;
   }
 
   private static imodelCache = new Map<string, GuidString>();
@@ -197,7 +199,7 @@ export class HubUtility {
     Logger.logInfo(HubUtility.logCategory, "Making a local copy of the seed");
     HubUtility.copyIModelFromSeed(briefcasePathname, iModelDir, true /* =overwrite */);
 
-    const nativeDb = new IModelHost.platform.DgnDb();
+    const nativeDb = new IModelNative.platform.DgnDb();
     nativeDb.openIModel(briefcasePathname, OpenMode.ReadWrite);
     const changesets = HubUtility.readChangesets(iModelDir);
     const endNum: number = endCS ? endCS : changesets.length;
@@ -212,7 +214,7 @@ export class HubUtility {
       const startTime = new Date().getTime();
       let csResult = ChangeSetStatus.Success;
       try {
-        nativeDb.applyChangeset(changeSet);
+        nativeDb.applyChangeset(changeSet, false);
       } catch (err: any) {
         csResult = err.errorNumber;
       }
@@ -227,7 +229,7 @@ export class HubUtility {
     }
 
     perfLogger.dispose();
-    nativeDb.closeIModel();
+    nativeDb.closeFile();
 
     return results;
   }
@@ -275,14 +277,14 @@ export class HubUtility {
       IModelJsFs.copySync(seedPathname, iModelPathname);
     }
 
-    const nativeDb = new IModelHost.platform.DgnDb();
+    const nativeDb = new IModelNative.platform.DgnDb();
     nativeDb.openIModel(iModelPathname, OpenMode.ReadWrite);
     nativeDb.deleteAllTxns();
     nativeDb.resetBriefcaseId(BriefcaseIdValue.Unassigned);
     if (nativeDb.queryLocalValue("StandaloneEdit"))
       nativeDb.deleteLocalValue("StandaloneEdit");
     nativeDb.saveChanges();
-    nativeDb.closeIModel();
+    nativeDb.closeFile();
 
     return iModelPathname;
   }
@@ -294,23 +296,25 @@ class TestITwin {
   public get isIModelHub(): boolean { return true; }
   public terminate(): void { }
 
-  private static _iTwinAccessClient?: ProjectsAccessClient;
+  private static _iTwinAccessClient?: ITwinsAccessClient;
 
-  private static get iTwinClient(): ProjectsAccessClient {
+  private static get iTwinClient(): ITwinsAccessClient {
     if (this._iTwinAccessClient === undefined)
-      this._iTwinAccessClient = new ProjectsAccessClient();
+      this._iTwinAccessClient = new ITwinsAccessClient();
     return this._iTwinAccessClient;
   }
 
   public async getITwinByName(accessToken: AccessToken, name: string): Promise<ITwin> {
     const client = TestITwin.iTwinClient;
-    const iTwinList: ITwin[] = await client.getAll(accessToken, {
-      search: {
-        searchString: name,
-        propertyName: ProjectsSearchableProperty.Name,
-        exactMatch: true,
-      },
+    const iTwinListResponse: ITwinsAPIResponse<ITwin[]> = await client.queryAsync(accessToken, ITwinSubClass.Project, {
+      displayName: name,
     });
+
+    const iTwinList = iTwinListResponse.data;
+
+    if (!iTwinList) {
+      throw new Error(`ITwin ${name} returned with no data when queried.`);
+    }
 
     if (iTwinList.length === 0)
       throw new Error(`ITwin ${name} was not found for the user.`);

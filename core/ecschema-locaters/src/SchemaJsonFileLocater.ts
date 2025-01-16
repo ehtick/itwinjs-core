@@ -2,6 +2,9 @@
 * Copyright (c) Bentley Systems, Incorporated. All rights reserved.
 * See LICENSE.md in the project root for license terms and full copyright notice.
 *--------------------------------------------------------------------------------------------*/
+/** @packageDocumentation
+ * @module Locaters
+ */
 
 import * as fs from "fs";
 import * as path from "path";
@@ -9,10 +12,6 @@ import {
   ECObjectsError, ECObjectsStatus, ECVersion, ISchemaLocater, Schema, SchemaContext, SchemaInfo, SchemaKey, SchemaMatchType,
 } from "@itwin/ecschema-metadata";
 import { FileSchemaKey, SchemaFileLocater } from "./SchemaFileLocater";
-
-/** @packageDocumentation
- * @module Locaters
- */
 
 /**
  * A SchemaLocator implementation for locating JSON Schema files
@@ -71,7 +70,6 @@ export class SchemaJsonFileLocater extends SchemaFileLocater implements ISchemaL
     if (!candidates || candidates.length === 0)
       return undefined;
 
-    // eslint-disable-next-line @typescript-eslint/unbound-method
     const maxCandidate = candidates.sort(this.compareSchemaKeyByVersion)[candidates.length - 1];
     const schemaPath = maxCandidate.fileName;
 
@@ -101,7 +99,6 @@ export class SchemaJsonFileLocater extends SchemaFileLocater implements ISchemaL
     if (!candidates || candidates.length === 0)
       return undefined;
 
-    // eslint-disable-next-line @typescript-eslint/unbound-method
     const maxCandidate = candidates.sort(this.compareSchemaKeyByVersion)[candidates.length - 1];
     const schemaPath = maxCandidate.fileName;
 

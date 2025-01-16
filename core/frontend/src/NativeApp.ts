@@ -9,14 +9,15 @@
 import { AsyncMethodsOf, BeEvent, GuidString, Logger, PromiseReturnType } from "@itwin/core-bentley";
 import {
   BriefcaseDownloader, BriefcaseProps, IModelVersion, InternetConnectivityStatus, IpcSocketFrontend, LocalBriefcaseProps,
-  nativeAppChannel, NativeAppFunctions, NativeAppNotifications, nativeAppNotify, OverriddenBy,
+  NativeAppFunctions, nativeAppIpcStrings, NativeAppNotifications, OverriddenBy,
   RemoveFunction, RequestNewBriefcaseProps, StorageValue, SyncMode,
 } from "@itwin/core-common";
 import { ProgressCallback } from "./request/Request";
-import { FrontendLoggerCategory } from "./FrontendLoggerCategory";
+import { FrontendLoggerCategory } from "./common/FrontendLoggerCategory";
 import { IpcApp, IpcAppOptions, NotificationHandler } from "./IpcApp";
 import { NativeAppLogger } from "./NativeAppLogger";
 import { OnDownloadProgress } from "./BriefcaseConnection";
+import { _callIpcChannel } from "./common/internal/Symbols";
 
 /** Properties for specifying the BriefcaseId for downloading. May either specify a BriefcaseId directly (preferable) or, for
  * backwards compatibility, a [SyncMode]($common). If [SyncMode.PullAndPush]($common) is supplied, a new briefcaseId will be acquired.
@@ -41,7 +42,7 @@ export type DownloadBriefcaseOptions = DownloadBriefcaseId & {
 
 /** NativeApp notifications from backend */
 class NativeAppNotifyHandler extends NotificationHandler implements NativeAppNotifications {
-  public get channelName() { return nativeAppNotify; }
+  public get channelName() { return nativeAppIpcStrings.notifyChannel; }
   public notifyInternetConnectivityChanged(status: InternetConnectivityStatus) {
     Logger.logInfo(FrontendLoggerCategory.NativeApp, "Internet connectivity changed");
     NativeApp.onInternetConnectivityChanged.raiseEvent(status);
@@ -53,7 +54,7 @@ class NativeAppNotifyHandler extends NotificationHandler implements NativeAppNot
  * @public
  */
 export interface NativeAppOpts extends IpcAppOptions {
-  nativeApp?: {};
+  nativeApp?: object;
 }
 
 /**
@@ -66,10 +67,10 @@ export class NativeApp {
 
   /** @deprecated in 3.x. use nativeAppIpc */
   public static async callNativeHost<T extends AsyncMethodsOf<NativeAppFunctions>>(methodName: T, ...args: Parameters<NativeAppFunctions[T]>) {
-    return IpcApp.callIpcChannel(nativeAppChannel, methodName, ...args) as PromiseReturnType<NativeAppFunctions[T]>;
+    return IpcApp[_callIpcChannel](nativeAppIpcStrings.channelName, methodName, ...args) as PromiseReturnType<NativeAppFunctions[T]>;
   }
   /** A Proxy to call one of the [NativeAppFunctions]($common) functions via IPC. */
-  public static nativeAppIpc = IpcApp.makeIpcProxy<NativeAppFunctions>(nativeAppChannel);
+  public static nativeAppIpc = IpcApp.makeIpcProxy<NativeAppFunctions>(nativeAppIpcStrings.channelName);
 
   private static _storages = new Map<string, Storage>();
   private static _onOnline = async () => {
@@ -142,7 +143,7 @@ export class NativeApp {
    * @deprecated in 3.6. `progress` argument is now deprecated, use [[DownloadBriefcaseOptions.progressCallback]] instead.
    */
   public static async requestDownloadBriefcase(iTwinId: string, iModelId: string, downloadOptions: DownloadBriefcaseOptions,
-    // eslint-disable-next-line @typescript-eslint/unified-signatures, deprecation/deprecation
+    // eslint-disable-next-line @typescript-eslint/unified-signatures, @typescript-eslint/no-deprecated
     asOf?: IModelVersion, progress?: ProgressCallback): Promise<BriefcaseDownloader>;
 
   public static async requestDownloadBriefcase(
@@ -150,7 +151,7 @@ export class NativeApp {
     iModelId: string,
     downloadOptions: DownloadBriefcaseOptions,
     asOf: IModelVersion = IModelVersion.latest(),
-    progress?: ProgressCallback, // eslint-disable-line deprecation/deprecation
+    progress?: ProgressCallback, // eslint-disable-line @typescript-eslint/no-deprecated
   ): Promise<BriefcaseDownloader> {
     const shouldReportProgress = !!progress || !!downloadOptions.progressCallback;
 

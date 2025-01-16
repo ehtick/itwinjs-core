@@ -8,13 +8,13 @@
 
 import { assert, Uint16ArrayBuilder, UintArray, UintArrayBuilder } from "@itwin/core-bentley";
 import {
-  IndexedPolyface, Point2d, Point3d, Polyface, Range2d, Range3d, Transform, Vector3d, XAndY, XYAndZ,
+  IndexedPolyface, Point2d, Point3d, Range2d, Range3d, Transform, Vector3d, XAndY, XYAndZ,
 } from "@itwin/core-geometry";
 import {
   OctEncodedNormal, QPoint2d, QPoint2dBuffer, QPoint2dBufferBuilder, QPoint3d, QPoint3dBuffer, QPoint3dBufferBuilder, RenderTexture,
 } from "@itwin/core-common";
 import { GltfMeshData } from "../tile/internal";
-import { Mesh } from "./primitives/mesh/MeshPrimitives";
+import { MeshPrimitiveType } from "../common/internal/render/MeshPrimitive";
 
 function precondition(condition: boolean, message: string | (() => string)): asserts condition {
   if (condition)
@@ -53,7 +53,7 @@ export namespace RealityMeshParams {
   /** @internal */
   export function fromGltfMesh(mesh: GltfMeshData): RealityMeshParams | undefined {
     // The specialized reality mesh shaders expect a mesh with uvs and no edges.
-    if (mesh.primitive.type !== Mesh.PrimitiveType.Mesh || mesh.primitive.edges || !mesh.pointQParams || !mesh.uvQParams || !mesh.points || !mesh.uvs || !mesh.indices)
+    if (mesh.primitive.type !== MeshPrimitiveType.Mesh || mesh.primitive.edges || !mesh.pointQParams || !mesh.uvQParams || !mesh.points || !mesh.uvs || !mesh.indices)
       return undefined;
 
     return {
@@ -73,7 +73,7 @@ export namespace RealityMeshParams {
   }
 
   /** @alpha */
-  export function toPolyface(params: RealityMeshParams, options?: { transform?: Transform, wantNormals?: boolean, wantParams?: boolean }): Polyface | undefined {
+  export function toPolyface(params: RealityMeshParams, options?: { transform?: Transform, wantNormals?: boolean, wantParams?: boolean }): IndexedPolyface | undefined {
     const { positions, normals, uvs, indices } = params;
     const includeNormals = options?.wantNormals && undefined !== normals;
     const includeParams = options?.wantParams;

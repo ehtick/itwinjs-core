@@ -11,7 +11,8 @@ import { BaseMapLayerSettings, MapImagerySettings, MapLayerSettings } from "@itw
 import { DisplayStyleState } from "../../DisplayStyleState";
 import { ViewState } from "../../ViewState";
 import { Viewport } from "../../Viewport";
-import { MapLayerImageryProvider, MapTileTreeReference, TiledGraphicsProvider, TileTreeReference } from "../internal";
+import { DisclosedTileTreeSet, MapLayerImageryProvider, MapLayerInfoFromTileTree, MapTileTreeReference, TiledGraphicsProvider, TileTree, TileTreeOwner, TileTreeReference } from "../internal";
+import { IModelApp } from "../../IModelApp";
 
 /** Position of a map-layer in the display style's map (i.e. background/overlay map)
  * @public
@@ -61,6 +62,22 @@ export class MapTiledGraphicsProvider implements TiledGraphicsProvider {
       this.backgroundDrapeMap.setBaseLayerSettings(mapImagery.backgroundBase);
       this.backgroundDrapeMap.setLayerSettings(mapImagery.backgroundLayers);
       this.overlayMap.setLayerSettings(imagery.overlayLayers);
+    }));
+
+    // We need to clear imagery tiles assigned to map tiles every time a new ImageryTileTree is loaded,
+    // otherwise the imagery tiles won't refresh correctly.
+    const clearMapLayers = (loadedTileTree: TileTree, mapTileTreeToClear: MapTileTreeReference) => {
+      const trees = new DisclosedTileTreeSet();
+      mapTileTreeToClear.discloseTileTrees(trees);
+      if (trees.has(loadedTileTree)) {
+        mapTileTreeToClear.clearLayers();
+      }
+    };
+    removals.push(IModelApp.tileAdmin.onTileTreeLoad.addListener((tileTree: TileTreeOwner) => {
+      if (tileTree.tileTree !== undefined) {
+        clearMapLayers(tileTree.tileTree, this.backgroundMap);
+        clearMapLayers(tileTree.tileTree, this.overlayMap);
+      }
     }));
   }
 
@@ -126,12 +143,10 @@ export class MapTiledGraphicsProvider implements TiledGraphicsProvider {
   }
 
   /** @internal */
-  public mapLayerFromIds(mapTreeId: Id64String, layerTreeId: Id64String): MapLayerSettings | undefined {
-    let mapLayer;
-    if (undefined === (mapLayer = this.backgroundMap.layerFromTreeModelIds(mapTreeId, layerTreeId)))
-      mapLayer = this.overlayMap.layerFromTreeModelIds(mapTreeId, layerTreeId);
-
-    return mapLayer;
+  public mapLayerFromIds(mapTreeId: Id64String, layerTreeId: Id64String): MapLayerInfoFromTileTree[] {
+    const bgMapLayers = this.backgroundMap.layerFromTreeModelIds(mapTreeId, layerTreeId);
+    const ovlMapLayers = this.overlayMap.layerFromTreeModelIds(mapTreeId, layerTreeId);
+    return [...bgMapLayers, ...ovlMapLayers];
   }
 }
 

@@ -8,8 +8,7 @@
 
 import { assert, dispose } from "@itwin/core-bentley";
 import { RenderMode } from "@itwin/core-common";
-import { TesselatedPolyline } from "../primitives/PolylineParams";
-import { SegmentEdgeParams, SilhouetteParams } from "../primitives/EdgeParams";
+import { TesselatedPolyline } from "../../common/internal/render/PolylineParams";
 import { RenderMemory } from "../RenderMemory";
 import { AttributeMap } from "./AttributeMap";
 import { PolylineBuffers } from "./CachedGeometry";
@@ -23,6 +22,7 @@ import { Target } from "./Target";
 import { TechniqueId } from "./TechniqueId";
 import { MeshData } from "./MeshData";
 import { MeshGeometry } from "./MeshGeometry";
+import { SegmentEdgeParams, SilhouetteParams } from "../../common/internal/render/EdgeParams";
 
 /** @internal */
 export class EdgeGeometry extends MeshGeometry {

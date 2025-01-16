@@ -13,7 +13,9 @@ import {
 import {
   CheckpointConnection,
   DisplayStyle3dState, DisplayStyleState, EntityState, FeatureSymbology, GLTimerResult, GLTimerResultCallback, IModelApp, IModelConnection,
-  PerformanceMetrics, Pixel, RenderMemory, RenderSystem, ScreenViewport, SnapshotConnection, Target, TileAdmin, ToolAdmin, ViewRect, ViewState,
+  ModelDisplayTransform,
+  ModelDisplayTransformProvider,
+  PerformanceMetrics, Pixel, RenderMemory, RenderSystem, ScreenViewport, Target, TileAdmin, ToolAdmin, ViewRect, ViewState,
 } from "@itwin/core-frontend";
 import { System } from "@itwin/core-frontend/lib/cjs/webgl";
 import { HyperModeling } from "@itwin/hypermodeling-frontend";
@@ -21,19 +23,23 @@ import { TestFrontendAuthorizationClient } from "@itwin/oidc-signin-tool/lib/cjs
 import DisplayPerfRpcInterface from "../common/DisplayPerfRpcInterface";
 import { DisplayPerfTestApp } from "./DisplayPerformanceTestApp";
 import {
-  defaultEmphasis, defaultHilite, ElementOverrideProps, HyperModelingProps, separator, TestConfig, TestConfigProps, TestConfigStack, ViewStateSpec, ViewStateSpecProps,
+  defaultEmphasis, defaultHilite, DisplayTransformProviderProps, ElementOverrideProps, HyperModelingProps, separator, TestConfig, TestConfigProps, TestConfigStack, ViewStateSpec, ViewStateSpecProps,
 } from "./TestConfig";
 import { SavedViewsFetcher } from "./SavedViewsFetcher";
+import { Transform } from "@itwin/core-geometry";
+import { TestSnapshotConnection } from "./TestSnapshotConnection";
 
 /** JSON representation of a set of tests. Each test in the set inherits the test set's configuration. */
 export interface TestSetProps extends TestConfigProps {
   tests: TestConfigProps[];
+  reuseContext: boolean;
 }
 
 /** JSON representation of TestRunner. The tests inherit the base configuration options. */
 export interface TestSetsProps extends TestConfigProps {
   signIn?: boolean;
   minimize?: boolean;
+  renderCmdStats?: boolean;
   testSet: TestSetProps[];
 }
 
@@ -41,6 +47,7 @@ export interface TestSetsProps extends TestConfigProps {
 interface TestContext {
   readonly iModel: IModelConnection;
   readonly externalSavedViews: ViewStateSpec[];
+  readonly iModelKey: string;
 }
 
 /** The view against which a specific TestCase is to be run. */
@@ -58,6 +65,8 @@ interface TestResult {
   numSelectedTiles: number;
   /** Approximate time in milliseconds before all tiles were ready for display. */
   tileLoadingTime: number;
+  /** The total number of milliseconds spent decoding content. */
+  tileDecodingTime: number;
   /** Amount of memory requested from the GPU for the graphics of the tiles selected for display. */
   selectedTileGpuBytes: number;
   /** Amount of memory requested from the GPU for the graphics of all tiles in the tile trees viewed by this test.
@@ -137,23 +146,48 @@ class OverrideProvider {
   }
 }
 
+class DisplayTransformProvider implements ModelDisplayTransformProvider {
+  private readonly _transforms = new Map<string, ModelDisplayTransform>();
+  private constructor() { }
+
+  public static fromJSON(props: DisplayTransformProviderProps): DisplayTransformProvider {
+    const provider = new DisplayTransformProvider();
+    for (const prop of props) {
+      provider._transforms.set(prop.modelId, { transform: Transform.fromJSON(prop.transform), premultiply: prop.premultiply });
+    }
+
+    return provider;
+  }
+
+  public getModelDisplayTransform(modelId: string): ModelDisplayTransform | undefined {
+    return this._transforms.get(modelId);
+  }
+}
+
 /** Given the JSON representation of a set of tests, executes them and records output (CSV timing info, images, logs, etc). */
 export class TestRunner {
   private readonly _config: TestConfigStack;
   private readonly _minimizeOutput: boolean;
+  private readonly _outputRenderCmdStats: boolean;
   private readonly _testSets: TestSetProps[];
   private readonly _logFileName: string;
   private readonly _testNamesImages = new Map<string, number>();
   private readonly _testNamesTimings = new Map<string, number>();
   private readonly _savedViewsFetcher: SavedViewsFetcher;
+  private _lastRestartConfig: TestConfig;
 
   public get curConfig(): TestConfig {
     return this._config.top;
   }
 
+  public get lastRestartConfig(): TestConfig { return this._lastRestartConfig; }
+  public set lastRestartConfig(config: TestConfig) {
+    this._lastRestartConfig = config;
+  }
+
   public constructor(
     props: TestSetsProps,
-    savedViewsFetcher: SavedViewsFetcher = new SavedViewsFetcher()
+    savedViewsFetcher: SavedViewsFetcher = new SavedViewsFetcher(),
   ) {
     // NB: The default minimum spatial chord tolerance was changed from "no minimum" to 1mm. To preserve prior behavior,
     // override it to zero.
@@ -162,8 +196,10 @@ export class TestRunner {
     props.tileProps = props.tileProps ? { ...defaultTileProps, ...props.tileProps } : defaultTileProps;
 
     this._config = new TestConfigStack(new TestConfig(props));
+    this._lastRestartConfig = this.curConfig;
     this._testSets = props.testSet;
     this._minimizeOutput = true === props.minimize;
+    this._outputRenderCmdStats = true === props.renderCmdStats;
     this._logFileName = "_DispPerfTestAppViewLog.txt";
     this._savedViewsFetcher = savedViewsFetcher;
 
@@ -183,14 +219,15 @@ export class TestRunner {
       renderOptions.disabledExtensions = Array.isArray(ext) ? ext.concat(["EXT_disjoint_timer_query", "EXT_disjoint_timer_query_webgl2"]) : ["EXT_disjoint_timer_query", "EXT_disjoint_timer_query_webgl2"];
       needRestart = true;
     }
-    if (IModelApp.initialized && needRestart)
+    if (IModelApp.initialized && needRestart) {
       await IModelApp.shutdown();
-    if (needRestart) {
+    }
+    if (!IModelApp.initialized) {
       const realityDataClientOptions: RealityDataClientOptions = {
         /** API Version. v1 by default */
         // version?: ApiVersion;
-        /** API Url. Used to select environment. Defaults to "https://api.bentley.com/realitydata" */
-        baseUrl: `https://${process.env.IMJS_URL_PREFIX}api.bentley.com/realitydata`,
+        /** API Url. Used to select environment. Defaults to "https://api.bentley.com/reality-management/reality-data" */
+        baseUrl: `https://${process.env.IMJS_URL_PREFIX ?? ""}api.bentley.com`,
       };
       await DisplayPerfTestApp.startup({
         renderSys: renderOptions,
@@ -198,6 +235,8 @@ export class TestRunner {
         realityDataAccess: new RealityDataAccessClient(realityDataClientOptions),
       });
     }
+    // save current state as reference, whether or not we restarted
+    this.lastRestartConfig = this.curConfig;
 
     // Run all the tests
     for (const set of this._testSets)
@@ -214,23 +253,26 @@ export class TestRunner {
   }
 
   private async runTestSet(set: TestSetProps): Promise<void> {
-    let needRestart = this._config.push(set);
+    this._config.push(set);
     const realityDataClientOptions: RealityDataClientOptions = {
       /** API Version. v1 by default */
       // version?: ApiVersion;
       /** API Url. Used to select environment. Defaults to "https://api.bentley.com/realitydata" */
-      baseUrl: `https://${process.env.IMJS_URL_PREFIX}api.bentley.com/realitydata`,
+      baseUrl: `https://${process.env.IMJS_URL_PREFIX ?? ""}api.bentley.com`,
     };
+
+    let context: TestContext | undefined;
+
     // Perform all the tests for this iModel. If the iModel name contains an asterisk,
     // treat it as a wildcard and run tests for each iModel that matches the given wildcard.
     for (const testProps of set.tests) {
-      if (this._config.push(testProps))
-        needRestart = true;
+      this._config.push(testProps);
 
       // Ensure IModelApp is initialized with options required by this test.
-      if (IModelApp.initialized && needRestart)
+      if (IModelApp.initialized && this.curConfig.requiresRestart(this.lastRestartConfig)) {
+        context = undefined;
         await IModelApp.shutdown();
-
+      }
       if (!IModelApp.initialized) {
         const renderOptions: RenderSystem.Options = this.curConfig.renderOptions ?? {};
         if (!this.curConfig.useDisjointTimer) {
@@ -242,34 +284,47 @@ export class TestRunner {
           tileAdmin: this.curConfig.tileProps,
           realityDataAccess: new RealityDataAccessClient(realityDataClientOptions),
         });
+        this.lastRestartConfig = this.curConfig;
       }
 
       // Run test against all iModels matching the test config.
       const iModelNames = await this.getIModelNames();
       const originalViewName = this.curConfig.viewName;
+
       for (const iModelName of iModelNames) {
         this.curConfig.iModelName = iModelName;
         this.curConfig.viewName = originalViewName;
+        const iModelKey = this.curConfig.iModelId ? this.curConfig.iModelId : `${this.curConfig.iModelLocation}${separator}${this.curConfig.iModelName}`;
 
-        let context: TestContext;
         try {
-          context = await this.openIModel();
+          const reuseContext = context && set.reuseContext && context.iModelKey === iModelKey;
+          if (!reuseContext) {
+            if (context) {
+              await context?.iModel.close();
+            }
+            context = await this.openIModel();
+          } else {
+            context?.iModel.selectionSet.emptyAll();
+          }
         } catch (e: any) {
           await this.logError(`Failed to open iModel ${iModelName}: ${(e as Error).message}`);
           continue;
         }
 
         try {
-          await this.runTests(context);
+          if (context) {
+            await this.runTests(context);
+          } else {
+            await this.logError(`Invalid test context on iModel ${iModelName}`);
+          }
         } catch {
           await this.logError(`Failed to run tests on iModel ${iModelName}`);
-        } finally {
-          await context.iModel.close();
         }
       }
       this._config.pop();
     }
 
+    await context?.iModel.close();
     this._config.pop();
   }
 
@@ -281,7 +336,10 @@ export class TestRunner {
       await this.logTest();
 
       try {
+        this.curConfig.urlStr = undefined;
         const result = await this.runTest(context);
+        if (this.curConfig.urlStr)
+          await this.logURL();
         if (result)
           await this.logToFile(result.selectedTileIds, { noNewLine: true });
       } catch (ex) {
@@ -525,8 +583,12 @@ export class TestRunner {
     await viewport.waitForSceneCompletion();
     timer.stop();
 
+    const decodingTime = IModelApp.tileAdmin.statistics.decoding.total;
+    IModelApp.tileAdmin.resetStatistics();
+
     const selectedTiles = getSelectedTileStats(viewport);
     return {
+      tileDecodingTime: decodingTime,
       tileLoadingTime: timer.current.milliseconds,
       selectedTileIds: selectedTiles.ids,
       numSelectedTiles: selectedTiles.count,
@@ -569,6 +631,8 @@ export class TestRunner {
     }
 
     await view.load();
+
+    view.modelDisplayTransformProvider = spec.displayTransformProvider;
     return {
       view,
       elementOverrides: spec.elementOverrides,
@@ -628,23 +692,30 @@ export class TestRunner {
     return this.logToFile(outStr);
   }
 
+  // Log url path for cases it is used
+  private async logURL(): Promise<void> {
+    const outStr = `  [url: ${this.curConfig.urlStr}]`;
+    await this.logToConsole(outStr);
+    return this.logToFile(outStr);
+  }
+
   private async openIModel(): Promise<TestContext> {
-    if(this.curConfig.iModelId) {
-      if(process.env.IMJS_OIDC_HEADLESS) {
+    if (this.curConfig.iModelId) {
+      if (process.env.IMJS_OIDC_HEADLESS) {
         const token = await DisplayPerfRpcInterface.getClient().getAccessToken();
         IModelApp.authorizationClient = new TestFrontendAuthorizationClient(token);
       }
       // Download remote iModel and its saved views
       const { iModelId, iTwinId } = this.curConfig;
-      if(iTwinId === undefined)
+      if (iTwinId === undefined)
         throw new Error("Missing iTwinId for remote iModel");
       const iModel = await CheckpointConnection.openRemote(iTwinId, iModelId);
       const externalSavedViews = await this._savedViewsFetcher.getSavedViews(iTwinId, iModelId, await IModelApp.getAccessToken());
-      return { iModel, externalSavedViews };
+      return { iModel, externalSavedViews, iModelKey: this.curConfig.iModelId };
     } else {
       // Load local iModel and its saved views
       const filepath = `${this.curConfig.iModelLocation}${separator}${this.curConfig.iModelName}`;
-      const iModel = await SnapshotConnection.openFile(filepath);
+      const iModel = await TestSnapshotConnection.openFile(filepath);
 
       const esv = await DisplayPerfRpcInterface.getClient().readExternalSavedViews(filepath);
       let externalSavedViews: ViewStateSpec[] = [];
@@ -656,10 +727,11 @@ export class TestRunner {
             viewProps: JSON.parse(x._viewStatePropsString) as ViewStateProps,
             elementOverrides: x._overrideElements ? JSON.parse(x._overrideElements) as ElementOverrideProps[] : undefined,
             selectedElements: x._selectedElements ? JSON.parse(x._selectedElements) as Id64String | Id64Array : undefined,
+            displayTransformProvider: x._displayTransforms ? DisplayTransformProvider.fromJSON(JSON.parse(x._displayTransforms)) : undefined,
           };
         });
       }
-      return { iModel, externalSavedViews };
+      return { iModel, externalSavedViews, iModelKey: filepath };
     }
   }
 
@@ -836,11 +908,32 @@ export class TestRunner {
     rowData.set("Test Name", this.getTestName(test));
     rowData.set("Browser", getBrowserName(IModelApp.queryRenderCompatibility().userAgent));
     if (!this._minimizeOutput) {
+      rowData.set("Tile Decoding Time", test.tileDecodingTime);
       rowData.set("Tile Loading Time", test.tileLoadingTime);
       rowData.set("Num Selected Tiles", test.numSelectedTiles);
       rowData.set("Selected Tile GPU MB", test.selectedTileGpuBytes / (1024 * 1024));
       rowData.set("Tile Tree GPU MB", test.viewedTileTreeGpuBytes / (1024 * 1024));
       rowData.set("Total GPU MB", test.totalGpuBytes / (1024 * 1024));
+    }
+
+    if (this._outputRenderCmdStats) {
+      if (this._minimizeOutput) {
+        rowData.set("Num Selected Tiles", test.numSelectedTiles);
+        rowData.set("Selected Tile GPU MB", test.selectedTileGpuBytes / (1024 * 1024));
+      }
+      const dbgCtl = test.viewport.target.debugControl;
+      if (undefined !== dbgCtl) {
+        const cmdCounts = dbgCtl.getRenderCommands();
+        let numPrimitives = 0;
+        if (undefined !== cmdCounts) {
+          for (const cc of cmdCounts) {
+            rowData.set(cc.name, cc.count);
+            if ("Primitives" === cc.name)
+              numPrimitives = cc.count;
+          }
+          rowData.set("Primitives Per Tile", 0 === numPrimitives ? -1 : numPrimitives / test.numSelectedTiles);
+        }
+      }
     }
 
     const setGpuData = (name: string) => {
@@ -1038,8 +1131,8 @@ export class TestRunner {
 
   private async onException(ex: any): Promise<void> {
     // We need to log here so it gets written to the file.
-    await DisplayPerfTestApp.logException(ex, { dir: this.curConfig.outputPath, name: this._logFileName });
-    if ("terminate" === this.curConfig.onException)
+    const terminateErr = await DisplayPerfTestApp.logException(ex, { dir: this.curConfig.outputPath, name: this._logFileName });
+    if (terminateErr || "terminate" === this.curConfig.onException)
       await DisplayPerfRpcInterface.getClient().terminate();
   }
 }

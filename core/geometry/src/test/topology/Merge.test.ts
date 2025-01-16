@@ -3,7 +3,7 @@
 * See LICENSE.md in the project root for license terms and full copyright notice.
 *--------------------------------------------------------------------------------------------*/
 
-import { expect } from "chai";
+import { describe, expect, it } from "vitest";
 import { GeometryQuery } from "../../curve/GeometryQuery";
 import { LineString3d } from "../../curve/LineString3d";
 import { Angle } from "../../geometry3d/Angle";
@@ -54,7 +54,7 @@ describe("GraphMerge", () => {
       edges.removeArrayMembersWithY1Below(q.faceSuccessor.y);
 
     }
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
 
   it("MergeQuadQuad", () => {
@@ -85,10 +85,10 @@ describe("GraphMerge", () => {
       HalfEdgeGraphMerge.clusterAndMergeXYTheta(graph);
       GraphChecker.captureAnnotatedGraph(allGeometry, graph, x0, y0 += dy);
 
-      GeometryCoreTestIO.captureGeometry(allGeometry, PolyfaceBuilder.graphToPolyface(graph, undefined, HalfEdge.testFacePositiveAreaXY), x0, y0 += dy, 0);
+      GeometryCoreTestIO.captureGeometry(allGeometry, PolyfaceBuilder.graphToPolyface(graph, undefined, (node) => HalfEdge.testFacePositiveAreaXY(node)), x0, y0 += dy, 0);
 
       Triangulator.triangulateAllPositiveAreaFaces(graph);
-      GeometryCoreTestIO.captureGeometry(allGeometry, PolyfaceBuilder.graphToPolyface(graph, undefined, HalfEdge.testFacePositiveAreaXY), x0, y0 += dy, 0);
+      GeometryCoreTestIO.captureGeometry(allGeometry, PolyfaceBuilder.graphToPolyface(graph, undefined, (node) => HalfEdge.testFacePositiveAreaXY(node)), x0, y0 += dy, 0);
 
       const summary1 = HalfEdgeGraphSearch.collectFaceAreaSummary(graph, true);
       ck.testExactNumber(summary1.numNegative, summary1.negativeItemArray!.length, " negative face counts");
@@ -98,6 +98,6 @@ describe("GraphMerge", () => {
       x0 += dy;
       y0 = 0.0;
     }
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
 });

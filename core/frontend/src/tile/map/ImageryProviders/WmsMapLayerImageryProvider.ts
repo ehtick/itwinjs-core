@@ -30,7 +30,6 @@ export class WmsMapLayerImageryProvider extends MapLayerImageryProvider {
   private _allLayersRange?: MapCartoRectangle;
   private _subLayerRanges = new Map<string, MapCartoRectangle>();
   private _baseUrl: string;
-  // eslint-disable-next-line @typescript-eslint/naming-convention
   private _crsSupport: WmsCrsSupport|undefined;
 
   constructor(settings: ImageMapLayerSettings) {
@@ -166,7 +165,7 @@ export class WmsMapLayerImageryProvider extends MapLayerImageryProvider {
       // For instance, for EPSG:4326 the axis ordering is latitude/longitude, or north/east.
       // WMS 1.1.0 always requires the axis ordering to be longitude/latitude. *sigh*
       if (this._capabilities !== undefined) {
-        bboxString = this.getEPSG4326ExtentString(row, column, zoomLevel, this._capabilities?.isVersion13); // lat/long ordering
+        bboxString = this.getEPSG4326TileExtentString(row, column, zoomLevel, this._capabilities?.isVersion13); // lat/long ordering
         crsString= "EPSG%3A4326";
       }
 
@@ -178,7 +177,9 @@ export class WmsMapLayerImageryProvider extends MapLayerImageryProvider {
       return "";
 
     const crsParamName = this._capabilities?.isVersion13 ? "CRS" : "SRS";
-    return `${this._baseUrl}?SERVICE=WMS&VERSION=${this._capabilities?.version}&REQUEST=GetMap&FORMAT=image%2Fpng&TRANSPARENT=${this.transparentBackgroundString}&LAYERS=${layerString}&WIDTH=${this.tileSize}&HEIGHT=${this.tileSize}&${crsParamName}=${crsString}&STYLES=&BBOX=${bboxString}`;
+
+    const tmpUrl = `${this._baseUrl}?SERVICE=WMS&VERSION=${this._capabilities?.version}&REQUEST=GetMap&FORMAT=image%2Fpng&TRANSPARENT=${this.transparentBackgroundString}&LAYERS=${layerString}&WIDTH=${this.tileSize}&HEIGHT=${this.tileSize}&${crsParamName}=${crsString}&STYLES=&BBOX=${bboxString}`;
+    return this.appendCustomParams(tmpUrl);
   }
 
   public override async getToolTip(strings: string[], quadId: QuadId, carto: Cartographic, tree: ImageryMapTileTree): Promise<void> {
@@ -186,7 +187,7 @@ export class WmsMapLayerImageryProvider extends MapLayerImageryProvider {
     const infoFormats = this._capabilities?.featureInfoFormats;
     if (!doToolTips || undefined === infoFormats)
       return;
-    let formatString = infoFormats.find((format) => format === "text/html");
+    let formatString: string | undefined = infoFormats.find((format) => format === "text/html");
     if (!formatString)
       formatString = infoFormats[0];
 
@@ -200,7 +201,8 @@ export class WmsMapLayerImageryProvider extends MapLayerImageryProvider {
     const y = Math.floor(.5 + (1.0 - fraction.y) * this.tileSize);
     const coordinateString =  this._capabilities?.isVersion13 ? `&i=${x}&j=${y}` : `&x=${x}&y=${y}`;
     const crsParamName = this._capabilities?.isVersion13 ? "CRS" : "SRS";
-    const getFeatureUrl = `${this._baseUrl}?SERVICE=WMS&VERSION=${this._capabilities?.version}&REQUEST=GetFeatureInfo&LAYERS=${layerString}&WIDTH=${this.tileSize}&HEIGHT=${this.tileSize}&${crsParamName}=EPSG%3A3857&BBOX=${bboxString}&QUERY_LAYERS=${layerString}${coordinateString}&info_format=${formatString}`;
+    let getFeatureUrl = `${this._baseUrl}?SERVICE=WMS&VERSION=${this._capabilities?.version}&REQUEST=GetFeatureInfo&LAYERS=${layerString}&WIDTH=${this.tileSize}&HEIGHT=${this.tileSize}&${crsParamName}=EPSG%3A3857&BBOX=${bboxString}&QUERY_LAYERS=${layerString}${coordinateString}&info_format=${formatString}`;
+    getFeatureUrl = this.appendCustomParams(getFeatureUrl);
     return this.toolTipFromUrl(strings, getFeatureUrl);
   }
 }

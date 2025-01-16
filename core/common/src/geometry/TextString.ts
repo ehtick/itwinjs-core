@@ -6,8 +6,18 @@
  * @module Geometry
  */
 
-import { Point3d, Transform, Vector3d, XYZProps, YawPitchRollAngles, YawPitchRollProps } from "@itwin/core-geometry";
+import { Point2d, Point3d, Range2d, Transform, Vector3d, XYZProps, YawPitchRollAngles, YawPitchRollProps } from "@itwin/core-geometry";
 import { FontId } from "../Fonts";
+
+/**
+ * Optional cached text layout information used to support legacy proxy graphics.
+ * @beta
+ */
+export interface TextStringGlyphData {
+  glyphIds: number[];
+  glyphOrigins: Point2d[];
+  range: Range2d;
+}
 
 /** Properties for a TextString class.
  * @see [[GeometryStreamEntryProps]]
@@ -74,21 +84,25 @@ export class TextString {
   }
 
   public toJSON(): TextStringProps {
-    const val: any = {};
-    val.text = this.text;
-    val.font = this.font;
-    val.height = this.height;
-    val.widthFactor = this.widthFactor;
-    val.bold = this.bold;
-    val.italic = this.italic;
-    val.underline = this.underline;
-    if (!this.origin.isAlmostZero)
-      val.origin = this.origin;
+    const props: TextStringProps = {
+      text: this.text,
+      font: this.font,
+      height: this.height,
+      widthFactor: this.widthFactor,
+      bold: this.bold,
+      italic: this.italic,
+      underline: this.underline,
+    };
 
-    if (!this.rotation.isIdentity())
-      val.rotation = this.rotation;
+    if (!this.origin.isAlmostZero) {
+      props.origin = this.origin.toJSON();
+    }
 
-    return val;
+    if (!this.rotation.isIdentity()) {
+      props.rotation = this.rotation.toJSON();
+    }
+
+    return props;
   }
 
   public transformInPlace(transform: Transform): boolean {

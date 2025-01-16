@@ -6,18 +6,19 @@ import { assert, expect } from "chai";
 import * as sinon from "sinon";
 import * as path from "path";
 import {
-  BisCodeSpec, Code, ConcreteEntityTypes, DefinitionElementProps, ElementAspectProps, EntityMetaData, EntityReferenceSet, ModelProps,
-  RelatedElement, RelatedElementProps, RelationshipProps,
+  BisCodeSpec, Code, ConcreteEntityTypes, DefinitionElementProps, ElementAspectProps, ElementProps, EntityMetaData, EntityReferenceSet, ModelProps,
+  RelatedElement, RelatedElementProps, RelationshipProps, SchemaState,
 } from "@itwin/core-common";
 import {
-  DefinitionElement, DefinitionModel, ElementRefersToElements, EntityReferences, IModelDb, Model, RepositoryLink,
-  Schema, SnapshotDb, SpatialViewDefinition, UrlLink, ViewDefinition3d,
+  DefinitionElement, DefinitionModel, ElementRefersToElements, EntityReferences, IModelDb, IModelJsFs, Model, RepositoryLink,
+  Schema, SnapshotDb, SpatialViewDefinition, StandaloneDb, UrlLink, ViewDefinition3d,
 } from "../../core-backend";
 import { IModelTestUtils } from "../IModelTestUtils";
 import { KnownTestLocations } from "../KnownTestLocations";
 import { Element } from "../../Element";
 import { Schemas } from "../../Schema";
 import { ClassRegistry } from "../../ClassRegistry";
+import { OpenMode } from "@itwin/core-bentley";
 
 describe("Class Registry", () => {
   let imodel: SnapshotDb;
@@ -104,12 +105,18 @@ describe("Class Registry", () => {
 });
 
 describe("Class Registry - getRootMetaData", () => {
-  let imodel: SnapshotDb;
+  let imodel: StandaloneDb;
 
   before(async () => {
     const seedFileName = IModelTestUtils.resolveAssetFile("test.bim");
     const testFileName = IModelTestUtils.prepareOutputFile("ClassRegistry", "GetRootMetaData.bim");
-    imodel = IModelTestUtils.createSnapshotFromSeed(testFileName, seedFileName);
+    IModelJsFs.copySync(seedFileName, testFileName);
+
+    const schemaState: SchemaState = StandaloneDb.validateSchemas(testFileName, true);
+    assert.strictEqual(schemaState, SchemaState.UpgradeRecommended);
+    StandaloneDb.upgradeStandaloneSchemas(testFileName);
+
+    imodel = StandaloneDb.openFile(testFileName, OpenMode.ReadWrite);
     assert.exists(imodel);
     await imodel.importSchemaStrings([
       `<?xml version="1.0" encoding="UTF-8"?>
@@ -219,7 +226,6 @@ describe("Class Registry - generated classes", () => {
     derivedNavProp: RelatedElementProps;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   interface TestAspectWithNavProp extends ElementAspectProps {
     navProp: RelatedElement;
   }
@@ -313,8 +319,11 @@ describe("Class Registry - generated classes", () => {
   it("should only generate automatic collectReferenceIds implementations for generated classes", async () => {
     await imodel.importSchemas([testSchemaPath]); // will throw an exception if import fails
 
-    // eslint-disable-next-line @typescript-eslint/naming-convention
-    const GeneratedTestElementWithNavProp = imodel.getJsClass<typeof Element>("TestGeneratedClasses:TestElementWithNavProp");
+    class GeneratedTestElementWithNavProp extends imodel.getJsClass<typeof Element>("TestGeneratedClasses:TestElementWithNavProp") {
+      constructor(props: TestElementWithNavPropProps) {
+        super(props, imodel);
+      }
+    }
 
     const testEntityId = imodel.elements.insertElement({
       classFullName: "TestGeneratedClasses:TestEntity",
@@ -329,9 +338,9 @@ describe("Class Registry - generated classes", () => {
         id: testEntityId,
         relClassName: "TestGeneratedClasses:ElemRel",
       },
-    } as TestElementWithNavPropProps, imodel);
+    } as TestElementWithNavPropProps);
 
-    // eslint-disable-next-line @typescript-eslint/unbound-method, @typescript-eslint/dot-notation
+    // eslint-disable-next-line @typescript-eslint/dot-notation
     assert.isDefined(GeneratedTestElementWithNavProp.prototype["collectReferenceIds"]);
     expect(
       [...elemWithNavProp.getReferenceIds()],
@@ -348,15 +357,17 @@ describe("Class Registry - generated classes", () => {
 
   it("should not override collectReferenceIds for BisCore schema classes", async () => {
     // AnnotationFrameStyle is an example of an unregistered bis class without an implementation of collectReferenceIds
-    // eslint-disable-next-line @typescript-eslint/dot-notation
     assert.isTrue(imodel.getJsClass("BisCore:AnnotationFrameStyle").prototype.hasOwnProperty("collectReferenceIds"));
   });
 
   it("should get references from its bis superclass", async () => {
     await imodel.importSchemas([testSchemaPath]); // will throw an exception if import fails
 
-    // eslint-disable-next-line @typescript-eslint/naming-convention
-    const GeneratedTestElementWithNavProp = imodel.getJsClass<typeof Element>("TestGeneratedClasses:TestElementWithNavProp");
+    class GeneratedTestElementWithNavProp extends imodel.getJsClass<typeof Element>("TestGeneratedClasses:TestElementWithNavProp") {
+      constructor(props: ElementProps) {
+        super(props, imodel);
+      }
+    }
 
     const testEntityId = imodel.elements.insertElement({
       classFullName: "TestGeneratedClasses:TestEntity",
@@ -382,7 +393,7 @@ describe("Class Registry - generated classes", () => {
         id: "0x0000ffff",
         relClassName: "BisCore:ElementOwnsChildElements",
       }),
-    } as TestElementWithNavPropProps, imodel);
+    } as TestElementWithNavPropProps);
 
     // super class here is Element so we should get the code.scope, model and parent as references
     expect(
@@ -410,8 +421,11 @@ describe("Class Registry - generated classes", () => {
       element: { id: modelTestEntityIds[1] },
     } as TestAspectWithNavProp);
 
-    // eslint-disable-next-line @typescript-eslint/naming-convention
-    const GeneratedTestModelWithNavProp = imodel.getJsClass<typeof Model>("TestGeneratedClasses:TestModelWithNavProp");
+    class GeneratedTestModelWithNavProp extends imodel.getJsClass<typeof Model>("TestGeneratedClasses:TestModelWithNavProp") {
+      constructor(props: TestModelWithNavPropProps) {
+        super(props, imodel);
+      }
+    }
 
     const modelWithNavProp = new GeneratedTestModelWithNavProp({
       classFullName: GeneratedTestModelWithNavProp.classFullName,
@@ -421,7 +435,7 @@ describe("Class Registry - generated classes", () => {
       aspectNavProp: { id: aspectWithNavPropId, relClassName: "TestGeneratedClasses:ModelToAspectNavRel" },
       // removed due to a bug
       // relNavProp: { id: relWithNavPropId, relClassName: "TestGeneratedClasses:ModelToRelNavRel" },
-    } as TestModelWithNavPropProps, imodel);
+    } as TestModelWithNavPropProps);
 
     const modelWithNavPropId = modelWithNavProp.insert();
 
@@ -495,8 +509,11 @@ describe("Class Registry - generated classes", () => {
 
     const testElementWithNavPropCollectReferencesSpy = sinon.spy(ActualTestElementWithNavProp.prototype, "collectReferenceIds");
 
-    // eslint-disable-next-line @typescript-eslint/naming-convention
-    const ActualDerivedWithNavProp = imodel.getJsClass<typeof Element>(DerivedWithNavProp.classFullName);
+    class ActualDerivedWithNavProp extends imodel.getJsClass<typeof Element>(DerivedWithNavProp.classFullName) {
+      constructor(props: DerivedWithNavPropProps) {
+        super(props, imodel);
+      }
+    }
 
     const testEntity1Id = imodel.elements.insertElement({
       classFullName: "TestGeneratedClasses:TestEntity",
@@ -544,13 +561,13 @@ describe("Class Registry - generated classes", () => {
         id: testEntity2Id,
         relClassName: "TestGeneratedClasses:DerivedElemRel",
       },
-    } as DerivedWithNavPropProps, imodel);
+    } as DerivedWithNavPropProps);
 
-    // eslint-disable-next-line @typescript-eslint/unbound-method, @typescript-eslint/dot-notation
+    // eslint-disable-next-line @typescript-eslint/dot-notation
     assert.isDefined(ActualDerivedWithNavProp.prototype["collectReferenceIds"]);
     // This demonstrates that if a non-generated class has a registered non-biscore base, it will not get a generated impl,
     expect(
-      [...derivedElemWithNavProp.getReferenceIds()]
+      [...derivedElemWithNavProp.getReferenceIds()],
     ).to.have.members([
       EntityReferences.fromEntityType(elemWithNavProp.model, ConcreteEntityTypes.Model),
       EntityReferences.fromEntityType(elemWithNavProp.code.scope, ConcreteEntityTypes.Element),
@@ -594,7 +611,6 @@ describe("Class Registry - generated classes", () => {
     const ActualDerived4 = imodel.getJsClass<typeof Element>("TestGeneratedClasses:Derived4");
     const ActualDerived5 = imodel.getJsClass<typeof Element>("TestGeneratedClasses:Derived5");
     const ActualDerived6 = imodel.getJsClass<typeof Element>("TestGeneratedClasses:Derived6");
-    /* eslint-enable @typescript-eslint/no-redeclare */
 
     expect(ActualTestElementWithNavProp.isGeneratedClass).to.be.true;
     expect(ActualDerivedWithNavProp.isGeneratedClass).to.be.true;
@@ -672,7 +688,7 @@ describe("Class Registry - generated classes", () => {
         // without any custom ancestor implementing collectReferenceIds, so Element.collectReferenceIds is called as the
         // super, and no navigation properties or other custom implementations are called so we only get "derived-4"
         EntityReferences.fromEntityType("derived-4", ConcreteEntityTypes.Element),
-      ].filter((x) => x !== undefined)
+      ].filter((x) => x !== undefined),
     );
 
     expect(elementMethodSpy.called).to.be.true; // this is the `super.collectReferenceIds` call in MyDerived4
@@ -699,8 +715,8 @@ describe("Class Registry - generated classes", () => {
           Derived4,
           Derived5, // save as above (so will be removed from set)
           Derived6, // save as above (so will be removed from set)
-        ].map((e) => e.prototype["collectReferenceIds"]) // eslint-disable-line @typescript-eslint/dot-notation
-      )
+        ].map((e) => e.prototype["collectReferenceIds"]), // eslint-disable-line @typescript-eslint/dot-notation
+      ),
     ).to.deep.equal(
       new Set(
         [
@@ -709,9 +725,8 @@ describe("Class Registry - generated classes", () => {
           ActualDerivedWithNavProp,
           Derived2,
           Derived4,
-        // eslint-disable-next-line @typescript-eslint/dot-notation
-        ].map((e) => e.prototype["collectReferenceIds"]) // eslint-disable-line @typescript-eslint/dot-notation
-      )
+        ].map((e) => e.prototype["collectReferenceIds"]), // eslint-disable-line @typescript-eslint/dot-notation
+      ),
     );
 
     MyTestGeneratedClasses.unregisterSchema();

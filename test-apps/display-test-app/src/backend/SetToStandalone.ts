@@ -6,7 +6,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import { Guid, OpenMode } from "@itwin/core-bentley";
-import { IModelHost } from "@itwin/core-backend";
+import { IModelHost, IModelNative } from "@itwin/core-backend";
 import { BriefcaseIdValue } from "@itwin/core-common";
 
 let prefix = "";
@@ -46,7 +46,7 @@ function setToStandalone(iModelName: string) {
   indent();
 
   try {
-    const nativeDb = new IModelHost.platform.DgnDb();
+    const nativeDb = new IModelNative.platform.DgnDb();
     nativeDb.openIModel(iModelName, OpenMode.ReadWrite);
     nativeDb.enableWalMode();
     nativeDb.setITwinId(Guid.empty); // empty iTwinId means "standalone"
@@ -54,7 +54,7 @@ function setToStandalone(iModelName: string) {
     nativeDb.deleteAllTxns(); // necessary before resetting briefcaseId
     nativeDb.resetBriefcaseId(BriefcaseIdValue.Unassigned); // standalone iModels should always have BriefcaseId unassigned
     nativeDb.saveChanges(); // save change to briefcaseId
-    nativeDb.closeIModel();
+    nativeDb.closeFile();
   } catch (err: any) {
     log(err.message);
   }
@@ -93,7 +93,7 @@ async function run() {
     return;
   }
 
-  await IModelHost.startup();
+  await IModelHost.startup({ profileName: "display-test-app" });
 
   const rootPath = process.argv[2];
   if (fs.statSync(rootPath).isDirectory())

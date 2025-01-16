@@ -7,8 +7,8 @@
  */
 
 import { Point2d, Range2d } from "@itwin/core-geometry";
-import { request, RequestBasicCredentials, RequestOptions } from "../../request/Request";
-import { MapCartoRectangle, WmsUtilities } from "../internal"; // WmsUtilities needed for getBaseUrl
+import { RequestBasicCredentials } from "../../request/Request";
+import { MapCartoRectangle, WmsUtilities } from "../internal";
 
 enum OwsConstants {
   ABSTRACT_XMLTAG = "ows:Abstract",
@@ -65,20 +65,6 @@ enum XmlConstants {
 export enum WmtsConstants {
   GOOGLEMAPS_LEVEL0_SCALE_DENOM = 559082264.0287178,
   GOOGLEMAPS_COMPATIBLE_WELLKNOWNNAME = "googlemapscompatible",
-}
-
-/**
- * fetch XML from HTTP request
- * @param url server URL to address the request
- * @internal
- */
-async function getXml(url: string, credentials?: RequestBasicCredentials): Promise<string> {
-  const options: RequestOptions = {
-    timeout: 20000,
-    retryCount: 2,
-    auth: credentials,
-  };
-  return request(url, "text", options);
 }
 
 /**
@@ -551,14 +537,24 @@ export class WmtsCapabilities {
     return new WmtsCapabilities(xmlDoc);
   }
 
-  public static async create(url: string, credentials?: RequestBasicCredentials, ignoreCache?: boolean): Promise<WmtsCapabilities | undefined> {
+  public static async create(url: string, credentials?: RequestBasicCredentials, ignoreCache?: boolean, queryParams?: {[key: string]: string}): Promise<WmtsCapabilities | undefined> {
     if (!ignoreCache) {
       const cached = WmtsCapabilities._capabilitiesCache.get(url);
       if (cached !== undefined)
         return cached;
     }
 
-    const xmlCapabilities = await getXml(`${WmsUtilities.getBaseUrl(url)}?request=GetCapabilities&service=WMTS`, credentials);
+    const tmpUrl = new URL(WmsUtilities.getBaseUrl(url));
+    tmpUrl.searchParams.append("request", "GetCapabilities");
+    tmpUrl.searchParams.append("service", "WMTS");
+    if (queryParams) {
+      Object.keys(queryParams).forEach((paramKey) => {
+        if (!tmpUrl.searchParams.has(paramKey))
+          tmpUrl.searchParams.append(paramKey, queryParams[paramKey]);
+      });
+    }
+
+    const xmlCapabilities = await WmsUtilities.fetchXml(tmpUrl.toString(), credentials);
     if (!xmlCapabilities)
       return undefined;
 

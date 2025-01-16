@@ -31,6 +31,7 @@ export const enum VariableType {
   Sampler2D, // sampler2D
   SamplerCube, // samplerCube
   Uint, // uint
+  BVec2, // bvec2
 
   COUNT,
 }
@@ -73,6 +74,7 @@ namespace Convert {
       case VariableType.Sampler2D: return "sampler2D";
       case VariableType.SamplerCube: return "samplerCube";
       case VariableType.Uint: return "uint";
+      case VariableType.BVec2: return "bvec2";
       default:
         assert(false);
         return "undefined";
@@ -215,6 +217,10 @@ export class ShaderVariables {
     this.addVariable(ShaderVariable.create(name, type, VariableScope.Uniform, binding, precision));
   }
 
+  public addUniformArray(name: string, type: VariableType, length: number, binding: AddVariableBinding) {
+    this.addVariable(ShaderVariable.createArray(name, type, length, VariableScope.Uniform, binding));
+  }
+
   public addVarying(name: string, type: VariableType): boolean {
     return this.addVariable(ShaderVariable.create(name, type, VariableScope.Varying));
   }
@@ -324,6 +330,7 @@ export class ShaderVariables {
           variableSize = 1;
           break;
         case VariableType.Vec2:
+        case VariableType.BVec2:
           variableSize = 2;
           break;
         case VariableType.Vec3:
@@ -394,6 +401,7 @@ export class ShaderVariables {
           variableSize = 1;
           break;
         case VariableType.Vec2:
+        case VariableType.BVec2:
           variableSize = 2;
           break;
         case VariableType.Vec3:
@@ -888,6 +896,9 @@ export const enum FragmentShaderComponent {
   // (Optional) Discard if outside any clipping planes
   // void applyClipping()
   ApplyClipping,
+  // (Optional) Apply countour lines to lit base color
+  // vec4 applyClipping(vec4 baseColor)
+  ApplyContours,
   // (Optional) Apply flash hilite to lit base color
   // vec4 applyFlash(vec4 baseColor)
   ApplyFlash,
@@ -995,9 +1006,9 @@ export class FragmentShaderBuilder extends ShaderBuilder {
     const applyClipping = this.get(FragmentShaderComponent.ApplyClipping);
     if (undefined !== applyClipping) {
       prelude.addline("vec3 g_clipColor;\n");
-      prelude.addFunction("bool applyClipping(vec4 baseColor)", applyClipping);
-      main.addline("  bool hasClipColor = applyClipping(baseColor);");
-      main.addline("  if (hasClipColor) { baseColor.rgb = g_clipColor; } else {");
+      prelude.addFunction("bvec2 applyClipping(vec4 baseColor)", applyClipping);
+      main.addline("  g_hasClipColor = applyClipping(baseColor);");
+      main.addline("  if (g_hasClipColor.x) { baseColor.rgb = g_clipColor; } else {");
       clipIndent = "  ";
     }
 
@@ -1064,10 +1075,20 @@ export class FragmentShaderBuilder extends ShaderBuilder {
       main.addline("  baseColor = applyLighting(baseColor);");
     }
 
+    if (undefined !== applyClipping) {
+      main.addline("  if (g_hasClipColor.y) { baseColor.rgba = vec4(g_clipColor, 1.0); } ");
+    }
+
     const reverseWoW = this.get(FragmentShaderComponent.ReverseWhiteOnWhite);
     if (undefined !== reverseWoW) {
       prelude.addFunction("vec4 reverseWhiteOnWhite(vec4 baseColor)", reverseWoW);
       main.addline("  baseColor = reverseWhiteOnWhite(baseColor);");
+    }
+
+    const applyContours = this.get(FragmentShaderComponent.ApplyContours);
+    if (undefined !== applyContours) {
+      prelude.addFunction("vec4 applyContours(vec4 baseColor)", applyContours);
+      main.addline("  baseColor = applyContours(baseColor);");
     }
 
     const applyFlash = this.get(FragmentShaderComponent.ApplyFlash);

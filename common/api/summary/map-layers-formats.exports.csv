@@ -1,4 +1,8 @@
 sep=;
-Release Tag;API Item
-internal;ArcGisFeatureProvider 
-beta;MapLayersFormats
+Release Tag;API Item Type;API Item Name
+internal;class;ArcGisFeatureProvider
+internal;class;DefaultArcGiSymbology
+beta;class;MapFeatureInfoTool
+beta;interface;MapFeatureInfoToolData
+beta;class;MapLayersFormats
+beta;interface;MapLayersFormatsConfig

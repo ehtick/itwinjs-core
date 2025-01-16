@@ -7,7 +7,7 @@
  */
 
 import { assert } from "@itwin/core-bentley";
-import { Angle, Arc3d, ClipPlane, ClipPlaneContainment, Constant, CurvePrimitive, Ellipsoid, GrowableXYZArray, LongitudeLatitudeNumber, Matrix3d, Plane3dByOriginAndUnitNormal, Point2d, Point3d, Point4d, Range1d, Range3d, Ray3d, Transform, Vector3d, XYAndZ } from "@itwin/core-geometry";
+import { Angle, Arc3d, ClipPlane, ClipPlaneContainment, Constant, CurvePrimitive, Ellipsoid, GrowableXYZArray, LongitudeLatitudeNumber, Matrix3d, Plane3dByOriginAndUnitNormal, Point2d, Point3d, Point4d, Range1d, Range3d, Ray3d, Transform, Vector3d, WritableXYAndZ, XYAndZ } from "@itwin/core-geometry";
 import { Cartographic, ColorByName, ColorDef, Frustum, GeoCoordStatus, GlobeMode, LinePixels } from "@itwin/core-common";
 import { IModelConnection } from "./IModelConnection";
 import { GraphicBuilder } from "./render/GraphicBuilder";
@@ -115,8 +115,45 @@ export class BackgroundMapGeometry {
     return BackgroundMapGeometry.getCartesianRange(iModel, scratchRange).diagonal().magnitudeXY() * BackgroundMapGeometry._transitionDistanceMultiplier;
   }
 
-  public async dbToCartographicFromGcs(db: XYAndZ, result?: Cartographic): Promise<Cartographic> {
-    return this.cartesianRange.containsPoint(Point3d.createFrom(db)) ? this._iModel.spatialToCartographic(db, result) : this.dbToCartographic(db, result);
+  public async dbToCartographicFromGcs(db: XYAndZ[]): Promise<Cartographic[]> {
+    const scratch = new Point3d();
+    const promises = db.map(async (p) => {
+      return this.cartesianRange.containsPoint(Point3d.createFrom(p, scratch)) ? this._iModel.spatialToCartographic(p) : this.dbToCartographic(p);
+    });
+
+    return Promise.all(promises);
+  }
+
+  public async dbToWGS84CartographicFromGcs(db: XYAndZ[]): Promise<Cartographic[]> {
+    if (db.length === 0)
+      return [];
+
+    const result: Cartographic[] = Array(db.length);
+    const reproject: XYAndZ[] = [];
+    const reprojectIdx: number[] = [];
+    const scratch = new Point3d();
+    for (let i = 0; i < db.length; i++) {
+      Point3d.createFrom(db[i], scratch);
+      if (this.cartesianRange.containsPoint(scratch) ) {
+        reprojectIdx.push(i);
+        reproject.push(db[i]);
+      } else {
+        result[i] = this.dbToCartographic(db[i]);
+      }
+    }
+
+    if (reproject.length === 0)
+      return result;
+
+    const reprojectPromise = this._iModel.wgs84CartographicFromSpatial(reproject);
+    return reprojectPromise.then((reprojected) =>  {
+      if (reprojected.length === reprojectIdx.length) {   // reprojected array size must match our index array, otherwise something is OFF
+        for (let i = 0; i < reprojected.length; i++) {
+          result[reprojectIdx[i]] = reprojected[i]; // Insert the reprojected values at their original index
+        }
+      }
+      return result;
+    });
   }
 
   public dbToCartographic(db: XYAndZ, result?: Cartographic): Cartographic {
@@ -132,24 +169,65 @@ export class BackgroundMapGeometry {
     }
   }
 
-  public async cartographicToDbFromGcs(cartographic: Cartographic, result?: Point3d): Promise<Point3d> {
+  public async cartographicToDbFromGcs(cartographic: Cartographic[]): Promise<Point3d[]> {
     let db;
     if (this.globeMode === GlobeMode.Plane) {
       const fraction = Point2d.create(0, 0);
-      this._mercatorTilingScheme.cartographicToFraction(cartographic.latitude, cartographic.longitude, fraction);
-      db = this._mercatorFractionToDb.multiplyXYZ(fraction.x, fraction.y, cartographic.height, result);
+      db = cartographic.map((p) => {
+        this._mercatorTilingScheme.cartographicToFraction(p.latitude, p.longitude, fraction);
+        return this._mercatorFractionToDb.multiplyXYZ(fraction.x, fraction.y, p.height);
+      });
     } else {
-      db = this._ecefToDb.multiplyPoint3d(cartographic.toEcef())!;
+      db = cartographic.map((p) => this._ecefToDb.multiplyPoint3d(p.toEcef()));
     }
-    return (!this._iModel.noGcsDefined && this.cartesianRange.containsPoint(db)) ? this._iModel.cartographicToSpatialFromGcs(cartographic) : db;
+
+    if (this._iModel.noGcsDefined)
+      return db;
+
+    const promises = db.map(async (p, i) => {
+      return this.cartesianRange.containsPoint(p) ? this._iModel.cartographicToSpatialFromGcs(cartographic[i]) : p;
+    });
+
+    return Promise.all(promises);
   }
+
+  public async cartographicToDbFromWgs84Gcs(cartographic: Cartographic[]): Promise<Point3d[]> {
+    let db;
+    if (this.globeMode === GlobeMode.Plane) {
+      const fraction = Point2d.create(0, 0);
+      db = cartographic.map((p) => {
+        this._mercatorTilingScheme.cartographicToFraction(p.latitude, p.longitude, fraction);
+        return this._mercatorFractionToDb.multiplyXYZ(fraction.x, fraction.y, p.height);
+      });
+    } else {
+      db = cartographic.map((p) => this._ecefToDb.multiplyPoint3d(p.toEcef()));
+    }
+
+    if (this._iModel.noGcsDefined)
+      return db;
+
+    const toReprojectCoords: WritableXYAndZ[] = [];
+    const toReprojectIdx: number[] = [];
+    db.forEach(async (p, i) => {
+      if (this.cartesianRange.containsPoint(p)) {
+        toReprojectCoords.push({x:cartographic[i].longitudeDegrees, y:cartographic[i].latitudeDegrees, z:cartographic[i].height});
+        toReprojectIdx.push(i);
+      }
+    });
+    const spatialPoints = await this._iModel.toSpatialFromGcs(toReprojectCoords, { horizontalCRS: { epsg: 4326 }, verticalCRS: { id: "ELLIPSOID" } });
+    return db.map((p, i) => {
+      const reprojectedIdx = toReprojectIdx.findIndex((value) => value === i);
+      return (reprojectedIdx === -1 ? p : spatialPoints[reprojectedIdx]);
+    });
+  }
+
   public cartographicToDb(cartographic: Cartographic, result?: Point3d): Point3d {
     if (this.globeMode === GlobeMode.Plane) {
       const fraction = Point2d.create(0, 0);
       this._mercatorTilingScheme.cartographicToFraction(cartographic.latitude, cartographic.longitude, fraction);
       return this._mercatorFractionToDb.multiplyXYZ(fraction.x, fraction.y, cartographic.height, result);
     } else {
-      return this._ecefToDb.multiplyPoint3d(cartographic.toEcef())!;
+      return this._ecefToDb.multiplyPoint3d(cartographic.toEcef());
     }
   }
 
@@ -157,6 +235,7 @@ export class BackgroundMapGeometry {
     const equatorRadius = Constant.earthRadiusWGS84.equator + radiusOffset, polarRadius = Constant.earthRadiusWGS84.polar + radiusOffset;
     return Ellipsoid.createCenterMatrixRadii(this.globeOrigin, this.globeMatrix, equatorRadius, equatorRadius, polarRadius);
   }
+
   public getPlane(offset = 0) {
     return Plane3dByOriginAndUnitNormal.create(Point3d.create(0, 0, this._bimElevationBias + offset), Vector3d.create(0, 0, 1))!;
   }
@@ -407,9 +486,9 @@ export async function calculateEcefToDbTransformAtLocation(originIn: Point3d, iM
   const geoOrigin = Point3d.fromJSON(response.geoCoords[0].p);
   const geoNorth = Point3d.fromJSON(response.geoCoords[1].p);
   const geoEast = Point3d.fromJSON(response.geoCoords[2].p);
-  const ecefOrigin = Cartographic.fromDegrees({ longitude: geoOrigin.x, latitude: geoOrigin.y, height: geoOrigin.z }).toEcef()!;
-  const ecefNorth = Cartographic.fromDegrees({ longitude: geoNorth.x, latitude: geoNorth.y, height: geoNorth.z }).toEcef()!;
-  const ecefEast = Cartographic.fromDegrees({ longitude: geoEast.x, latitude: geoEast.y, height: geoEast.z }).toEcef()!;
+  const ecefOrigin = Cartographic.fromDegrees({ longitude: geoOrigin.x, latitude: geoOrigin.y, height: geoOrigin.z }).toEcef();
+  const ecefNorth = Cartographic.fromDegrees({ longitude: geoNorth.x, latitude: geoNorth.y, height: geoNorth.z }).toEcef();
+  const ecefEast = Cartographic.fromDegrees({ longitude: geoEast.x, latitude: geoEast.y, height: geoEast.z }).toEcef();
 
   const xVector = Vector3d.createStartEnd(ecefOrigin, ecefEast);
   const yVector = Vector3d.createStartEnd(ecefOrigin, ecefNorth);

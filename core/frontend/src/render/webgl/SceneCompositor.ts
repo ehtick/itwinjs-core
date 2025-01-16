@@ -6,7 +6,7 @@
  * @module WebGL
  */
 
-import { assert, dispose } from "@itwin/core-bentley";
+import { assert, dispose, Id64String } from "@itwin/core-bentley";
 import { Transform, Vector2d, Vector3d } from "@itwin/core-geometry";
 import {
   ModelFeature, PointCloudDisplaySettings, RenderFeatureTable, RenderMode, SpatialClassifierInsideDisplay, SpatialClassifierOutsideDisplay,
@@ -14,7 +14,7 @@ import {
 import { RenderType } from "@itwin/webgl-compatibility";
 import { IModelConnection } from "../../IModelConnection";
 import { SceneContext } from "../../ViewContext";
-import { ViewRect } from "../../ViewRect";
+import { ViewRect } from "../../common/ViewRect";
 import { Pixel } from "../Pixel";
 import { GraphicList } from "../RenderGraphic";
 import { RenderMemory } from "../RenderMemory";
@@ -599,7 +599,10 @@ class Geometry implements WebGLDisposable, RenderMemory.Consumer {
 interface BatchInfo {
   featureTable: RenderFeatureTable;
   iModel?: IModelConnection;
+  transformFromIModel?: Transform;
   tileId?: string;
+  viewAttachmentId?: Id64String;
+  inSectionDrawingAttachment?: boolean;
 }
 
 // Represents a view of data read from a region of the frame buffer.
@@ -644,8 +647,16 @@ class PixelBuffer implements Pixel.Buffer {
     const featureId = this.getFeatureId(pixelIndex);
     if (undefined !== featureId) {
       const batch = this._batchState.find(featureId);
-      if (undefined !== batch)
-        return { featureTable: batch.featureTable, iModel: batch.batchIModel, tileId: batch.tileId };
+      if (undefined !== batch) {
+        return {
+          featureTable: batch.featureTable,
+          iModel: batch.batchIModel,
+          transformFromIModel: batch.transformFromBatchIModel,
+          tileId: batch.tileId,
+          viewAttachmentId: batch.viewAttachmentId,
+          inSectionDrawingAttachment: batch.inSectionDrawingAttachment,
+        };
+      }
     }
 
     return undefined;
@@ -731,11 +742,14 @@ class PixelBuffer implements Pixel.Buffer {
       }
     }
 
-    let featureTable, iModel, tileId;
+    let featureTable, iModel, transformToIModel, tileId, viewAttachmentId, inSectionDrawingAttachment;
     if (undefined !== batchInfo) {
       featureTable = batchInfo.featureTable;
       iModel = batchInfo.iModel;
+      transformToIModel = batchInfo.transformFromIModel;
       tileId = batchInfo.tileId;
+      viewAttachmentId = batchInfo.viewAttachmentId;
+      inSectionDrawingAttachment = batchInfo.inSectionDrawingAttachment;
     }
 
     return new Pixel.Data({
@@ -745,7 +759,10 @@ class PixelBuffer implements Pixel.Buffer {
       planarity,
       batchType: featureTable?.type,
       iModel,
+      transformFromIModel: transformToIModel,
       tileId,
+      viewAttachmentId,
+      inSectionDrawingAttachment,
     });
   }
 
@@ -800,6 +817,7 @@ export abstract class SceneCompositor implements WebGLDisposable, RenderMemory.C
   public abstract readFeatureIds(rect: ViewRect): Uint8Array | undefined;
   public abstract updateSolarShadows(context: SceneContext | undefined): void;
   public abstract drawPrimitive(primitive: Primitive, exec: ShaderProgramExecutor, outputsToPick: boolean): void;
+  public abstract forceBufferChange(): void;
 
   /** Obtain a framebuffer with a single spare RGBA texture that can be used for screen-space effect shaders. */
   public abstract get screenSpaceEffectFbo(): FrameBuffer;
@@ -864,6 +882,7 @@ class Compositor extends SceneCompositor {
   protected readonly _viewProjectionMatrix = new Matrix4();
   protected _primitiveDrawState = PrimitiveDrawState.Both; // used by drawPrimitive to decide whether a primitive needs to be drawn.
 
+  public forceBufferChange(): void { this._width = this._height = -1; }
   public get featureIds(): TextureHandle { return this.getSamplerTexture(this._readPickDataFromPingPong ? 0 : 1); }
   public get depthAndOrder(): TextureHandle { return this.getSamplerTexture(this._readPickDataFromPingPong ? 1 : 2); }
   private get _samplerFbo(): FrameBuffer { return this._readPickDataFromPingPong ? this._fbos.pingPong! : this._fbos.opaqueAll!; }
@@ -871,7 +890,7 @@ class Compositor extends SceneCompositor {
 
   public drawPrimitive(primitive: Primitive, exec: ShaderProgramExecutor, outputsToPick: boolean) {
     if ((outputsToPick && this._primitiveDrawState !== PrimitiveDrawState.NonPickable) ||
-        (!outputsToPick && this._primitiveDrawState !== PrimitiveDrawState.Pickable))
+      (!outputsToPick && this._primitiveDrawState !== PrimitiveDrawState.Pickable))
       primitive.draw(exec);
   }
 
@@ -1020,17 +1039,17 @@ class Compositor extends SceneCompositor {
         ++pushDepth;
         if (pushDepth === 1) {
           pcs = cmd.branch.branch.realityModelDisplaySettings?.pointCloud;
-          this.target.uniforms.realityModel.pointCloud.updateRange (cmd.branch.branch.realityModelRange,
+          this.target.uniforms.realityModel.pointCloud.updateRange(cmd.branch.branch.realityModelRange,
             this.target, cmd.branch.localToWorldTransform, is3d);
           pointClouds.push(curPC = { pcs, cmds: [cmd] });
         } else {
-          assert (undefined !== curPC);
+          assert(undefined !== curPC);
           curPC.cmds.push(cmd);
         }
       } else {
         if ("popBranch" === cmd.opcode)
           --pushDepth;
-        assert (undefined !== curPC);
+        assert(undefined !== curPC);
         curPC.cmds.push(cmd);
       }
     }
@@ -1059,7 +1078,7 @@ class Compositor extends SceneCompositor {
           if (undefined !== this._fbos.edlDrawCol)
             drawColBufs = this._fbos.edlDrawCol.getColorTargets(useMsBuffers, 0);
           if (undefined === this._fbos.edlDrawCol || this._textures.hilite !== drawColBufs?.tex || this._textures.hiliteMsBuff !== drawColBufs.msBuf) {
-            this._fbos.edlDrawCol = dispose (this._fbos.edlDrawCol);
+            this._fbos.edlDrawCol = dispose(this._fbos.edlDrawCol);
             const filters = [GL.MultiSampling.Filter.Linear];
             if (useMsBuffers)
               this._fbos.edlDrawCol = FrameBuffer.create([this._textures.hilite], this._depth,
@@ -1082,7 +1101,7 @@ class Compositor extends SceneCompositor {
 
             // next process buffers to generate EDL (depth buffer is passed during init)
             this.target.beginPerfMetricRecord("Calc EDL");  // ### todo keep? (probably)
-            const sts = this.eyeDomeLighting.draw ({
+            const sts = this.eyeDomeLighting.draw({
               edlMode: pc.pcs?.edlMode === "full" ? EDLMode.Full : EDLMode.On,
               edlFilter: !!pcs?.edlFilter,
               useMsBuffers,
@@ -1347,7 +1366,7 @@ class Compositor extends SceneCompositor {
         if (!this._textures.enableVolumeClassifier(width, height, this._antialiasSamples))
           return false;
 
-        if (!this._geom.enableVolumeClassifier(this._textures, this._depth!,))
+        if (!this._geom.enableVolumeClassifier(this._textures, this._depth!))
           return false;
 
         this.enableVolumeClassifierFbos(this._textures, this._depth!, this._vcAltDepthStencil, this._depthMS, this._vcAltDepthStencilMS);
@@ -1604,7 +1623,7 @@ class Compositor extends SceneCompositor {
     System.instance.frameBufferStack.execute(fbo, true, false, () => {
       try {
         gl.readPixels(rect.left, bottom, rect.width, rect.height, gl.RGBA, gl.UNSIGNED_BYTE, bytes);
-      } catch (e) {
+      } catch {
         result = undefined;
       }
     });

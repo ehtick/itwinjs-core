@@ -149,7 +149,7 @@ export abstract class MapTilingScheme {
       this.tileYToLatitude(this.rowZeroAtNorthPole ? (y + 1) : y, level),
       this.tileXToLongitude(x + 1, level),
       this.tileYToLatitude(this.rowZeroAtNorthPole ? y : (y + 1), level),
-      result
+      result,
     );
   }
 
@@ -188,8 +188,10 @@ export abstract class MapTilingScheme {
   }
 
   /** @alpha */
-  private ecefToPixelFraction(point: Point3d, applyTerrain: boolean): Point3d {
-    const cartoGraphic = Cartographic.fromEcef(point)!;
+  private ecefToPixelFraction(point: Point3d, applyTerrain: boolean): Point3d | undefined {
+    const cartoGraphic = Cartographic.fromEcef(point);
+    if (!cartoGraphic)
+      return undefined;
     return Point3d.create(this.longitudeToXFraction(cartoGraphic.longitude), this.latitudeToYFraction(cartoGraphic.latitude), applyTerrain ? cartoGraphic.height : 0);
   }
 
@@ -204,6 +206,9 @@ export abstract class MapTilingScheme {
     const mercatorOrigin = this.ecefToPixelFraction(dbToEcef.multiplyPoint3d(projectCenter), applyTerrain);
     const mercatorX = this.ecefToPixelFraction(dbToEcef.multiplyPoint3d(projectEast), applyTerrain);
     const mercatorY = this.ecefToPixelFraction(dbToEcef.multiplyPoint3d(projectNorth), applyTerrain);
+
+    if (!mercatorOrigin || !mercatorX || !mercatorY)
+      return Transform.createIdentity();
 
     const deltaX = Vector3d.createStartEnd(mercatorOrigin, mercatorX);
     const deltaY = Vector3d.createStartEnd(mercatorOrigin, mercatorY);
@@ -229,12 +234,12 @@ export class GeographicTilingScheme extends MapTilingScheme {
     super(numberOfLevelZeroTilesX, numberOfLevelZeroTilesY, rowZeroAtNorthPole);
   }
 
-  /** @internal override */
+  /** Implements [[MapTilingScheme.yFractionToLatitude]]. */
   public yFractionToLatitude(yFraction: number): number {
     return Math.PI * (this.yFractionFlip(yFraction) - .5);
   }
 
-  /** @internal override */
+  /** Implements [[MapTilingScheme.latitudeToYFraction]]. */
   public latitudeToYFraction(latitude: number): number {
     return this.yFractionFlip(.5 + latitude / Math.PI);
   }
@@ -276,13 +281,13 @@ export class WebMercatorTilingScheme extends MapTilingScheme {
     super(numberOfLevelZeroTilesX, numberOfLevelZeroTilesY, rowZeroAtNorthPole);
   }
 
-  /** @internal override */
+  /** Implements [[MapTilingScheme.yFractionToLatitude]]. */
   public yFractionToLatitude(yFraction: number): number {
     const mercatorAngle = Angle.pi2Radians * (this.rowZeroAtNorthPole ? (.5 - yFraction) : (yFraction - .5));
     return WebMercatorProjection.mercatorAngleToGeodeticLatitude(mercatorAngle);
   }
 
-  /** @internal override */
+  /** Implements [[MapTilingScheme.latitudeToYFraction. */
   public latitudeToYFraction(latitude: number): number {
     // Clamp the latitude coordinate to the valid Mercator bounds.
     if (latitude > WebMercatorProjection.maximumLatitude) {

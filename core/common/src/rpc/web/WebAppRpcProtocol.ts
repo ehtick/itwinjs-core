@@ -17,11 +17,11 @@ import { OpenAPIInfo, OpenAPIParameter, RpcOpenAPIDescription } from "./OpenAPI"
 import { WebAppRpcLogging } from "./WebAppRpcLogging";
 import { WebAppRpcRequest } from "./WebAppRpcRequest";
 
-/* eslint-disable deprecation/deprecation */
+/* eslint-disable @typescript-eslint/no-deprecated */
 
 /** An HTTP server request object.
  * @public
- * @deprecated in 3.6. The RPC system will be significantly refactored (or replaced) in version 5.0.
+ * @deprecated in 3.6. The RPC system will be significantly refactored (or replaced) in the future.
  */
 export interface HttpServerRequest extends BackendReadable {
   aborted: boolean;
@@ -33,6 +33,7 @@ export interface HttpServerRequest extends BackendReadable {
   headers: { [header: string]: string | string[] | undefined };
   rawHeaders: string[];
   trailers: { [key: string]: string | undefined };
+  trailersDistinct: NodeJS.Dict<string[]>;
   rawTrailers: string[];
   setTimeout(msecs: number, callback: () => void): void;
   setTimeout(msecs: number, callback: () => void): this;
@@ -46,11 +47,12 @@ export interface HttpServerRequest extends BackendReadable {
   method: string;
   ip?: string;
   header: (field: string) => string | undefined;
+  headersDistinct: NodeJS.Dict<string[]>;
 }
 
 /** An HTTP server response object.
  * @public
- * @deprecated in 3.6. The RPC system will be significantly refactored (or replaced) in version 5.0.
+ * @deprecated in 3.6. The RPC system will be significantly refactored (or replaced) in the future.
  */
 export interface HttpServerResponse extends BackendWritable {
   send(body?: any): HttpServerResponse;
@@ -170,6 +172,6 @@ export abstract class WebAppRpcProtocol extends RpcProtocol {
   /** Constructs an HTTP protocol. */
   public constructor(configuration: RpcConfiguration) {
     super(configuration);
-    this.events.addListener(WebAppRpcLogging.logProtocolEvent);
+    this.events.addListener(async (event, object) => WebAppRpcLogging.logProtocolEvent(event, object));
   }
 }

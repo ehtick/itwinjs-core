@@ -70,6 +70,9 @@
     "AddGltfDecoration": {
       "keyin": "dta gltf"
     },
+    "AddTextDecoration": {
+      "keyin": "dta text"
+    },
     "ShutDown": {
       "keyin": "dta shutdown"
     },
@@ -130,14 +133,26 @@
     "ApplyModelTransform": {
       "keyin": "dta model transform"
     },
+    "ClearModelTransforms": {
+      "keyin": "dta model transform clear"
+    },
+    "DisableModelTransforms": {
+      "keyin": "dta model transform disable"
+    },
     "ApplyModelDisplayScale": {
       "keyin": "dta model scale"
+    },
+    "ApplyModelClip": {
+      "keyin": "dta model clip"
     },
     "EditingSession": {
       "keyin": "dta edit"
     },
     "PlaceLineString": {
       "keyin": "dta place line string"
+    },
+    "MoveElement": {
+      "keyin": "dta move element"
     },
     "SyncViewports": {
       "keyin": "dta viewport sync"
@@ -154,6 +169,12 @@
     "Macro": {
       "keyin": "dta macro"
     },
+    "RecordTileSizes": {
+      "keyin": "dta record tilesize"
+    },
+    "AddSeequentRealityModel": {
+      "keyin": "dta add seequent reality model"
+    },
     "TerrainDrape": {
       "keyin": "dta drape terrain",
       "Prompts": {
@@ -169,6 +190,18 @@
     },
     "DtaClipByElementGeometry": {
       "keyin": "dta clip element geometry"
+    },
+    "DtaClassify": {
+      "keyin": "dta classify"
+    },
+    "DtaClipMask": {
+      "keyin": "dta clip mask"
+    },
+    "CreateSectionDrawing": {
+      "keyin": "dta create section drawing"
+    },
+    "ToggleSecondaryIModel": {
+      "keyin": "dta imodel attach"
     }
   }
 }

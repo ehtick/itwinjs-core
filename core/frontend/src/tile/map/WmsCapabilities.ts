@@ -7,23 +7,10 @@
  */
 
 import { MapSubLayerProps } from "@itwin/core-common";
-import { request, RequestBasicCredentials, RequestOptions } from "../../request/Request";
+import { RequestBasicCredentials } from "../../request/Request";
 import WMS from "wms-capabilities";
 import { MapCartoRectangle, WmsUtilities } from "../internal";
 
-/**
- * fetch XML from HTTP request
- * @param url server URL to address the request
- * @internal
- */
-async function getXml(url: string, credentials?: RequestBasicCredentials): Promise<string> {
-  const options: RequestOptions = {
-    timeout: 20000,
-    retryCount: 2,
-    auth: credentials,
-  };
-  return request(url, "text", options);
-}
 function rangeFromJSONArray(json: any): MapCartoRectangle | undefined {
   return (Array.isArray(json) && json.length === 4) ? MapCartoRectangle.fromDegrees(json[0], json[1], json[2], json[3]) : undefined;
 }
@@ -213,14 +200,23 @@ export class WmsCapabilities {
       this.layer = new WmsCapability.Layer(_json.Capability.Layer, this);
   }
 
-  public static async create(url: string, credentials?: RequestBasicCredentials, ignoreCache?: boolean): Promise<WmsCapabilities | undefined> {
+  public static async create(url: string, credentials?: RequestBasicCredentials, ignoreCache?: boolean, queryParams?: {[key: string]: string}): Promise<WmsCapabilities | undefined> {
     if (!ignoreCache) {
       const cached = WmsCapabilities._capabilitiesCache.get(url);
       if (cached !== undefined)
         return cached;
     }
 
-    const xmlCapabilities = await getXml(`${WmsUtilities.getBaseUrl(url)}?request=GetCapabilities&service=WMS`, credentials);
+    const tmpUrl = new URL(WmsUtilities.getBaseUrl(url));
+    tmpUrl.searchParams.append("request", "GetCapabilities");
+    tmpUrl.searchParams.append("service", "WMS");
+    if (queryParams) {
+      Object.keys(queryParams).forEach((paramKey) => {
+        if (!tmpUrl.searchParams.has(paramKey))
+          tmpUrl.searchParams.append(paramKey, queryParams[paramKey]);
+      });
+    }
+    const xmlCapabilities = await WmsUtilities.fetchXml(tmpUrl.toString(), credentials);
 
     if (!xmlCapabilities)
       return undefined;

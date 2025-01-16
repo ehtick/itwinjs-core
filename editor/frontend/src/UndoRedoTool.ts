@@ -3,9 +3,15 @@
 * See LICENSE.md in the project root for license terms and full copyright notice.
 *--------------------------------------------------------------------------------------------*/
 
+/** @packageDocumentation
+ * @module Editing
+ */
+
 import { IModelApp, IpcApp, Tool } from "@itwin/core-frontend";
 
-/** @alpha Undo all element changes */
+/** Undo all element changes
+ * @beta
+ */
 export class UndoAllTool extends Tool {
   public static override toolId = "UndoAll";
   public override async run(): Promise<boolean> {
@@ -14,15 +20,13 @@ export class UndoAllTool extends Tool {
       return true;
 
     await IpcApp.appFunctionIpc.reverseAllTxn(imodel.key);
-
-    // ### TODO Restart of primitive tool should be handled by Txn event listener...needs to happen even if not the active tool...
-    if (undefined !== IModelApp.toolAdmin.primitiveTool)
-      await IModelApp.toolAdmin.primitiveTool.onRestartTool();
     return true;
   }
 }
 
-/** @alpha Undo active tool steps, or element changes */
+/** Undo active tool steps, or element changes
+ * @beta
+ */
 export class UndoTool extends Tool {
   public static override toolId = "Undo";
   public override async run(): Promise<boolean> {
@@ -31,7 +35,9 @@ export class UndoTool extends Tool {
   }
 }
 
-/** @alpha Redo active tool steps, or element changes */
+/** Redo active tool steps, or element changes
+ * @beta
+ */
 export class RedoTool extends Tool {
   public static override toolId = "Redo";
   public override async run(): Promise<boolean> {

@@ -3,15 +3,36 @@
 * See LICENSE.md in the project root for license terms and full copyright notice.
 *--------------------------------------------------------------------------------------------*/
 /* eslint-disable @typescript-eslint/naming-convention */
-/* eslint-disable @typescript-eslint/no-var-requires */
+/* eslint-disable @typescript-eslint/no-require-imports */
 /* eslint-disable no-console */
 const debugLeaks = process.env.DEBUG_LEAKS;
-if (debugLeaks)
+let asyncResourceStats: Map<number, any>;
+if (debugLeaks) {
   require("wtfnode");
+  asyncResourceStats = new Map<number, any>();
+  setupAsyncHooks();
+}
 
-import * as path from "path";
+function setupAsyncHooks() {
+  const async_hooks = require("node:async_hooks");
 
+  const init = (asyncId: number, type: string, triggerAsyncId: number, _resource: any) => {
+    const eid = async_hooks.executionAsyncId(); // (An executionAsyncId() of 0 means that it is being executed from C++ with no JavaScript stack above it.)
+    const stack = new Error().stack;
+    asyncResourceStats.set(asyncId, {type, eid, triggerAsyncId, initStack: stack});
+  };
+  const destroy = (asyncId: number) => {
+    if (asyncResourceStats.get(asyncId) === undefined) {
+      return;
+    }
+    asyncResourceStats.delete(asyncId);
+  };
+
+  const asyncHook = async_hooks.createHook({init, destroy});
+  asyncHook.enable();
+}
 const fs = require("fs-extra");
+const path = require("path");
 const { logBuildWarning, logBuildError, failBuild } = require("../scripts/utils/utils");
 
 const Base = require("mocha/lib/reporters/base");
@@ -69,20 +90,31 @@ class BentleyMochaReporter extends Spec {
     // Detect hangs caused by tests that leave timers/other handles open - not possible in electron frontends.
     if (!("electron" in process.versions)) {
       // NB: By calling unref() on this timer, we stop it from keeping the process alive, so it will only fire if _something else_ is still keeping
-      // the process alive after 5 seconds.  This also has the benefit of preventing the timer from showing up in wtfnode's dump of open handles.
+      // the process alive after 30 seconds.  This also has the benefit of preventing the timer from showing up in wtfnode's dump of open handles.
       setTimeout(() => {
-        logBuildError(`Handle leak detected. Node was still running 5 seconds after tests completed.`);
+        logBuildError(`Handle leak detected. Node was still running 30 seconds after tests completed.`);
         if (debugLeaks) {
           const wtf = require("wtfnode");
           wtf.setLogger("info", console.error);
           wtf.dump();
+
+          let activeResourcesInfo: string[] = (process as any).getActiveResourcesInfo(); // https://nodejs.dev/en/api/v18/process#processgetactiveresourcesinfo (Not added to @types/node yet I suppose)
+          console.error(activeResourcesInfo);
+
+          activeResourcesInfo = activeResourcesInfo.map((value) => value.toLowerCase());
+          // asyncResourceStats.set(asyncId, {before: 0, after: 0, type, eid, triggerAsyncId, initStack: stack});
+          asyncResourceStats.forEach((value, key) => {
+            if (activeResourcesInfo.includes(value.type.toLowerCase())) {
+              console.error(`asyncId: ${key}: type: ${value.type}, eid: ${value.eid},triggerAsyncId: ${value.triggerAsyncId}, initStack: ${value.initStack}`);
+            }
+          });
         } else {
           console.error("Try running with the DEBUG_LEAKS env var set to see open handles.");
         }
 
         // Not sure why, but process.exit(1) wasn't working here...
         process.kill(process.pid);
-      }, 5000).unref();
+      }, 30 * 1000).unref();
     }
 
     if (!this.stats.pending)

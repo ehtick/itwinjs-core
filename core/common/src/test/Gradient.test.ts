@@ -2,7 +2,7 @@
 * Copyright (c) Bentley Systems, Incorporated. All rights reserved.
 * See LICENSE.md in the project root for license terms and full copyright notice.
 *--------------------------------------------------------------------------------------------*/
-import { assert, expect } from "chai";
+import { assert, describe, expect, it } from "vitest";
 import { Angle } from "@itwin/core-geometry";
 import { Gradient } from "../Gradient";
 import { ImageBuffer, ImageBufferFormat } from "../Image";
@@ -195,7 +195,7 @@ describe("Gradient.Symb", () => {
     });
     symbArr.push(symb);
 
-    symbArr.sort(Gradient.Symb.compareSymb);
+    symbArr.sort((lhs, rhs) => Gradient.Symb.compareSymb(lhs, rhs));
 
     for (let i = 1; i < symbArr.length; i++) {
       const prev = symbArr[i - 1];

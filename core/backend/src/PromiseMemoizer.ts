@@ -2,10 +2,6 @@
 * Copyright (c) Bentley Systems, Incorporated. All rights reserved.
 * See LICENSE.md in the project root for license terms and full copyright notice.
 *--------------------------------------------------------------------------------------------*/
-/** @packageDocumentation
- * @module Utils
- */
-
 import { IDisposable, Logger } from "@itwin/core-bentley";
 import { BackendLoggerCategory } from "./BackendLoggerCategory";
 
@@ -44,7 +40,7 @@ export type GenerateKeyFnType = (...args: any[]) => string;
  */
 export class PromiseMemoizer<T> implements IDisposable {
   private readonly _cachedPromises: Map<string, QueryablePromise<T>> = new Map<string, QueryablePromise<T>>();
-  private readonly _timers: Map<string, NodeJS.Timer> = new Map<string, NodeJS.Timer>();
+  private readonly _timers: Map<string, NodeJS.Timeout> = new Map<string, NodeJS.Timeout>();
   private readonly _memoizeFn: MemoizeFnType<T>;
   private readonly _generateKeyFn: GenerateKeyFnType;
   private readonly _maxCacheSize: number;
@@ -89,7 +85,7 @@ export class PromiseMemoizer<T> implements IDisposable {
     };
 
     const p = this._memoizeFn(...args).then(removeCachedPromise, (e) => {
-      throw removeCachedPromise(e);
+      throw removeCachedPromise(e); // eslint-disable-line @typescript-eslint/only-throw-error
     });
 
     qp = new QueryablePromise<T>(p);

@@ -2,7 +2,7 @@
 * Copyright (c) Bentley Systems, Incorporated. All rights reserved.
 * See LICENSE.md in the project root for license terms and full copyright notice.
 *--------------------------------------------------------------------------------------------*/
-import { expect } from "chai";
+import { describe, expect, it } from "vitest";
 import { Arc3d } from "../../curve/Arc3d";
 import { GeometryQuery } from "../../curve/GeometryQuery";
 import { LineSegment3d } from "../../curve/LineSegment3d";
@@ -23,6 +23,7 @@ import { PolygonOps } from "../../geometry3d/PolygonOps";
 import { Range3d } from "../../geometry3d/Range";
 import { Ray3d } from "../../geometry3d/Ray3d";
 import { Transform } from "../../geometry3d/Transform";
+import { XAndY, XYZProps } from "../../geometry3d/XYZProps";
 import { Matrix4d } from "../../geometry4d/Matrix4d";
 import { MomentData } from "../../geometry4d/MomentData";
 import { Point4d } from "../../geometry4d/Point4d";
@@ -33,7 +34,6 @@ import { Triangulator } from "../../topology/Triangulation";
 import { Checker } from "../Checker";
 import { GeometryCoreTestIO } from "../GeometryCoreTestIO";
 
-/* eslint-disable deprecation/deprecation */
 /**
  * Return the radius of a circle with area matching centroidData.a
  * @param centroidData result of centroid calculation, with "a" property.
@@ -91,7 +91,7 @@ describe("FrameBuilder", () => {
       }
     }
     ck.checkpoint("FrameBuilder");
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
 
   it("createFrameWithCCWPolygon", () => {
@@ -106,13 +106,13 @@ describe("FrameBuilder", () => {
     triangle1.reverse();
     const frame0 = FrameBuilder.createFrameWithCCWPolygon(triangle0);
     const frame1 = FrameBuilder.createFrameWithCCWPolygon(triangle1);
-    if (ck.testDefined(frame0) && ck.testDefined(frame1) && frame0 && frame1) {
+    if (ck.testDefined(frame0) && ck.testDefined(frame1)) {
       const unitZ0 = frame0.matrix.columnZ();
       const unitZ1 = frame1.matrix.columnZ();
       ck.testCoordinate(-1, unitZ0.dotProduct(unitZ1), "opposing unit Z vectors");
     }
 
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
 
   it("TrilinearMap", () => {
@@ -124,7 +124,7 @@ describe("FrameBuilder", () => {
       const q1 = Point3dArray.evaluateTrilinearPoint(points, uvw.x, uvw.y, uvw.z);
       ck.testPoint3d(q0, q1, "Trilinear map versus range fractions");
     }
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
 
   it("PointHelperMisc", () => {
@@ -134,7 +134,7 @@ describe("FrameBuilder", () => {
     ck.testTrue(Vector3dArray.isAlmostEqual(undefined, undefined));
     const emptyArray = Point3dArray.cloneWithMaxEdgeLength([], 1);
     ck.testExactNumber(0, emptyArray.length);
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
 
 });
@@ -179,7 +179,7 @@ describe("PointHelper.centroid", () => {
     }
 
     ck.checkpoint("PointHelper.centroid");
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
 });
 
@@ -267,7 +267,7 @@ describe("MomentData.HelloWorld", () => {
     ck.testCoordinate(1, axes122.columnXMagnitude());
     ck.testCoordinate(2, axes122.columnYMagnitude());
     ck.testCoordinate(2, axes122.columnZMagnitude());
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
 });
 
@@ -329,7 +329,7 @@ describe("PolygonOps", () => {
       else if (x >= ax1 && x <= ax2)
         ck.testExactNumber(0, classification, `Expect ON ${x}`);
     }
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
 
   it("DegenerateInOut", () => {
@@ -337,7 +337,7 @@ describe("PolygonOps", () => {
     const pointsOnXAxis = [Point3d.create(1, 0, 0), Point3d.create(2, 0, 0), Point3d.create(3, 0, 0)];
     ck.testUndefined(PolygonOps.classifyPointInPolygon(0, 0, pointsOnXAxis));
     ck.testUndefined(PolygonOps.classifyPointInPolygonXY(0, 0, new Point3dArrayCarrier(pointsOnXAxis)));
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
 
   it("SquareWaveInOut", () => {
@@ -392,7 +392,7 @@ describe("PolygonOps", () => {
       if (node0 === faceSeed)
         break;
     }
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
 
   /**
@@ -421,7 +421,25 @@ describe("PolygonOps", () => {
       if (node0 === faceSeed)
         break;
     }
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
+  });
+
+  it("VertexHit", () => {
+    const ck = new Checker();
+    const testPoint = Point3d.createZero();
+    let points = [Point3d.create(1, 1), Point3d.create(-1, 1), testPoint];
+    const rotate = <T,>(arr: Array<T>, n = 1) => [...arr.slice(n, arr.length), ...arr.slice(0, n)];
+    const testVertexHit = (testPt: XAndY, pts: Point3d[]) => {
+      const result = PolygonOps.classifyPointInPolygon(testPt.x, testPt.y, pts);
+      if (ck.testDefined(result, "classification successful"))
+        ck.testExactNumber(0, result, "vertex hit");
+    };
+    testVertexHit(testPoint, points);
+    points = rotate(points, 1);
+    testVertexHit(testPoint, points);
+    points = rotate(points, 1);
+    testVertexHit(testPoint, points);
+    expect(ck.getNumErrors()).toBe(0);
   });
 
   it("XYTurningDirections", () => {
@@ -438,7 +456,7 @@ describe("PolygonOps", () => {
       star.reverse();
       ck.testExactNumber(0, PolygonOps.testXYPolygonTurningDirections(star), " CW circle turn counts");
     }
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
 });
 
@@ -471,7 +489,7 @@ describe("Point3dArray", () => {
       ck.testTrue(range1.containsRange(range), "frame maps to -1,1");
     }
 
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
 
   it("MiscArrayOps", () => {
@@ -514,7 +532,7 @@ describe("Point3dArray", () => {
     vector3dA[Math.floor(vector3dA.length / 2)].x += 1.0;
     ck.testFalse(Vector3dArray.isAlmostEqual(vector3dA, vector3dB), "Vector3dArray isAlmostEqual after x change");
 
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
 
   it("Point4dArray", () => {
@@ -552,7 +570,7 @@ describe("Point3dArray", () => {
     const point4dBChanged = point4dB.map((x: Point4d) => x.clone());
     point4dBChanged[1].x = 0.213213;
     ck.testFalse(Point4dArray.isAlmostEqual(point4dB, point4dBChanged));
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
 
   it("Point4dArrayPlane", () => {
@@ -582,7 +600,7 @@ describe("Point3dArray", () => {
       allPoints.push(center.plusScaled(plane4d, 0.1));
       ck.testFalse(Point4dArray.isCloseToPlane(allPoints, plane3d));
     }
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
 
   it("ParityTests", () => {
@@ -597,7 +615,6 @@ describe("Point3dArray", () => {
       Point2d.create(a, 6),
       Point2d.create(0, 6)];
     for (const p of polygon) {
-
       ck.testExactNumber(0, PolygonOps.classifyPointInPolygon(p.x, p.y, polygon)!);
     }
 
@@ -620,7 +637,7 @@ describe("Point3dArray", () => {
       polygon[5]];
     ck.testExactNumber(1, PolygonOps.classifyPointInPolygon(pointQ.x, pointQ.y, polygonQ)!);
     ck.testExactNumber(1, PolygonOps.classifyPointInPolygon(pointQ.x, pointQ.y, polygonQ)!);
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
 
   it("PolylineLength", () => {
@@ -646,7 +663,7 @@ describe("Point3dArray", () => {
       ck.testCoordinate(a1, a0, "rigid transform does not change distances");
       ck.testExactNumber(a0, a64);
     }
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
 
   it("Point3dArrayCarrierBadIndex", () => {
@@ -694,7 +711,7 @@ describe("Point3dArray", () => {
     ck.testUndefined(carrier.distanceSquaredIndexIndex(0, 100));
     ck.testUndefined(carrier.distanceSquaredIndexIndex(1000, 0));
 
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
 
   it("Point3dArrayCarrierPushPop", () => {
@@ -719,7 +736,7 @@ describe("Point3dArray", () => {
     }
     ck.testExactNumber(1, carrierA.length);
     ck.testExactNumber(1, carrierB.length);
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
 
   it("Point2dArray", () => {
@@ -736,7 +753,7 @@ describe("Point3dArray", () => {
       pointsOnLine.push(Point2d.create(xRight, 0));
     }
 
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
 
   it("Vector3dArray", () => {
@@ -751,7 +768,7 @@ describe("Point3dArray", () => {
     ck.testTrue(Vector3dArray.isAlmostEqual(arrayA, arrayB));
     arrayB.pop();
     ck.testFalse(Vector3dArray.isAlmostEqual(arrayA, arrayB));
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
   it("NumberArrayComparison", () => {
     const ck = new Checker();
@@ -777,7 +794,7 @@ describe("Point3dArray", () => {
       ck.testFalse(NumberArray.isCoordinateInArray(x + 0.1231897897, dataA0));
     }
     ck.testExactNumber(0, NumberArray.maxAbsArray([]));
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
 
   it("CentroidBranches", () => {
@@ -825,7 +842,7 @@ describe("Point3dArray", () => {
       pointsOnLine.push(Point3d.create(i, i, i));
       ck.testUndefined(PolygonOps.centroidAreaNormal(pointsOnLine));
     }
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
 });
 
@@ -861,7 +878,7 @@ describe("PolygonAreas", () => {
     compareAreaData(ck, triangle000, triangle123G);
 
     ck.checkpoint("PolygonAreas.TriangleVariants");
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
   it("SimpleNonConvex", () => {
     const ck = new Checker();
@@ -892,7 +909,7 @@ describe("PolygonAreas", () => {
     }
 
     ck.checkpoint("PolygonAreas.SimpleNonConvex");
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
   it("LShape", () => {
     const ck = new Checker();
@@ -912,7 +929,7 @@ describe("PolygonAreas", () => {
     GeometryCoreTestIO.captureGeometry(allGeometry, Arc3d.createCenterNormalRadius(centroidA.origin, centroidA.direction, equivalentCircleRadius(centroidA)));
     GeometryCoreTestIO.captureGeometry(allGeometry, LineSegment3d.create(centroidA.origin, centroidA.origin.plus(centroidA.direction)));
     const a = 2.0;
-    const scaleTransform = Transform.createFixedPointAndMatrix(centroidA.origin, Matrix3d.createScale(a, a, a))!;
+    const scaleTransform = Transform.createFixedPointAndMatrix(centroidA.origin, Matrix3d.createScale(a, a, a));
     const pointB = scaleTransform.multiplyPoint3dArray(pointA);
     const centroidB = PolygonOps.centroidAreaNormal(pointB)!;
     GeometryCoreTestIO.captureGeometry(allGeometry, Loop.createPolygon(pointB));
@@ -921,7 +938,7 @@ describe("PolygonAreas", () => {
     ck.testVector3d(centroidA.direction, centroidB.direction, "origin is invariant after scale around origin");
     ck.testCoordinate(a * a * centroidA.a!, centroidB.a!, "area scales");
 
-    const rotationTransform = Transform.createFixedPointAndMatrix(Point3d.create(0, 1, 3), Matrix3d.createRotationAroundVector(Vector3d.create(2, 3, 1), Angle.createDegrees(45.0))!)!;
+    const rotationTransform = Transform.createFixedPointAndMatrix(Point3d.create(0, 1, 3), Matrix3d.createRotationAroundVector(Vector3d.create(2, 3, 1), Angle.createDegrees(45.0))!);
     const pointC = rotationTransform.multiplyPoint3dArray(pointA);
     const centroidC = PolygonOps.centroidAreaNormal(pointC)!;
     const centroidC1 = centroidA.cloneTransformed(rotationTransform);
@@ -932,7 +949,7 @@ describe("PolygonAreas", () => {
     ck.testCoordinate((centroidA as any).a, (centroidC as any).a);
 
     GeometryCoreTestIO.saveGeometry(allGeometry, "PolygonAreas", "LShape");
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
 
   it("streamXYZ", () => {
@@ -972,7 +989,7 @@ describe("PolygonAreas", () => {
     rangeAB1.extendRange(rangeB0);
     ck.testRange3d(rangeAB0, rangeAB1, "create range variant");
     GeometryCoreTestIO.saveGeometry(allGeometry, "PolygonAreas", "streamXYZ");
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
 
   it("cloneVariants", () => {
@@ -997,14 +1014,14 @@ describe("PolygonAreas", () => {
       ck.testTrue(lsB.isAlmostEqual(linestringsABC0[1]), "pointB");
       ck.testTrue(lsC.isAlmostEqual(linestringsABC0[2]), "pointC");
     }
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
 
   it("minMaxPoints", () => {
     const ck = new Checker();
     const pointA = Sample.createStar(1, 2, 3, 4, 6, 5, true);
     const minMaxPoints = Point3dArray.minMaxPoints(pointA);
-    if (ck.testDefined(minMaxPoints) && minMaxPoints) {
+    if (ck.testDefined(minMaxPoints)) {
       const range = Range3d.createArray(pointA);
       ck.testCoordinate(minMaxPoints.minXPoint.x, range.low.x);
       ck.testCoordinate(minMaxPoints.minYPoint.y, range.low.y);
@@ -1012,7 +1029,7 @@ describe("PolygonAreas", () => {
       ck.testCoordinate(minMaxPoints.maxYPoint.y, range.high.y);
     }
     ck.testUndefined(Point3dArray.minMaxPoints([]));
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
   it("steppedArray", () => {
     const ck = new Checker();
@@ -1026,7 +1043,7 @@ describe("PolygonAreas", () => {
     reverse.reverse();
     ck.testNumberArray(forward, reverse, "spaced numbers with reversal");
 
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
 
   it("nestedArray", () => {
@@ -1053,7 +1070,7 @@ describe("PolygonAreas", () => {
       dataB.push(i);
     const arrayAB = Point3dArray.unpackNumbersToNestedArraysIJK(new Float64Array(dataB), numPerRowB, leafB);
     ck.testExactNumber(numRowB, arrayAB.length, "IJK column length");
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
 
   it("ConvexHullManyPoints", () => {
@@ -1066,7 +1083,7 @@ describe("PolygonAreas", () => {
     for (const numPoints of [9, 42, 273]) {
       const points: Point3d[] = [];
       for (let theta = 0.01 * (numPoints - 8); points.length < numPoints; theta += dTheta) {
-        points.push(lisajouePoint3d(theta * theta, a, 0));
+        points.push(Sample.createRosePoint3d(theta * theta, a, 0));
       }
       const range = Range3d.createFromVariantData(points);
       const dx = Math.ceil(range.xLength() + 4);
@@ -1112,7 +1129,7 @@ describe("PolygonAreas", () => {
       x0 += dx;
     }
     GeometryCoreTestIO.saveGeometry(allGeometry, "Point3dArray", "ConvexHullManyPoints");
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
 
   it("SmallConvexHullExample", () => {
@@ -1134,7 +1151,7 @@ describe("PolygonAreas", () => {
     // Output a linestring . . .
     GeometryCoreTestIO.captureGeometry(allGeometry, LineString3d.create(hullPoints), 0, 0);
     GeometryCoreTestIO.saveGeometry(allGeometry, "Point3dArray", "SmallConvexHullExample");
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
   it("cloneWithStartAndEndMultiplicity", () => {
     const ck = new Checker();
@@ -1153,13 +1170,110 @@ describe("PolygonAreas", () => {
         ck.testNumberArray(baseKnots, knotsB, "round trip multiplicity");
       }
     }
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
 
 });
 
-// cspell:word lisajoue
-export function lisajouePoint3d(theta: number, a: number, z: number = 0): Point3d {
-  const r = Math.cos(a * theta);
-  return Point3d.create(r * Math.cos(theta), r * Math.sin(theta), z);
-}
+// coverage missing from other tests
+describe("PointHelperCoverage", () => {
+  it("Point3dArray", () => {
+    const ck = new Checker();
+    const data = [2, 3, 5, 7, 11, 13, 17, 19, 0, 29, 0, 0, 0, 0, 0];
+    const dataArray = [];
+    dataArray.push([Point3d.create(data[0], data[1], data[2]), Point3d.create(data[3], data[4], data[5])]);
+    dataArray.push([[data[0], data[1], data[2]], [data[3], data[4], data[5]], [data[6], data[7]], [data[9]], []]);
+    dataArray.push([{ x: data[0], y: data[1], z: data[2] }, { x: data[3], y: data[4], z: data[5] }, { x: data[6], y: data[7] }, { x: data[9] }, {}]);
+
+    const testXYZPropsArray = (a: XYZProps[]) => {
+      const aNumberArray = Point3dArray.cloneXYZPropsAsNumberArray(a);
+      ck.testTrue(Array.isArray(aNumberArray) && aNumberArray.length > 0 && Array.isArray(aNumberArray[0]), "cloneXYZPropsAsNumberArray returns a 2d array");
+      ck.testExactNumber(aNumberArray.length, a.length, "cloneXYZPropsAsNumberArray returns outer array of expected length");
+      for (let i = 0; i < aNumberArray.length; ++i) {
+        ck.testExactNumber(aNumberArray[i].length, 3, "cloneXYZPropsAsNumberArray returns inner arrays of length 3");
+        for (let j = 0; j < 3; ++j)
+          ck.testTrue(aNumberArray[i][j] === data[3 * i + j], "cloneXYZPropsAsNumberArray returns expected numbers");
+      }
+      const bNumberArray = Point3dArray.cloneXYZPropsAsFloat64Array(a);
+      ck.testNumberArray(bNumberArray, data.slice(0, bNumberArray.length), "cloneXYZPropsAsFloat64Array returns expected numbers");
+    };
+
+    for (const data1 of dataArray)
+      testXYZPropsArray(data1);
+
+    let dist = 0;
+    const xyz = [Point3d.create(0, 0, 0), Point3d.create(-5, 5, 0), Point3d.create(5, 5, 0), Point3d.create(15, 5, 0), Point3d.create(10, 0, 0)];
+    const indexA = 0;
+    const indexC = xyz.length - 1;
+    const distToUnboundedAC = 5;
+    const distFromOutlierToBoundedAC = 5 * Math.sqrt(2);  // indices 1 and 3 are outliers (project outside bounded AC)
+    for (const extrapolate of [true, false]) {
+      for (const indexB of [1, 2, 3]) {
+        dist = Point3dArray.distanceIndexedPointBToSegmentAC(xyz, indexA, indexB, indexC, extrapolate);
+        if (extrapolate || indexB === 2)
+          ck.testCoordinate(dist, distToUnboundedAC, "distanceIndexedPointBToSegmentAC returns expected distance when extrapolate is true");
+        else
+          ck.testCoordinate(dist, distFromOutlierToBoundedAC, "distanceIndexedPointBToSegmentAC returns expected distance when extrapolate is false");
+      }
+    }
+    dist = Point3dArray.distanceIndexedPointBToSegmentAC(xyz, indexA, 1, indexA, true);
+    ck.testCoordinate(dist, distFromOutlierToBoundedAC, "distanceIndexedPointBToSegmentAC degenerate AC case");
+
+    const hull: Point3d[] = [];
+    const interior: Point3d[] = [];
+    xyz.push(Point3d.create(1, 1, 1));  // add a (second) point inside the hull
+    Point3dArray.computeConvexHullXY(xyz, hull, interior, true);
+    if (ck.testExactNumber(2, interior.length, "computeConvexHullXY returned expected number of interior points")) {
+      ck.testTrue(interior.find((p) => p.isExactEqual(xyz[2])) !== undefined, "computeConvexHullXY returned expected interior point");
+      ck.testTrue(interior.find((p) => p.isExactEqual(xyz[xyz.length - 1])) !== undefined, "computeConvexHullXY returned expected interior point");
+    }
+    ck.testPoint3d(hull[0], hull[hull.length - 1], "computeConvexHullXY wrapped hull output as expected");
+    ck.testExactNumber(5, hull.length, "computeConvexHullXY returned expected hull length");
+    expect(ck.getNumErrors()).toBe(0);
+  });
+
+  it("Point4dArray", () => {
+    const ck = new Checker();
+    const data = [0, 1, 2, 3, 4, 5];
+    const points = [];  // arrays of 2 points
+    points.push([Point3d.create(data[0], data[1], data[2]), Point3d.create(data[3], data[4], data[5])]);
+    points.push(new Float64Array(data));
+    points.push(data);
+    const weights = []; // mismatched arrays of weights
+    for (const numWeights of [1, 3]) {
+      const w = [];
+      for (let j = 0; j < numWeights; ++j)
+        w.push(1);
+      weights.push(w);
+      weights.push(new Float64Array(w));
+    }
+    const data1 = [0, 1, 2, 1, 3, 4, 5, 1];  // with "weights"
+    const result = new Float64Array(data1.length);
+    const shortResult = new Float64Array(data1.length - 1);
+    let packed: Float64Array | undefined;
+    for (const pointArray of points) {
+      packed = Point4dArray.packPointsAndWeightsToFloat64Array(pointArray, [1, 1], result);
+      ck.testTrue(packed === result, "packPointsAndWeightsToFloat64Array returns sufficiently allocated result argument");
+      ck.testTrue(NumberArray.isExactEqual(packed, data1), "packPointsAndWeightsToFloat64Array returns expected array");
+
+      packed = Point4dArray.packPointsAndWeightsToFloat64Array(pointArray, [1, 1], shortResult);
+      ck.testTrue(packed !== undefined && packed !== shortResult, "packPointsAndWeightsToFloat64Array with insufficiently allocated result argument returns new array");
+      ck.testTrue(NumberArray.isExactEqual(packed, data1), "packPointsAndWeightsToFloat64Array returns expected array");
+
+      for (const weightArray of weights) {
+        packed = Point4dArray.packPointsAndWeightsToFloat64Array(pointArray, weightArray);
+        ck.testUndefined(packed, "packPointsAndWeightsToFloat64Array returns undefined on mismatched input");
+      }
+    }
+    const points4d = [Point4d.create(data1[0], data1[1], data1[2], data1[3]), Point4d.create(data1[4], data1[5], data1[6], data1[7])];
+    packed = Point4dArray.packToFloat64Array(points4d, result);
+    ck.testTrue(packed === result, "packToFloat64Array returns sufficiently allocated result argument");
+    ck.testTrue(NumberArray.isExactEqual(packed, data1), "packToFloat64Array returns expected array");
+
+    packed = Point4dArray.packToFloat64Array(points4d, shortResult);
+    ck.testTrue(packed !== undefined && packed !== shortResult, "packToFloat64Array with insufficiently allocated result argument returns new array");
+    ck.testTrue(NumberArray.isExactEqual(packed, data1), "packToFloat64Array returns expected array");
+
+    expect(ck.getNumErrors()).toBe(0);
+  });
+});

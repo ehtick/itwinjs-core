@@ -18,7 +18,8 @@ import { RenderGraphic } from "./RenderGraphic";
 import { RenderMemory } from "./RenderMemory";
 import { RenderPlanarClassifier } from "./RenderPlanarClassifier";
 import { RenderTextureDrape } from "./RenderSystem";
-import { Range3d } from "@itwin/core-geometry";
+import { Range3d, Transform } from "@itwin/core-geometry";
+import { AnimationNodeId } from "../common/internal/render/AnimationNodeId";
 
 /** Carries information in a GraphicBranchOptions about a GraphicBranch produced by drawing one view into the context of another.
  * @internal
@@ -29,14 +30,6 @@ export interface GraphicBranchFrustum {
     x: number;
     y: number;
   };
-}
-
-/** Special values of [[GraphicBranch.animationNodeId]].
- * All other values refer to an [ElementTimeline.batchId]($common) that applies a transform to the graphics in the branch.
- * @internal
- */
-export enum AnimationNodeId {
-  Untransformed = 0xffffffff,
 }
 
 /**
@@ -72,6 +65,17 @@ export class GraphicBranch implements IDisposable /* , RenderMemory.Consumer */ 
    * @internal
    */
   public animationNodeId?: AnimationNodeId | number;
+
+  /** Identifies the "group" to which this branch belongs.
+   * Groups represent cross-cutting subsets of a tile tree's contents.
+   * For example, if a tile tree contains geometry from multiple models, each model (or smaller groups of multiple models) could be considered a group.
+   * The top-level branches containing graphics from multiple tiles will each specify the group they represent, and the child branches within each
+   * tile will likewise specify the group to which they belong.
+   * When drawing, only the graphics within a tile that correlate with the current group will be drawn.
+   * Groups cannot nest.
+   * @internal
+   */
+  public groupNodeId?: number;
 
   /** Constructor
    * @param ownsEntries If true, when this branch is [[dispose]]d, all of the [[RenderGraphic]]s it contains will also be disposed.
@@ -141,12 +145,27 @@ export interface GraphicBranchOptions {
   hline?: HiddenLine.Settings;
   /** The iModel from which the graphics originate, if different than that associated with the view. */
   iModel?: IModelConnection;
+  /** An optional transform from the coordinate system of [[iModel]] to those of a different [[IModelConnection]].
+   * This is used by [[AccuSnap]] when displaying one iModel in the context of another iModel (i.e., the iModel associated
+   * with the [[Viewport]]).
+   */
+  transformFromIModel?: Transform;
   /** @internal */
   frustum?: GraphicBranchFrustum;
   /** Supplements the view's [[FeatureSymbology.Overrides]] for graphics in the branch. */
   appearanceProvider?: FeatureAppearanceProvider;
   /** @internal Secondary planar classifiers (map layers) */
   secondaryClassifiers?: Map<number, RenderPlanarClassifier>;
+  /** The Id of the [ViewAttachment]($backend) from which this branch's graphics originated.
+   * @internal
+   */
+  viewAttachmentId?: Id64String;
+  /** @internal */
+  inSectionDrawingAttachment?: boolean;
+  /** If true, the view's [DisplayStyleSettings.clipStyle]($common) will be disabled for this branch.
+   * No [ClipStyle.insideColor]($common), [ClipStyle.outsideColor]($common), or [ClipStyle.intersectionStyle]($common) will be applied.
+   */
+  disableClipStyle?: true;
 }
 
 /** Clip/Transform for a branch that are varied over time.

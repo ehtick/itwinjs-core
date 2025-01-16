@@ -8,7 +8,7 @@
 import { request } from "./request/Request";
 import { AccessToken, assert, GuidString, Logger } from "@itwin/core-bentley";
 import { RealityData, RealityDataFormat, RealityDataProvider, RealityDataSourceKey, RealityDataSourceProps } from "@itwin/core-common";
-import { FrontendLoggerCategory } from "./FrontendLoggerCategory";
+import { FrontendLoggerCategory } from "./common/FrontendLoggerCategory";
 import { IModelApp } from "./IModelApp";
 
 import { PublisherProductInfo, RealityDataSource, SpatialLocationAndExtents } from "./RealityDataSource";
@@ -51,8 +51,7 @@ export class RealityDataSourceContextShareImpl implements RealityDataSource {
     try {
       await rdSource.queryRealityData(iTwinId);
       tilesetUrl = await rdSource.getServiceUrl(iTwinId);
-    } catch (e) {
-    }
+    } catch { }
 
     return (tilesetUrl !== undefined) ? rdSource : undefined;
   }
@@ -135,7 +134,7 @@ export class RealityDataSourceContextShareImpl implements RealityDataSource {
 
         this._tilesetUrl = await IModelApp.realityDataAccess.getRealityDataUrl(resolvedITwinId, rdSourceKey.id);
         this._isUrlResolved = true;
-      } catch (e) {
+      } catch {
         const errMsg = `Error getting URL from ContextShare using realityDataId=${rdSourceKey.id} and iTwinId=${iTwinId}`;
         Logger.logError(FrontendLoggerCategory.RealityData, errMsg);
       }

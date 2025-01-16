@@ -5,25 +5,26 @@
 import "./RpcImpl";
 // Sets up certa to allow a method on the frontend to get an access token
 import "@itwin/oidc-signin-tool/lib/cjs/certa/certaBackend";
+
 import * as fs from "fs";
 import * as path from "path";
-import { ElectronMainAuthorization } from "@itwin/electron-authorization/lib/cjs/ElectronMain";
+import {
+  BriefcaseDb, FileNameResolver, IModelDb, IModelHost, IModelHostOptions, IpcHandler, IpcHost, LocalhostIpcHost, PhysicalModel, PhysicalPartition,
+  SpatialCategory, SubjectOwnsPartitionElements,
+} from "@itwin/core-backend";
+import { Id64String, Logger, LoggingMetaData, ProcessDetector } from "@itwin/core-bentley";
+import { BentleyCloudRpcManager, CodeProps, ElementProps, IModel, InUseLock, InUseLocksError, RelatedElement, RpcConfiguration, SubCategoryAppearance } from "@itwin/core-common";
+import { ElectronHost } from "@itwin/core-electron/lib/cjs/ElectronBackend";
+import { ECSchemaRpcImpl } from "@itwin/ecschema-rpcinterface-impl";
+import { BasicManipulationCommand, EditCommandAdmin } from "@itwin/editor-backend";
+import { ElectronMainAuthorization } from "@itwin/electron-authorization/Main";
 import { WebEditServer } from "@itwin/express-server";
 import { BackendIModelsAccess } from "@itwin/imodels-access-backend";
 import { IModelsClient } from "@itwin/imodels-client-authoring";
-import {
-  FileNameResolver, IModelDb, IModelHost, IModelHostOptions, IpcHandler, IpcHost, LocalhostIpcHost, PhysicalModel, PhysicalPartition, SpatialCategory,
-  SubjectOwnsPartitionElements,
-} from "@itwin/core-backend";
-import { Id64String, Logger, LogLevel, ProcessDetector } from "@itwin/core-bentley";
-import { BentleyCloudRpcManager, CodeProps, ElementProps, IModel, RelatedElement, RpcConfiguration, SubCategoryAppearance } from "@itwin/core-common";
-import { ElectronHost } from "@itwin/core-electron/lib/cjs/ElectronBackend";
-import { BasicManipulationCommand, EditCommandAdmin } from "@itwin/editor-backend";
+import { exposeBackendCallbacks } from "../certa/certaBackend";
 import { fullstackIpcChannel, FullStackTestIpc } from "../common/FullStackTestIpc";
 import { rpcInterfaces } from "../common/RpcInterfaces";
 import * as testCommands from "./TestEditCommands";
-import { exposeBackendCallbacks } from "../certa/certaBackend";
-import { ECSchemaRpcImpl } from "@itwin/ecschema-rpcinterface-impl";
 
 /* eslint-disable no-console */
 
@@ -32,12 +33,11 @@ function loadEnv(envFile: string) {
   if (!fs.existsSync(envFile))
     return;
 
-  const dotenv = require("dotenv"); // eslint-disable-line @typescript-eslint/no-var-requires
-  const dotenvExpand = require("dotenv-expand"); // eslint-disable-line @typescript-eslint/no-var-requires
+  const dotenv = require("dotenv"); // eslint-disable-line @typescript-eslint/no-require-imports
+  const dotenvExpand = require("dotenv-expand"); // eslint-disable-line @typescript-eslint/no-require-imports
   const envResult = dotenv.config({ path: envFile });
-  if (envResult.error) {
+  if (envResult.error)
     throw envResult.error;
-  }
 
   dotenvExpand(envResult);
 }
@@ -71,6 +71,15 @@ class FullStackTestIpcHandler extends IpcHandler implements FullStackTestIpc {
     category.setDefaultAppearance(appearance);
     return categoryId;
   }
+
+  public async closeAndReopenDb(key: string): Promise<void> {
+    const iModel = BriefcaseDb.findByKey(key);
+    return iModel.executeWritable(async () => undefined);
+  }
+
+  public async throwInUseLocksError(inUseLocks: InUseLock[], message?: string, metaData?: LoggingMetaData): Promise<void> {
+    InUseLocksError.throwInUseLocksError(inUseLocks, message, metaData);
+  }
 }
 
 async function init() {
@@ -88,8 +97,8 @@ async function init() {
     exposeBackendCallbacks();
     const authClient = new ElectronMainAuthorization({
       clientId: process.env.IMJS_OIDC_ELECTRON_TEST_CLIENT_ID ?? "testClientId",
-      redirectUri: process.env.IMJS_OIDC_ELECTRON_TEST_REDIRECT_URI ?? "testRedirectUri",
-      scope: process.env.IMJS_OIDC_ELECTRON_TEST_SCOPES ?? "testScope",
+      redirectUris: process.env.IMJS_OIDC_ELECTRON_TEST_REDIRECT_URI !== undefined ? [process.env.IMJS_OIDC_ELECTRON_TEST_REDIRECT_URI] : ["testRedirectUri"],
+      scopes: process.env.IMJS_OIDC_ELECTRON_TEST_SCOPES ?? "testScope",
     });
     await authClient.signInSilent();
     iModelHost.authorizationClient = authClient;
@@ -121,17 +130,13 @@ async function init() {
 
   ECSchemaRpcImpl.register();
 
-  IModelHost.snapshotFileNameResolver = new BackendTestAssetResolver();
-
+  IModelHost.snapshotFileNameResolver = new BackendTestAssetResolver(); // eslint-disable-line @typescript-eslint/no-deprecated
   Logger.initializeToConsole();
-  Logger.setLevel("core-backend.IModelReadRpcImpl", LogLevel.Error);  // Change to trace to debug
-  Logger.setLevel("core-backend.IModelDb", LogLevel.Error);  // Change to trace to debug
-  Logger.setLevel("Performance", LogLevel.Error);  // Change to Info to capture
   return shutdown;
 }
 
 /** A FileNameResolver for resolving test iModel files from core/backend */
-class BackendTestAssetResolver extends FileNameResolver {
+class BackendTestAssetResolver extends FileNameResolver { // eslint-disable-line @typescript-eslint/no-deprecated
   /** Resolve a base file name to a full path file name in the core/backend/lib/cjs/test/assets/ directory. */
   public override tryResolveFileName(inFileName: string): string {
     if (path.isAbsolute(inFileName)) {

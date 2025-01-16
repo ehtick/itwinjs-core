@@ -3,16 +3,12 @@ parameters:
     type: string # data type of the parameter; required
 
 steps:
-  - checkout: self
-    clean: true
-    fetchDepth: 1
-
   - template: setup-integration-users.yaml
 
-  - task: NodeTool@0
+  - task: UseNode@1
     displayName: "Use Node ${{ parameters.nodeVersion }}"
     inputs:
-      versionSpec: "${{ parameters.nodeVersion }}"
+      version: "${{ parameters.nodeVersion }}"
       checkLatest: true
 
   - script: "git config --local user.email imodeljs-admin@users.noreply.github.com"
@@ -107,7 +103,7 @@ steps:
     condition: and(succeededOrFailed(), eq(variables['Agent.OS'], 'Linux'))
 
   # MacOS and Windows agents work without any virtual display
-  - script: npm run test:integration:frontend:ci
+  - script: npm run test:integration:frontend
     workingDirectory: "core/electron"
     env:
       NODE_ENV: development

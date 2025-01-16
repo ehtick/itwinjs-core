@@ -39,21 +39,26 @@ export class PackedMatrix3dOps {
    * @param a21 row 2, column 1 entry
    * @param a22 row 2, column 2 entry
    */
-  public static loadMatrix(dest: Float64Array,
+  public static loadMatrix(
+    dest: Float64Array,
     a00: number, a01: number, a02: number,
     a10: number, a11: number, a12: number,
-    a20: number, a21: number, a22: number) {
+    a20: number, a21: number, a22: number,
+  ) {
     dest[0] = a00; dest[1] = a01; dest[2] = a02;
     dest[3] = a10; dest[4] = a11; dest[5] = a12;
     dest[6] = a20; dest[7] = a21; dest[8] = a22;
   }
   /**
    * Multiply 3x3 matrix `a*b`, store in `result`.
-   * * All params assumed length 9, allocated by caller.
-   * * c may alias either input.
+   * @param a left matrix in product. ASSUMED length 9.
+   * @param b right matrix in product. ASSUMED length 9.
+   * @param result optional destination array of length 9. If insufficient length, a new array is returned. May refer to same array as `a` or `b`.
+   * @return matrix product `a*b`
    */
   public static multiplyMatrixMatrix(a: Float64Array, b: Float64Array, result?: Float64Array): Float64Array {
-    if (!result) result = new Float64Array(9);
+    if (!result || result.length < 9)
+      result = new Float64Array(9);
     PackedMatrix3dOps.loadMatrix(
       result,
       (a[0] * b[0] + a[1] * b[3] + a[2] * b[6]),
@@ -64,17 +69,20 @@ export class PackedMatrix3dOps {
       (a[3] * b[2] + a[4] * b[5] + a[5] * b[8]),
       (a[6] * b[0] + a[7] * b[3] + a[8] * b[6]),
       (a[6] * b[1] + a[7] * b[4] + a[8] * b[7]),
-      (a[6] * b[2] + a[7] * b[5] + a[8] * b[8])
+      (a[6] * b[2] + a[7] * b[5] + a[8] * b[8]),
     );
     return result;
   }
   /**
    * Multiply 3x3 matrix `a*bTranspose`, store in `result`.
-   * * All params assumed length 9, allocated by caller.
-   * * c may alias either input.
+   * @param a left matrix in product. ASSUMED length 9.
+   * @param b transpose of right matrix in product. ASSUMED length 9.
+   * @param result optional destination array of length 9. If insufficient length, a new array is returned. May refer to same array as `a` or `b`.
+   * @return matrix product `a*b^T`
    */
   public static multiplyMatrixMatrixTranspose(a: Float64Array, b: Float64Array, result?: Float64Array): Float64Array {
-    if (!result) result = new Float64Array(9);
+    if (!result || result.length < 9)
+      result = new Float64Array(9);
     PackedMatrix3dOps.loadMatrix(
       result,
       (a[0] * b[0] + a[1] * b[1] + a[2] * b[2]),
@@ -85,17 +93,20 @@ export class PackedMatrix3dOps {
       (a[3] * b[6] + a[4] * b[7] + a[5] * b[8]),
       (a[6] * b[0] + a[7] * b[1] + a[8] * b[2]),
       (a[6] * b[3] + a[7] * b[4] + a[8] * b[5]),
-      (a[6] * b[6] + a[7] * b[7] + a[8] * b[8])
+      (a[6] * b[6] + a[7] * b[7] + a[8] * b[8]),
     );
     return result;
   }
   /**
    * Multiply 3x3 matrix `aTranspose*b`, store in `result`.
-   * * All params assumed length 9, allocated by caller.
-   * * c may alias either input.
+   * @param a transpose of left matrix in product. ASSUMED length 9.
+   * @param b right matrix in product. ASSUMED length 9.
+   * @param result optional destination array of length 9. If insufficient length, a new array is returned. May refer to same array as `a` or `b`.
+   * @return matrix product `a^T*b`
    */
   public static multiplyMatrixTransposeMatrix(a: Float64Array, b: Float64Array, result?: Float64Array): Float64Array {
-    if (!result) result = new Float64Array(9);
+    if (!result || result.length < 9)
+      result = new Float64Array(9);
     PackedMatrix3dOps.loadMatrix(
       result,
       (a[0] * b[0] + a[3] * b[3] + a[6] * b[6]),
@@ -106,7 +117,7 @@ export class PackedMatrix3dOps {
       (a[1] * b[2] + a[4] * b[5] + a[7] * b[8]),
       (a[2] * b[0] + a[5] * b[3] + a[8] * b[6]),
       (a[2] * b[1] + a[5] * b[4] + a[8] * b[7]),
-      (a[2] * b[2] + a[5] * b[5] + a[8] * b[8])
+      (a[2] * b[2] + a[5] * b[5] + a[8] * b[8]),
     );
     return result;
   }
@@ -117,15 +128,16 @@ export class PackedMatrix3dOps {
     q = a[5]; a[5] = a[7]; a[7] = q;
   }
   /**
-   * Returns the transpose of 3x3 matrix `a`
-   * * If `dest` is passed as argument, then the function copies the transpose of 3x3 matrix `a` into `dest`
-   * * `a` is not changed unless also passed as the dest, i.e., copyTransposed(a,a) transposes `a` in place
+   * Compute transpose of 3x3 matrix `a`, store in `dest`.
+   * @param a source matrix. ASSUMED length 9. Note that `a` is not changed unless also passed as `dest`, i.e., `copyTransposed(a,a)` transposes `a` in place.
+   * @param dest optional destination array of length 9. If insufficient length, a new array is returned. May refer to same array as `a`.
+   * @return matrix `a^T`
    */
   public static copyTransposed(a: Float64Array, dest?: Float64Array): Float64Array {
     if (dest === a) {
       PackedMatrix3dOps.transposeInPlace(dest);
     } else {
-      if (!dest)
+      if (!dest || dest.length < 9)
         dest = new Float64Array(9);
       dest[0] = a[0]; dest[1] = a[3]; dest[2] = a[6];
       dest[3] = a[1]; dest[4] = a[4]; dest[5] = a[7];
@@ -144,7 +156,8 @@ export class PackedMatrix3dOps {
   }
 }
 
-/** A Matrix3d is tagged indicating one of the following states:
+/**
+ * A Matrix3d is tagged indicating one of the following states:
  * * unknown: it is not know if the matrix is invertible.
  * * inverseStored: the matrix has its inverse stored.
  * * singular: the matrix is known to be singular.
@@ -167,7 +180,8 @@ export enum InverseMatrixState {
   singular,
 }
 
-/** A Matrix3d is a 3x3 matrix.
+/**
+ * A Matrix3d is a 3x3 matrix.
  * * A very common use is to hold a rigid body rotation (which has no scaling or skew), but the 3x3 contents can
  * also hold scaling and skewing.
  * * The matrix with 2-dimensional layout (note: a 2d array can be shown by a matrix)
@@ -246,11 +260,10 @@ export class Matrix3d implements BeJSONFunctions {
   }
   /**
    * Constructor
-   * @param coffs optional coefficient array.
-   * * **WARNING:** coffs is captured (i.e., is now owned by the Matrix3d object and can be modified by it).
+   * @param coffs optional coefficient array of length at least 9 (CAPTURED). If undefined or insufficient length, a new array is created.
    */
   public constructor(coffs?: Float64Array) {
-    this.coffs = coffs ? coffs : new Float64Array(9);
+    this.coffs = (coffs && coffs.length >= 9) ? coffs : new Float64Array(9);
     this.inverseCoffs = undefined;
     this.inverseState = InverseMatrixState.unknown;
   }
@@ -286,26 +299,23 @@ export class Matrix3d implements BeJSONFunctions {
     }
     // if json is Matrix3dProps and is an array of arrays
     if (Geometry.isArrayOfNumberArray(json, 3, 3)) {
-      const data = json as number[][];
       this.setRowValues(
-        data[0][0], data[0][1], data[0][2],
-        data[1][0], data[1][1], data[1][2],
-        data[2][0], data[2][1], data[2][2]);
+        json[0][0], json[0][1], json[0][2],
+        json[1][0], json[1][1], json[1][2],
+        json[2][0], json[2][1], json[2][2]);
       return;
     }
     // if json is Matrix3dProps and is an array of numbers
     if (json.length === 9) {
-      const data = json as number[];
       this.setRowValues(
-        data[0], data[1], data[2],
-        data[3], data[4], data[5],
-        data[6], data[7], data[8]);
+        json[0], json[1], json[2],
+        json[3], json[4], json[5],
+        json[6], json[7], json[8]);
       return;
     } else if (json.length === 4) {
-      const data = json as number[];
       this.setRowValues(
-        data[0], data[1], 0,
-        data[2], data[3], 0,
+        json[0], json[1], 0,
+        json[2], json[3], 0,
         0, 0, 1);
       return;
     }
@@ -349,35 +359,35 @@ export class Matrix3d implements BeJSONFunctions {
     return Geometry.isDistanceWithinTol(max, tol);
   }
   /**
-   * Test if `this` and `other` have almost equal Z column and have X and Y columns differing only by a
-   * rotation of the same angle around that Z.
-   * * **WARNING:** X and Y columns have to be perpendicular to Z column in both `this` and `other`.
-   * @param tol optional tolerance for comparisons by Geometry.isDistanceWithinTol
+   * A matrix equivalence test, returning true if and only if the matrices are almost equal,
+   * or all of the following column comparisons hold:
+   * * z columns are almost equal, and
+   * * x columns differ only by a rotation of angle t around the z column, and
+   * * y columns differ only by a rotation of the same angle t around the z column.
+   * @param other matrix to compare
+   * @param tol optional distance tolerance, for comparisons by Geometry.isDistanceWithinTol
+   * @return whether matrices are almost equal modulo a rotation around their common nonzero z-column.
    */
   public isAlmostEqualAllowZRotation(other: Matrix3d, tol?: number): boolean {
     if (this.isAlmostEqual(other, tol))
       return true;
-    if (this.isAlmostEqualColumn(AxisIndex.Z, other, tol)) {
-      const radians = Angle.radiansBetweenVectorsXYZ(
-        this.coffs[0], this.coffs[3], this.coffs[6],
-        other.coffs[0], other.coffs[3], other.coffs[6]
-      );
-      const angle = Angle.createRadians(radians); // angle between X columns in `this` and `other`
-      const columnX = this.columnX();
-      const columnY = this.columnY();
-      const columnZ = this.columnZ();
-      /**
-       * Here we rotate this.columnX() around this.columnZ() by "angle" and expect to get other.columnX().
-       * Then we rotate this.columnY() around this.columnZ() by the same "angle" and if we get other.columnY(),
-       * that means `this` and `other` have X and Y columns differing only by a rotation around column Z.
-       */
-      let column = Vector3d.createRotateVectorAroundVector(columnX, columnZ, angle)!;
-      if (other.isAlmostEqualColumnXYZ(0, column.x, column.y, column.z, tol)) {
-        column = Vector3d.createRotateVectorAroundVector(columnY, columnZ, angle)!;
-        return other.isAlmostEqualColumnXYZ(1, column.x, column.y, column.z, tol);
-      }
-    }
-    return false;
+    if (!this.isAlmostEqualColumn(AxisIndex.Z, other, tol))
+      return false;
+    const columnX = this.columnX();
+    const columnY = this.columnY();
+    const columnZ = this.columnZ();
+    const toOtherColumnX = columnX.signedAngleTo(other.columnX(), columnZ);
+    let testColumn = Vector3d.createRotateVectorAroundVector(columnX, columnZ, toOtherColumnX);
+    if (!testColumn)
+      return false; // columnZ is zero length
+    if (!other.isAlmostEqualColumnXYZ(0, testColumn.x, testColumn.y, testColumn.z, tol))
+      return false; // columnX rotated around columnZ by angle doesn't end up at other.columnX
+    testColumn = Vector3d.createRotateVectorAroundVector(columnY, columnZ, toOtherColumnX);
+    if (!testColumn)
+      return false;
+    if (!other.isAlmostEqualColumnXYZ(1, testColumn.x, testColumn.y, testColumn.z, tol))
+      return false; // columnY rotated around columnZ by angle doesn't end up at other.columnY
+    return true;
   }
   /** Test for exact (bitwise) equality with other. */
   public isExactEqual(other: Matrix3d): boolean {
@@ -419,7 +429,8 @@ export class Matrix3d implements BeJSONFunctions {
     axx: number, axy: number, axz: number,
     ayx: number, ayy: number, ayz: number,
     azx: number, azy: number, azz: number,
-    result?: Matrix3d): Matrix3d {
+    result?: Matrix3d,
+  ): Matrix3d {
     result = result ? result : new Matrix3d();
     result.inverseState = InverseMatrixState.unknown;
     result.coffs[0] = axx; result.coffs[1] = axy; result.coffs[2] = axz;
@@ -431,13 +442,14 @@ export class Matrix3d implements BeJSONFunctions {
    * Create a Matrix3d with caller-supplied coefficients and optional inverse coefficients.
    * * The inputs are captured into (i.e., owned by) the new Matrix3d.
    * * The caller is responsible for validity of the inverse coefficients.
+   * * If either array is insufficiently sized, it is ignored.
    * @param coffs (required) array of 9 coefficients.
    * @param inverseCoffs (optional) array of 9 coefficients.
    * @returns a Matrix3d populated by a coffs array.
    */
   public static createCapture(coffs: Float64Array, inverseCoffs?: Float64Array): Matrix3d {
     const result = new Matrix3d(coffs);
-    if (inverseCoffs) {
+    if (inverseCoffs && inverseCoffs.length >= 9) {
       result.inverseCoffs = inverseCoffs;
       result.inverseState = InverseMatrixState.inverseStored;
     } else {
@@ -458,7 +470,7 @@ export class Matrix3d implements BeJSONFunctions {
    */
   public static createColumnsInAxisOrder(
     axisOrder: AxisOrder, columnA: Vector3d | undefined, columnB: Vector3d | undefined,
-    columnC: Vector3d | undefined, result?: Matrix3d
+    columnC: Vector3d | undefined, result?: Matrix3d,
   ): Matrix3d {
     if (!result) result = new Matrix3d();
     if (axisOrder === AxisOrder.YZX) {
@@ -601,7 +613,7 @@ export class Matrix3d implements BeJSONFunctions {
    * ```
    */
   public static createScale(
-    scaleFactorX: number, scaleFactorY: number, scaleFactorZ: number, result?: Matrix3d
+    scaleFactorX: number, scaleFactorY: number, scaleFactorZ: number, result?: Matrix3d,
   ): Matrix3d {
     if (result)
       result.setZero();
@@ -617,13 +629,13 @@ export class Matrix3d implements BeJSONFunctions {
       result.inverseCoffs = Float64Array.from(
         [1 / scaleFactorX, 0, 0,
           0, 1 / scaleFactorY, 0,
-          0, 0, 1 / scaleFactorZ]
+          0, 0, 1 / scaleFactorZ],
       );
     }
     return result;
   }
   /**
-   * Create a matrix with uniform scale factors for scale factor "s"
+   * Create a matrix with uniform scale factor "s":
    * ```
    * equation
    * \begin{bmatrix}s & 0 & 0 \\ 0 & s & 0\\ 0 & 0 & s\end{bmatrix}
@@ -672,7 +684,7 @@ export class Matrix3d implements BeJSONFunctions {
    * to the column Z (column 3), and X is at index 2 so vectorW goes to the column X (column 1)
    */
   public static createShuffledColumns(
-    vectorU: Vector3d, vectorV: Vector3d, vectorW: Vector3d, axisOrder: AxisOrder, result?: Matrix3d
+    vectorU: Vector3d, vectorV: Vector3d, vectorW: Vector3d, axisOrder: AxisOrder, result?: Matrix3d,
   ): Matrix3d {
     const target = Matrix3d._create(result);
     target.setColumn(Geometry.axisOrderToAxis(axisOrder, 0), vectorU);
@@ -691,7 +703,7 @@ export class Matrix3d implements BeJSONFunctions {
    * * This function internally uses createShuffledColumns.
    */
   public static createRigidFromColumns(
-    vectorA: Vector3d, vectorB: Vector3d, axisOrder: AxisOrder, result?: Matrix3d
+    vectorA: Vector3d, vectorB: Vector3d, axisOrder: AxisOrder, result?: Matrix3d,
   ): Matrix3d | undefined {
     const vectorA1 = vectorA.normalize();
     if (vectorA1) {
@@ -708,16 +720,15 @@ export class Matrix3d implements BeJSONFunctions {
     return undefined;
   }
   /**
-   * Construct a rigid matrix (orthogonal matrix with +1 determinant) using vectorA and its 2 perpendicular.
+   * Construct a rigid matrix (orthogonal matrix with determinant 1) using vectorA and its 2 perpendiculars.
    * * If axisOrder is not passed then `AxisOrder = AxisOrder.ZXY` is used as default.
    * * This function internally uses createPerpendicularVectorFavorXYPlane and createRigidFromColumns.
-   * * If you want to rotate a given plane (which contains (0,0,0)) to the xy-plane, pass the normal vector of
-   * your plane into createRigidHeadsUp. The transpose of the returned Matrix3d can be used to rotate your plane
-   * to the xy-plane. If plane does not contain (0,0,0) then the plane is rotated to a plane parallel to the xy-plane.
+   * * Passing the normal of a plane P into this method returns a matrix whose transpose rotates geometry in P
+   * to the xy-plane if P contains the origin, or to a plane parallel to the xy-plane if P does not contain the origin.
    * * Visualization can be found at https://www.itwinjs.org/sandbox/SaeedTorabi/2PerpendicularVectorsTo1Vector
    */
   public static createRigidHeadsUp(
-    vectorA: Vector3d, axisOrder: AxisOrder = AxisOrder.ZXY, result?: Matrix3d
+    vectorA: Vector3d, axisOrder: AxisOrder = AxisOrder.ZXY, result?: Matrix3d,
   ): Matrix3d {
     const vectorB = Matrix3d.createPerpendicularVectorFavorXYPlane(vectorA);
     const matrix = Matrix3d.createRigidFromColumns(vectorA, vectorB, axisOrder, result);
@@ -729,7 +740,7 @@ export class Matrix3d implements BeJSONFunctions {
   }
   /**
    * Return the matrix for rotation of `angle` around desired `axis`
-   * * Visualization can be found at https://www.itwinjs.org/sandbox/SaeedTorabi/CubeRotationAroundAnAxis
+   * * Visualization can be found at https://www.itwinjs.org/sandbox/SaeedTorabi/CubeTransform
    * @param axis the axis of rotation
    * @param angle the angle of rotation
    * @param result caller-allocated matrix (optional)
@@ -746,7 +757,7 @@ export class Matrix3d implements BeJSONFunctions {
         unit.x * unit.x * v + c, unit.x * unit.y * v - s * unit.z, unit.x * unit.z * v + s * unit.y,
         unit.y * unit.x * v + s * unit.z, unit.y * unit.y * v + c, unit.y * unit.z * v - s * unit.x,
         unit.z * unit.x * v - s * unit.y, unit.z * unit.y * v + s * unit.x, unit.z * unit.z * v + c,
-        result
+        result,
       );
       retVal.setupInverseTranspose();
       return retVal;
@@ -837,23 +848,28 @@ export class Matrix3d implements BeJSONFunctions {
         vectorU.x, vectorV.x, vectorW.x,
         vectorU.y, vectorV.y, vectorW.y,
         vectorU.z, vectorV.z, vectorW.z,
-        result
+        result,
       );
   }
-  /** Create a matrix with each column's _x,y_ parts given `XAndY` and separate numeric z values.
+  /**
+   * Create a matrix with each column's _x,y_ parts given `XAndY` and separate numeric z values.
    * ```
    * equation
    * \begin{bmatrix}U_x & V_x & W_x \\ U_y & V_y & W_y \\ u & v & w \end{bmatrix}
    * ```
    */
-  public static createColumnsXYW(vectorU: XAndY, u: number, vectorV: XAndY, v: number,
-    vectorW: XAndY, w: number, result?: Matrix3d): Matrix3d {
+  public static createColumnsXYW(
+    vectorU: XAndY, u: number,
+    vectorV: XAndY, v: number,
+    vectorW: XAndY, w: number,
+    result?: Matrix3d,
+  ): Matrix3d {
     return Matrix3d.createRowValues
       (
         vectorU.x, vectorV.x, vectorW.x,
         vectorU.y, vectorV.y, vectorW.y,
         u, v, w,
-        result
+        result,
       );
   }
   /**
@@ -892,7 +908,7 @@ export class Matrix3d implements BeJSONFunctions {
    * by leftNoneRight and topNoneBottom. Returns undefined if rightVector and upVector are parallel.
    */
   public static createViewedAxes(
-    rightVector: Vector3d, upVector: Vector3d, leftNoneRight: number = 0, topNoneBottom: number = 0
+    rightVector: Vector3d, upVector: Vector3d, leftNoneRight: number = 0, topNoneBottom: number = 0,
   ): Matrix3d | undefined {
     const columnZ = rightVector.crossProduct(upVector);
     if (columnZ.normalizeInPlace()) {
@@ -937,7 +953,7 @@ export class Matrix3d implements BeJSONFunctions {
    * @param result optional result.
    */
   public static createStandardWorldToView(
-    index: StandardViewIndex, invert: boolean = false, result?: Matrix3d
+    index: StandardViewIndex, invert: boolean = false, result?: Matrix3d,
   ): Matrix3d {
     switch (index) {
       // Start with TOP view, ccw rotation by 180 degrees around X
@@ -1318,14 +1334,14 @@ export class Matrix3d implements BeJSONFunctions {
    * @param result optional result matrix.
    */
   public static createPartialRotationVectorToVector(
-    vectorA: Vector3d, fraction: number, vectorB: Vector3d, result?: Matrix3d
+    vectorA: Vector3d, fraction: number, vectorB: Vector3d, result?: Matrix3d,
   ): Matrix3d | undefined {
     let upVector = vectorA.unitCrossProduct(vectorB);
     // the usual case (both vectors and also their cross product is non-zero)
     if (upVector) {
       return Matrix3d.createRotationAroundVector(
         upVector,
-        Angle.createRadians(fraction * vectorA.planarAngleTo(vectorB, upVector).radians)
+        Angle.createRadians(fraction * vectorA.planarAngleTo(vectorB, upVector).radians),
       );
     }
     // if either vector is zero
@@ -1341,7 +1357,7 @@ export class Matrix3d implements BeJSONFunctions {
   }
   /** Returns a matrix that rotates from vectorA to vectorB. */
   public static createRotationVectorToVector(
-    vectorA: Vector3d, vectorB: Vector3d, result?: Matrix3d
+    vectorA: Vector3d, vectorB: Vector3d, result?: Matrix3d,
   ): Matrix3d | undefined {
     return this.createPartialRotationVectorToVector(vectorA, 1.0, vectorB, result);
   }
@@ -1411,7 +1427,7 @@ export class Matrix3d implements BeJSONFunctions {
   public columnXYCrossProductMagnitude(): number {
     return Geometry.crossProductMagnitude(
       this.coffs[0], this.coffs[3], this.coffs[6],
-      this.coffs[1], this.coffs[4], this.coffs[7]
+      this.coffs[1], this.coffs[4], this.coffs[7],
     );
   }
   /** Return the X row magnitude */
@@ -1451,7 +1467,7 @@ export class Matrix3d implements BeJSONFunctions {
    * @param y y component of vector
    * @param z z component of vector
    */
-  public columnDotXYZ(columnIndex: AxisIndex, x: number, y: number, z: number) {
+  public columnDotXYZ(columnIndex: AxisIndex, x: number, y: number, z: number): number {
     return this.coffs[columnIndex] * x + this.coffs[columnIndex + 3] * y + this.coffs[columnIndex + 6] * z;
   }
   /** Return (a copy of) the X row */
@@ -1505,7 +1521,7 @@ export class Matrix3d implements BeJSONFunctions {
   /** Return the cross product of the Z column with the vector parameter. */
   public columnZCrossVector(vector: XYZ, result?: Vector3d): Vector3d {
     return Geometry.crossProductXYZXYZ(
-      this.coffs[2], this.coffs[5], this.coffs[8], vector.x, vector.y, vector.z, result
+      this.coffs[2], this.coffs[5], this.coffs[8], vector.x, vector.y, vector.z, result,
     );
   }
   /** Set data from xyz parts of Point4d  (w part of Point4d ignored) */
@@ -1569,7 +1585,7 @@ export class Matrix3d implements BeJSONFunctions {
       this.coffs[index],
       this.coffs[index + 3],
       this.coffs[index + 6],
-      result
+      result,
     );
   }
   /**
@@ -1583,7 +1599,7 @@ export class Matrix3d implements BeJSONFunctions {
       this.coffs[index],
       this.coffs[index + 1],
       this.coffs[index + 2],
-      result
+      result,
     );
   }
   /**
@@ -1599,7 +1615,7 @@ export class Matrix3d implements BeJSONFunctions {
         vectorU.x, vectorU.y, vectorU.z,
         vectorV.x, vectorV.y, vectorV.z,
         vectorW.x, vectorW.y, vectorW.z,
-        result
+        result,
       );
   }
   /**
@@ -1628,10 +1644,42 @@ export class Matrix3d implements BeJSONFunctions {
         1 + a * x * x, a * x * y, a * x * z,
         a * y * x, 1 + a * y * y, a * y * z,
         a * z * x, a * z * y, 1 + a * z * z,
-        result
+        result,
       );
     }
     return Matrix3d.createUniformScale(scale);
+  }
+  /**
+   * Create a matrix which sweeps a vector along `sweepVector` until it hits the plane through the origin with the
+   * given normal.
+   * * Geometrically, the returned matrix `M` acts on a vector `u` by rotating and scaling it to lie in the plane.
+   * Specifically, `Mu = u + sw` is perpendicular to `n` for some scalar `s`, where `w` is the sweep direction, and
+   * `n` is the plane normal.
+   * * Symbolically, `M = I - w⊗n / w.n`, where `I` is the identity, and ⊗ is the vector outer product.
+   * @param sweepVector sweep direction. If same as `planeNormal`, the resulting matrix flattens to the plane.
+   * @param planeNormal normal to the target plane
+   */
+  public static createFlattenAlongVectorToPlane(sweepVector: Vector3d, planeNormal: Vector3d): Matrix3d | undefined {
+    // To sweep an arbitrary vector U0 along direction W to the vector U1 in the plane through the origin with normal N:
+    //   `U1 = U0 + W * alpha`
+    //   `U1 DOT N = (U0 + W * alpha) DOT N = 0`
+    //   `U0 DOT N = - alpha * W DOT N`
+    //   `alpha = - U0 DOT N / W DOT N`
+    // Insert the alpha definition in U1:
+    //   `U1 = U0 -  W * N DOT U0 / W DOT N`
+    // Write W * N DOT U0 in terms of a vector outer product (^T indicates transpose):
+    //   `U1 = U0 -  W * N^T * U0 / W DOT N`
+    // Note W * N^T is a 3x3 matrix. By associativity of matrix multiplication:
+    //   `U1 = (I - W * N^T / W DOT N) * U0`
+    // and the matrix to do the sweep for any vector in place of U0 is `I - W * N^T / W DOT N`.
+     const result = Matrix3d.createIdentity();
+    const dot = sweepVector.dotProduct(planeNormal);
+    const inverse = Geometry.conditionalDivideCoordinate(1.0, -dot);
+    if (inverse !== undefined) {
+      result.addScaledOuterProductInPlace(sweepVector, planeNormal, inverse);
+      return result;
+    }
+    return undefined;
   }
   /**
   * Multiply `matrix * point`, treating the point as a column vector on the right.
@@ -1649,7 +1697,7 @@ export class Matrix3d implements BeJSONFunctions {
       this.coffs[0] * x + this.coffs[1] * y + this.coffs[2] * z,
       this.coffs[3] * x + this.coffs[4] * y + this.coffs[5] * z,
       this.coffs[6] * x + this.coffs[7] * y + this.coffs[8] * z,
-      result
+      result,
     );
   }
   /**
@@ -1668,7 +1716,7 @@ export class Matrix3d implements BeJSONFunctions {
       this.coffs[0] * x + this.coffs[1] * y + this.coffs[2] * z,
       this.coffs[3] * x + this.coffs[4] * y + this.coffs[5] * z,
       this.coffs[6] * x + this.coffs[7] * y + this.coffs[8] * z,
-      result
+      result,
     );
   }
   /**
@@ -1680,7 +1728,7 @@ export class Matrix3d implements BeJSONFunctions {
     for (const v of data) v.set(
       this.coffs[0] * v.x + this.coffs[1] * v.y + this.coffs[2] * v.z,
       this.coffs[3] * v.x + this.coffs[4] * v.y + this.coffs[5] * v.z,
-      this.coffs[6] * v.x + this.coffs[7] * v.y + this.coffs[8] * v.z
+      this.coffs[6] * v.x + this.coffs[7] * v.y + this.coffs[8] * v.z,
     );
   }
   /** Compute `origin - matrix * vector` */
@@ -1692,7 +1740,7 @@ export class Matrix3d implements BeJSONFunctions {
       origin.x - (matrix.coffs[0] * x + matrix.coffs[1] * y + matrix.coffs[2] * z),
       origin.y - (matrix.coffs[3] * x + matrix.coffs[4] * y + matrix.coffs[5] * z),
       origin.z - (matrix.coffs[6] * x + matrix.coffs[7] * y + matrix.coffs[8] * z),
-      result
+      result,
     );
   }
   /** Compute `origin + matrix * vector`  using only the xy parts of the inputs. */
@@ -1702,7 +1750,7 @@ export class Matrix3d implements BeJSONFunctions {
     return Point2d.create(
       origin.x + matrix.coffs[0] * x + matrix.coffs[1] * y,
       origin.y + matrix.coffs[3] * x + matrix.coffs[4] * y,
-      result
+      result,
     );
   }
   /** Compute `origin + matrix * vector`  using all xyz parts of the inputs. */
@@ -1714,7 +1762,7 @@ export class Matrix3d implements BeJSONFunctions {
       origin.x + matrix.coffs[0] * x + matrix.coffs[1] * y + matrix.coffs[2] * z,
       origin.y + matrix.coffs[3] * x + matrix.coffs[4] * y + matrix.coffs[5] * z,
       origin.z + matrix.coffs[6] * x + matrix.coffs[7] * y + matrix.coffs[8] * z,
-      result
+      result,
     );
   }
   /** Updates vector to be `origin + matrix * vector` using all xyz parts of the inputs. */
@@ -1728,13 +1776,13 @@ export class Matrix3d implements BeJSONFunctions {
   }
   /** Compute `origin + matrix * vector` where the final vector is given as direct x,y,z coordinates */
   public static xyzPlusMatrixTimesCoordinates(
-    origin: XYZ, matrix: Matrix3d, x: number, y: number, z: number, result?: Point3d
+    origin: XYZ, matrix: Matrix3d, x: number, y: number, z: number, result?: Point3d,
   ): Point3d {
     return Point3d.create(
       origin.x + matrix.coffs[0] * x + matrix.coffs[1] * y + matrix.coffs[2] * z,
       origin.y + matrix.coffs[3] * x + matrix.coffs[4] * y + matrix.coffs[5] * z,
       origin.z + matrix.coffs[6] * x + matrix.coffs[7] * y + matrix.coffs[8] * z,
-      result
+      result,
     );
   }
   /**
@@ -1753,14 +1801,14 @@ export class Matrix3d implements BeJSONFunctions {
    * @param result optional preallocated result.
    */
   public static xyzPlusMatrixTimesWeightedCoordinates(
-    origin: XYZ, matrix: Matrix3d, x: number, y: number, z: number, w: number, result?: Point4d
+    origin: XYZ, matrix: Matrix3d, x: number, y: number, z: number, w: number, result?: Point4d,
   ): Point4d {
     return Point4d.create(
       matrix.coffs[0] * x + matrix.coffs[1] * y + matrix.coffs[2] * z + origin.x * w,
       matrix.coffs[3] * x + matrix.coffs[4] * y + matrix.coffs[5] * z + origin.y * w,
       matrix.coffs[6] * x + matrix.coffs[7] * y + matrix.coffs[8] * z + origin.z * w,
       w,
-      result
+      result,
     );
   }
   /**
@@ -1776,12 +1824,12 @@ export class Matrix3d implements BeJSONFunctions {
    * @param y y part of multiplied point
    * @param z z part of multiplied point
    * @param w w part of multiplied point
-   * @param result optional preallocated result.
+   * @param result optional preallocated result. If length < 4, a new array is returned.
    */
   public static xyzPlusMatrixTimesWeightedCoordinatesToFloat64Array(
-    origin: XYZ, matrix: Matrix3d, x: number, y: number, z: number, w: number, result?: Float64Array
+    origin: XYZ, matrix: Matrix3d, x: number, y: number, z: number, w: number, result?: Float64Array,
   ): Float64Array {
-    if (!result)
+    if (!result || result.length < 4)
       result = new Float64Array(4);
     result[0] = matrix.coffs[0] * x + matrix.coffs[1] * y + matrix.coffs[2] * z + origin.x * w;
     result[1] = matrix.coffs[3] * x + matrix.coffs[4] * y + matrix.coffs[5] * z + origin.y * w;
@@ -1801,12 +1849,12 @@ export class Matrix3d implements BeJSONFunctions {
    * @param x x part of multiplied point
    * @param y y part of multiplied point
    * @param z z part of multiplied point
-   * @param result optional preallocated result.
+   * @param result optional preallocated result. If length < 3, a new array is returned.
    */
   public static xyzPlusMatrixTimesCoordinatesToFloat64Array(
-    origin: XYZ, matrix: Matrix3d, x: number, y: number, z: number, result?: Float64Array
+    origin: XYZ, matrix: Matrix3d, x: number, y: number, z: number, result?: Float64Array,
   ): Float64Array {
-    if (!result)
+    if (!result || result.length < 3)
       result = new Float64Array(3);
     result[0] = matrix.coffs[0] * x + matrix.coffs[1] * y + matrix.coffs[2] * z + origin.x;
     result[1] = matrix.coffs[3] * x + matrix.coffs[4] * y + matrix.coffs[5] * z + origin.y;
@@ -1880,7 +1928,7 @@ export class Matrix3d implements BeJSONFunctions {
       origin.x + this.coffs[0] * x + this.coffs[1] * y,
       origin.y + this.coffs[3] * x + this.coffs[4] * y,
       origin.z + this.coffs[6] * x + this.coffs[7] * y,
-      result
+      result,
     );
   }
   /**
@@ -1945,7 +1993,7 @@ export class Matrix3d implements BeJSONFunctions {
         this.inverseCoffs[0] * x + this.inverseCoffs[1] * y + this.inverseCoffs[2] * z,
         this.inverseCoffs[3] * x + this.inverseCoffs[4] * y + this.inverseCoffs[5] * z,
         this.inverseCoffs[6] * x + this.inverseCoffs[7] * y + this.inverseCoffs[8] * z,
-        result
+        result,
       );
     }
     return undefined;
@@ -1965,7 +2013,7 @@ export class Matrix3d implements BeJSONFunctions {
         this.inverseCoffs[0] * x + this.inverseCoffs[3] * y + this.inverseCoffs[6] * z,
         this.inverseCoffs[1] * x + this.inverseCoffs[4] * y + this.inverseCoffs[7] * z,
         this.inverseCoffs[2] * x + this.inverseCoffs[5] * y + this.inverseCoffs[8] * z,
-        result
+        result,
       );
     }
     return undefined;
@@ -1983,7 +2031,7 @@ export class Matrix3d implements BeJSONFunctions {
         this.inverseCoffs[0] * x + this.inverseCoffs[1] * y + this.inverseCoffs[2] * z,
         this.inverseCoffs[3] * x + this.inverseCoffs[4] * y + this.inverseCoffs[5] * z,
         this.inverseCoffs[6] * x + this.inverseCoffs[7] * y + this.inverseCoffs[8] * z,
-        result
+        result,
       );
     }
     return undefined;
@@ -2002,7 +2050,7 @@ export class Matrix3d implements BeJSONFunctions {
         this.inverseCoffs[3] * x + this.inverseCoffs[4] * y + this.inverseCoffs[5] * z,
         this.inverseCoffs[6] * x + this.inverseCoffs[7] * y + this.inverseCoffs[8] * z,
         w,
-        result
+        result,
       );
     }
     return undefined;
@@ -2019,7 +2067,7 @@ export class Matrix3d implements BeJSONFunctions {
         this.inverseCoffs[0] * x + this.inverseCoffs[1] * y + this.inverseCoffs[2] * z,
         this.inverseCoffs[3] * x + this.inverseCoffs[4] * y + this.inverseCoffs[5] * z,
         this.inverseCoffs[6] * x + this.inverseCoffs[7] * y + this.inverseCoffs[8] * z,
-        result
+        result,
       );
     }
     return undefined;
@@ -2033,7 +2081,7 @@ export class Matrix3d implements BeJSONFunctions {
    */
   private finishInverseCoffs(
     f: (factorA: Float64Array, factorB: Float64Array, result: Float64Array) => void, coffA?: Float64Array,
-    coffB?: Float64Array
+    coffB?: Float64Array,
   ): void {
     if (coffA && coffB) {
       this.createInverseCoffsWithZeros();
@@ -2058,7 +2106,7 @@ export class Matrix3d implements BeJSONFunctions {
     PackedMatrix3dOps.multiplyMatrixMatrix(this.coffs, other.coffs, result.coffs);
     if (this.inverseState === InverseMatrixState.inverseStored
       && other.inverseState === InverseMatrixState.inverseStored)
-      result.finishInverseCoffs(PackedMatrix3dOps.multiplyMatrixMatrix, other.inverseCoffs, this.inverseCoffs);
+      result.finishInverseCoffs((a, b, _result) => PackedMatrix3dOps.multiplyMatrixMatrix(a, b, _result), other.inverseCoffs, this.inverseCoffs);
     else if (this.inverseState === InverseMatrixState.singular
       || other.inverseState === InverseMatrixState.singular)
       result.inverseState = InverseMatrixState.singular;
@@ -2076,7 +2124,7 @@ export class Matrix3d implements BeJSONFunctions {
     result = result ? result : new Matrix3d();
     PackedMatrix3dOps.multiplyMatrixMatrix(this.coffs, other.inverseCoffs!, Matrix3d._productBuffer);
     if (this.inverseState === InverseMatrixState.inverseStored)
-      result.finishInverseCoffs(PackedMatrix3dOps.multiplyMatrixMatrix, other.coffs, this.inverseCoffs);
+      result.finishInverseCoffs((a, b, _result) => PackedMatrix3dOps.multiplyMatrixMatrix(a, b, _result), other.coffs, this.inverseCoffs);
     else
       result.inverseState = InverseMatrixState.unknown;
     PackedMatrix3dOps.copy(Matrix3d._productBuffer, result.coffs);
@@ -2092,7 +2140,7 @@ export class Matrix3d implements BeJSONFunctions {
     result = result ? result : new Matrix3d();
     PackedMatrix3dOps.multiplyMatrixMatrix(this.inverseCoffs!, other.coffs, Matrix3d._productBuffer);
     if (other.inverseState === InverseMatrixState.inverseStored)
-      result.finishInverseCoffs(PackedMatrix3dOps.multiplyMatrixMatrix, other.inverseCoffs, this.coffs);
+      result.finishInverseCoffs((a, b, _result) => PackedMatrix3dOps.multiplyMatrixMatrix(a, b, _result), other.inverseCoffs, this.coffs);
     else
       result.inverseState = InverseMatrixState.unknown;
     PackedMatrix3dOps.copy(Matrix3d._productBuffer, result.coffs);
@@ -2110,7 +2158,7 @@ export class Matrix3d implements BeJSONFunctions {
     result = result ? result : new Matrix3d();
     PackedMatrix3dOps.multiplyMatrixMatrixTranspose(this.coffs, other.coffs, result.coffs);
     if (this.inverseState === InverseMatrixState.inverseStored && other.inverseState === InverseMatrixState.inverseStored)
-      result.finishInverseCoffs(PackedMatrix3dOps.multiplyMatrixTransposeMatrix, other.inverseCoffs, this.inverseCoffs);
+      result.finishInverseCoffs((a, b, _result) => PackedMatrix3dOps.multiplyMatrixTransposeMatrix(a, b, _result), other.inverseCoffs, this.inverseCoffs);
     else if (this.inverseState === InverseMatrixState.singular || other.inverseState === InverseMatrixState.singular)
       result.inverseState = InverseMatrixState.singular;
     else
@@ -2129,7 +2177,7 @@ export class Matrix3d implements BeJSONFunctions {
     result = result ? result : new Matrix3d();
     PackedMatrix3dOps.multiplyMatrixTransposeMatrix(this.coffs, other.coffs, result.coffs);
     if (this.inverseState === InverseMatrixState.inverseStored && other.inverseState === InverseMatrixState.inverseStored)
-      result.finishInverseCoffs(PackedMatrix3dOps.multiplyMatrixMatrixTranspose, other.inverseCoffs, this.inverseCoffs);
+      result.finishInverseCoffs((a, b, _result) => PackedMatrix3dOps.multiplyMatrixMatrixTranspose(a, b, _result), other.inverseCoffs, this.inverseCoffs);
     else if (this.inverseState === InverseMatrixState.singular || other.inverseState === InverseMatrixState.singular)
       result.inverseState = InverseMatrixState.singular;
     else
@@ -2154,7 +2202,7 @@ export class Matrix3d implements BeJSONFunctions {
     if (!result)
       return Transform.createRefs(
         this.multiplyXYZ(other.origin.x, other.origin.y, other.origin.z),
-        this.multiplyMatrixMatrix(other.matrix)
+        this.multiplyMatrixMatrix(other.matrix),
       );
     this.multiplyXYZtoXYZ(other.origin, result.origin);
     this.multiplyMatrixMatrix(other.matrix, result.matrix);
@@ -2203,7 +2251,6 @@ export class Matrix3d implements BeJSONFunctions {
       PackedMatrix3dOps.copy(this.coffs, Matrix3d._productBuffer);
       PackedMatrix3dOps.copy(this.inverseCoffs!, this.coffs);
       PackedMatrix3dOps.copy(Matrix3d._productBuffer, this.inverseCoffs!);
-
       return result;
     }
     if (result === undefined) {
@@ -2220,7 +2267,7 @@ export class Matrix3d implements BeJSONFunctions {
    * * **Note:** We don't validate row/column numbers. Pass 0/3/6 for row 0/1/2 and pass 0/1/2 for column 0/1/2.
    */
   private static rowColumnDot(
-    coffA: Float64Array, rowStartA: number, coffB: Float64Array, columnStartB: number
+    coffA: Float64Array, rowStartA: number, coffB: Float64Array, columnStartB: number,
   ): number {
     return coffA[rowStartA] * coffB[columnStartB] +
       coffA[rowStartA + 1] * coffB[columnStartB + 3] +
@@ -2232,7 +2279,7 @@ export class Matrix3d implements BeJSONFunctions {
    * * **Note:** We don't validate row/column numbers. Pass 0/3/6 for row 0/1/2 and pass 0/1/2 for column 0/1/2.
    */
   private static indexedRowCrossProduct(
-    source: Float64Array, rowStart0: number, rowStart1: number, dest: Float64Array, columnStart: number
+    source: Float64Array, rowStart0: number, rowStart1: number, dest: Float64Array, columnStart: number,
   ): void {
     dest[columnStart] = source[rowStart0 + 1] * source[rowStart1 + 2] - source[rowStart0 + 2] * source[rowStart1 + 1];
     dest[columnStart + 3] = source[rowStart0 + 2] * source[rowStart1] - source[rowStart0] * source[rowStart1 + 2];
@@ -2420,7 +2467,7 @@ export class Matrix3d implements BeJSONFunctions {
       this.coffs[0] * scale, this.coffs[1] * scale, this.coffs[2] * scale,
       this.coffs[3] * scale, this.coffs[4] * scale, this.coffs[5] * scale,
       this.coffs[6] * scale, this.coffs[7] * scale, this.coffs[8] * scale,
-      result
+      result,
     );
   }
   /**
@@ -2435,7 +2482,7 @@ export class Matrix3d implements BeJSONFunctions {
       this.coffs[0] * scaleX, this.coffs[1] * scaleY, this.coffs[2] * scaleZ,
       this.coffs[3] * scaleX, this.coffs[4] * scaleY, this.coffs[5] * scaleZ,
       this.coffs[6] * scaleX, this.coffs[7] * scaleY, this.coffs[8] * scaleZ,
-      result
+      result,
     );
   }
   /**
@@ -2473,7 +2520,7 @@ export class Matrix3d implements BeJSONFunctions {
       this.coffs[0] * scaleX, this.coffs[1] * scaleX, this.coffs[2] * scaleX,
       this.coffs[3] * scaleY, this.coffs[4] * scaleY, this.coffs[5] * scaleY,
       this.coffs[6] * scaleZ, this.coffs[7] * scaleZ, this.coffs[8] * scaleZ,
-      result
+      result,
     );
   }
   /**
@@ -2666,7 +2713,7 @@ export class Matrix3d implements BeJSONFunctions {
     return Geometry.hypotenuseSquaredXYZ(
       this.coffs[1] - this.coffs[3],
       this.coffs[2] - this.coffs[6],
-      this.coffs[5] - this.coffs[7]
+      this.coffs[5] - this.coffs[7],
     );
   }
   /** Test if the matrix is (very near to) symmetric */
@@ -2691,8 +2738,8 @@ export class Matrix3d implements BeJSONFunctions {
     return Math.sqrt(sumLow) <= Geometry.smallAngleRadians * (1.0 + Math.sqrt(sumAll));
   }
   /**
-   * If the matrix is diagonal and all diagonals are almost equal, return the first diagonal (entry 0
-   * which is same as entry 4 and 8). Otherwise return `undefined`.
+   * If the matrix is diagonal with almost equal diagonal entries, return the first diagonal entry.
+   * Otherwise return `undefined`.
    */
   public sameDiagonalScale(): number | undefined {
     const sumAll = this.sumSquares();
@@ -2706,32 +2753,31 @@ export class Matrix3d implements BeJSONFunctions {
     return undefined;
   }
   /**
-   * Test if all rows and columns are unit length and are perpendicular to each other, i.e., the matrix is either
-   * a `pure rotation` (determinant is +1) or is a `mirror` (determinant is -1).
-   * * **Note:** such a matrix is called `orthogonal` and its inverse is its transpose.
+   * Test if all rows and columns are unit length and perpendicular to each other.
+   * * If so, the matrix is either a rotation (determinant is +1) or a mirror (determinant is -1).
+   * * Such a matrix is called "orthogonal" and its inverse is its transpose.
    */
   public testPerpendicularUnitRowsAndColumns(): boolean {
     const product = this.multiplyMatrixMatrixTranspose(this);
     return product.isIdentity;
   }
   /**
-   * Test if the matrix is a `rigid` matrix (or `pure rotation`, i.e., columns and rows are unit length and
-   * pairwise perpendicular and determinant is +1).
-   * @param allowMirror whether to widen the test to return true if the matrix is a `mirror` (determinant is -1).
+   * Test if the matrix is a rigid matrix.
+   * * A rigid matrix is a rotation: its columns and rows are unit length and pairwise perpendicular, and its
+   * determinant is +1.
+   * @param allowMirror whether to widen the test to also return true if the matrix is a mirror (determinant is -1).
   */
   public isRigid(allowMirror: boolean = false): boolean {
     return this.testPerpendicularUnitRowsAndColumns() && (allowMirror || this.determinant() > 0);
   }
   /**
-   * Test if all rows and columns are perpendicular to each other and have equal length.
-   * If so, the length (or its negative) is the `scale` factor from a set of `orthonormal axes` to
-   * the set of axes created by columns of `this` matrix. Otherwise, returns `undefined`.
+   * Test if the instance is the product of a rigid matrix and a signed scale, and return both.
+   * * Specifically, this is a test of whether the instance rows and columns are pairwise perpendicular and have equal
+   * length. If so, the scale factor is this length, or its negative if the instance is a mirror, and dividing the
+   * columns by this scale factor produces a rigid matrix (a rotation).
    * @param result optional pre-allocated object to populate and return
-   * @returns returns `{ rigidAxes, scale }` where `rigidAxes` is a Matrix3d with its columns as the rigid axes
-   * (with the scale factor removed) and `scale` is the scale factor.
-   * * Note that determinant of a rigid matrix is +1.
-   * * The context for this method is to determine if the matrix is the product a `rotation` matrix and a uniform
-   * `scale` matrix (diagonal matrix with all diagonal entries the same nonzero number).
+   * @returns the factorization `{ rigidAxes, scale }` where `rigidAxes` is the instance matrix with `scale` factor
+   * removed, or undefined if the factorization failed.
    */
   public factorRigidWithSignedScale(result?: Matrix3d): { rigidAxes: Matrix3d, scale: number } | undefined {
     const product = this.multiplyMatrixMatrixTranspose(this);
@@ -2741,6 +2787,25 @@ export class Matrix3d implements BeJSONFunctions {
     const scale = this.determinant() > 0 ? Math.sqrt(scaleSquare) : -Math.sqrt(scaleSquare);
     const scaleInverse = 1.0 / scale;
     return { rigidAxes: this.scaleColumns(scaleInverse, scaleInverse, scaleInverse, result), scale };
+  }
+  /**
+   * Compute the factorization M = R*G, where R is rigid (a rotation) and G is whatever is left over (skew, scale,
+   * mirror, etc).
+   * * The rotation is computed from the instance by passing `axisOrder` into [[createRigidFromMatrix3d]].
+   * @param rotation the rigid factor R
+   * @param skew the non-rotation factor G = R^t * M (since R transposed is its inverse)
+   * @param axisOrder optional cross product ordering for computing R
+   * @return whether [[createRigidFromMatrix3d]] succeeded; if not, `rotation` is set to the identity, and `skew` is
+   * set to this instance.
+   */
+  public factorRigidSkew(rotation: Matrix3d, skew: Matrix3d, axisOrder: AxisOrder = AxisOrder.XYZ): boolean {
+    if (Matrix3d.createRigidFromMatrix3d(this, axisOrder, rotation)) {
+      rotation.multiplyMatrixTransposeMatrix(this, skew);
+      return true;
+    }
+    rotation.setIdentity();
+    skew.setFrom(this);
+    return false;
   }
   /** Test if `this` matrix reorders and/or negates the columns of the `identity` matrix. */
   public get isSignedPermutation(): boolean {
@@ -2787,7 +2852,7 @@ export class Matrix3d implements BeJSONFunctions {
    * * This function internally uses `axisOrderCrossProductsInPlace` to make the matrix rigid.
    */
   public static createRigidFromMatrix3d(
-    source: Matrix3d, axisOrder: AxisOrder = AxisOrder.XYZ, result?: Matrix3d
+    source: Matrix3d, axisOrder: AxisOrder = AxisOrder.XYZ, result?: Matrix3d,
   ): Matrix3d | undefined {
     result = source.clone(result);
     if (result.makeRigid(axisOrder))
@@ -2824,7 +2889,7 @@ export class Matrix3d implements BeJSONFunctions {
         // third row
         2.0 * a * (quat.x * quat.z + quat.w * quat.y),
         2.0 * a * (quat.y * quat.z - quat.w * quat.x),
-        a * (qqw - qqx - qqy + qqz)
+        a * (qqw - qqx - qqy + qqz),
       );
       return matrix;
     }

@@ -9,7 +9,7 @@
 import { GeometryHandler } from "../geometry3d/GeometryHandler";
 import { IndexedXYZCollection } from "../geometry3d/IndexedXYZCollection";
 import { Point3d } from "../geometry3d/Point3dVector3d";
-import { AnyCurve } from "./CurveChain";
+import { CurveChainWithDistanceIndex } from "./CurveChainWithDistanceIndex";
 import { CurveChain } from "./CurveCollection";
 import { CurvePrimitive } from "./CurvePrimitive";
 import { RecursiveCurveProcessor } from "./CurveProcessor";
@@ -25,43 +25,51 @@ import { StrokeOptions } from "./StrokeOptions";
 export class Loop extends CurveChain {
   /** String name for schema properties */
   public readonly curveCollectionType = "loop";
-
-  /** tag value that can be set to true for user code to mark inner and outer loops. */
+  /** Tag value that can be set to true for user code to mark inner and outer loops. */
   public override isInner: boolean = false;
-  /** test if `other` is a `Loop` */
-  public isSameGeometryClass(other: GeometryQuery): boolean { return other instanceof Loop; }
-  /** Test if `other` is an instance of `Loop` */
-  public constructor() { super(); }
+  /** Test if `other` is a `Loop` */
+  public isSameGeometryClass(other: GeometryQuery): boolean {
+    return other instanceof Loop;
+  }
+  public constructor() {
+    super();
+  }
   /**
-   * Create a loop from variable length list of CurvePrimitives
-   * @param curves array of individual curve primitives
+   * Create a loop from a variable length list of [[CurvePrimitive]]s.
+   * * A significant gap between the end of one curve and the start of the next, or between chain start and end,
+   * is not bridged and may cause unexpected behavior.
+   * @param curves array of individual curve primitives, assumed to form a closed planar loop.
    */
   public static create(...curves: CurvePrimitive[]): Loop {
     const result = new Loop();
     for (const curve of curves) {
-      result.children.push(curve);
+      if (curve instanceof CurveChainWithDistanceIndex)
+        result.children.push(...curve.path.children);
+      else
+        result.children.push(curve);
     }
     return result;
   }
   /**
-   * Create a loop from an array of curve primitives
-   * @param curves array of individual curve primitives
+   * Create a loop from an array of [[CurvePrimitive]]s.
+   * * A significant gap between the end of one curve and the start of the next, or between chain start and end,
+   * is not bridged and may cause unexpected behavior.
+   * @param curves array of individual curve primitives, assumed to form a closed planar loop.
    */
   public static createArray(curves: CurvePrimitive[]): Loop {
-    const result = new Loop();
-    for (const curve of curves) {
-      result.children.push(curve);
-    }
-    return result;
+    return this.create(...curves);
   }
-  /** Create a loop from an array of points */
+  /**
+   * Create a loop from an array of coplanar points.
+   * @param points vertices of polygon, closure point optional.
+  */
   public static createPolygon(points: IndexedXYZCollection | Point3d[]): Loop {
     const linestring = LineString3d.create(points);
     linestring.addClosurePoint();
     return Loop.create(linestring);
   }
   /** Create a loop with the stroked form of this loop. */
-  public cloneStroked(options?: StrokeOptions): AnyCurve {
+  public cloneStroked(options?: StrokeOptions): Loop {
     const strokes = LineString3d.create();
     for (const curve of this.children)
       curve.emitStrokes(strokes, options);
@@ -74,13 +82,22 @@ export class Loop extends CurveChain {
     return Loop.create(strokes);
   }
   /** Return the boundary type (2) of a corresponding  MicroStation CurveVector */
-  public dgnBoundaryType(): number { return 2; } // (2) all "Loop" become "outer"
-  /** invoke `processor.announceLoop(this, indexInParent)` */
+  public dgnBoundaryType(): number {
+    /**
+     * All "Loop" become "outer". TypeScript Loop object is equivalent to a native CurveVector with
+     * boundaryType = BOUNDARY_TYPE_Outer. In other words, TypeScript has no flavor of Loop that
+     * carries "hole" semantics.
+     */
+    return 2;
+  }
+  /** Invoke `processor.announceLoop(this, indexInParent)` */
   public announceToCurveProcessor(processor: RecursiveCurveProcessor, indexInParent: number = -1): void {
     return processor.announceLoop(this, indexInParent);
   }
   /** Create a new `Loop` with no children */
-  public cloneEmptyPeer(): Loop { return new Loop(); }
+  public cloneEmptyPeer(): Loop {
+    return new Loop();
+  }
   /** Second step of double dispatch:  call `handler.handleLoop(this)` */
   public dispatchToGeometryHandler(handler: GeometryHandler): any {
     return handler.handleLoop(this);
@@ -100,7 +117,10 @@ export class LoopCurveLoopCurve {
   public loopB?: Loop;
   /** A curve (typically an edge of loopB) */
   public curveB?: CurvePrimitive;
-  public constructor(loopA: Loop | undefined, curveA: CurvePrimitive | undefined, loopB: Loop | undefined, curveB: CurvePrimitive | undefined) {
+  /** Constructor */
+  public constructor(
+    loopA: Loop | undefined, curveA: CurvePrimitive | undefined, loopB: Loop | undefined, curveB: CurvePrimitive | undefined,
+  ) {
     this.loopA = loopA;
     this.curveA = curveA;
     this.loopB = loopB;
@@ -117,7 +137,9 @@ export class LoopCurveLoopCurve {
     this.curveB = curve;
   }
 }
-/** Carrier object for loops characterized by area sign
+
+/**
+ * Carrier object for loops characterized by area sign
  * @public
  */
 export interface SignedLoops {
@@ -125,8 +147,8 @@ export interface SignedLoops {
   positiveAreaLoops: Loop[];
   /** Array of loops that have negative area sign (i.e. clockwise loops). */
   negativeAreaLoops: Loop[];
-  /** slivers where there are coincident sections of input curves. */
+  /** Slivers where there are coincident sections of input curves. */
   slivers: Loop[];
-/** Array indicating edges between loops */
+  /** Array indicating edges between loops */
   edges?: LoopCurveLoopCurve[];
 }

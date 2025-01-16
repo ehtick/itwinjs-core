@@ -10,7 +10,7 @@ import {
   Code, ColorDef, GeometricElement3dProps, GeometryParams, GeometryPartProps, GeometryStreamBuilder, GeometryStreamIterator, IModel,
 } from "@itwin/core-common";
 import {
-  GenericSchema, GeometricElement3d, GeometryPart, PhysicalModel, PhysicalObject, PhysicalPartition, RenderMaterialElement, SnapshotDb, SpatialCategory, SubCategory, SubjectOwnsPartitionElements,
+  _nativeDb, GenericSchema, GeometricElement3d, GeometryPart, PhysicalModel, PhysicalObject, PhysicalPartition, RenderMaterialElement, SnapshotDb, SpatialCategory, SubCategory, SubjectOwnsPartitionElements,
 } from "../../core-backend";
 import { IModelTestUtils } from "../IModelTestUtils";
 
@@ -111,10 +111,10 @@ function readGeomStream(iter: GeometryStreamIterator): GeomStreamEntry[] & { vie
     if (entry.primitive.type === "geometryQuery") {
       expect(entry.primitive.geometry.geometryCategory).to.equal("curveCollection");
       if (entry.primitive.geometry.geometryCategory === "curveCollection") {
-        expect(entry.primitive.geometry.children!.length).to.equal(1);
-        expect(entry.primitive.geometry.children![0]).instanceOf(LineString3d);
+        expect(entry.primitive.geometry.children.length).to.equal(1);
+        expect(entry.primitive.geometry.children[0]).instanceOf(LineString3d);
 
-        const pts = (entry.primitive.geometry.children![0] as LineString3d).points;
+        const pts = (entry.primitive.geometry.children[0] as LineString3d).points;
         expect(pts.length).to.equal(5);
         expect(pts[1].x).to.equal(pts[0].x + 1);
 
@@ -242,7 +242,7 @@ describe("DgnDb.inlineGeometryPartReferences", () => {
   }
 
   function inlinePartRefs(): number {
-    const result = imodel.nativeDb.inlineGeometryPartReferences();
+    const result = imodel[_nativeDb].inlineGeometryPartReferences();
     expect(result.numCandidateParts).to.equal(result.numPartsDeleted);
     expect(result.numRefsInlined).to.equal(result.numCandidateParts);
     return result.numRefsInlined;

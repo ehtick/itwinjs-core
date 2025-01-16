@@ -2,7 +2,7 @@
 * Copyright (c) Bentley Systems, Incorporated. All rights reserved.
 * See LICENSE.md in the project root for license terms and full copyright notice.
 *--------------------------------------------------------------------------------------------*/
-import { ElectronRendererAuthorization } from "@itwin/electron-authorization/lib/cjs/ElectronRenderer";
+import { ElectronRendererAuthorization } from "@itwin/electron-authorization/Renderer";
 import { IModelApp  } from "@itwin/core-frontend";
 import { BrowserAuthorizationClient } from "@itwin/browser-authorization";
 import { AccessToken, ProcessDetector } from "@itwin/core-bentley";
@@ -19,13 +19,15 @@ export async function signIn(): Promise<boolean> {
 
     return new Promise<boolean>((resolve, reject) => {
       existingAuthClient.onAccessTokenChanged.addOnce((token: AccessToken) => resolve(!!token));
-      existingAuthClient.signIn().catch((err) => reject(err));
+      existingAuthClient.signIn().catch((err: Error) => reject(err));
     });
   }
 
   let authClient: ElectronRendererAuthorization | BrowserAuthorizationClient | undefined;
   if (ProcessDetector.isElectronAppFrontend) {
-    authClient = new ElectronRendererAuthorization();
+    authClient = new ElectronRendererAuthorization({
+      clientId: getConfigurationString("oidcClientId") ?? "imodeljs-spa-test",
+    });
   } else if (ProcessDetector.isMobileAppFrontend) {
     // The default auth client works on mobile
     const accessToken = await IModelApp.authorizationClient?.getAccessToken();
@@ -43,7 +45,7 @@ export async function signIn(): Promise<boolean> {
     });
     try {
       await authClient.signInSilent();
-    } catch (err) { }
+    } catch { }
   }
 
   if (typeof authClient === "undefined") {
@@ -54,8 +56,8 @@ export async function signIn(): Promise<boolean> {
       return true;
 
     return new Promise<boolean>((resolve, reject) => {
-      authClient!.onAccessTokenChanged.addOnce((token: AccessToken) => resolve(!!token));
-      authClient!.signIn().catch((err) => reject(err));
+      authClient.onAccessTokenChanged.addOnce((token: AccessToken) => resolve(!!token));
+      authClient.signIn().catch((err: Error) => reject(err));
     });
   }
 }

@@ -2,10 +2,10 @@
 * Copyright (c) Bentley Systems, Incorporated. All rights reserved.
 * See LICENSE.md in the project root for license terms and full copyright notice.
 *--------------------------------------------------------------------------------------------*/
-import { expect } from "chai";
+import { describe, expect, it } from "vitest";
 import { BSplineCurve3d } from "../../bspline/BSplineCurve";
 import { Arc3d } from "../../curve/Arc3d";
-import { AnyRegion } from "../../curve/CurveChain";
+import { AnyRegion } from "../../curve/CurveTypes";
 import { CurveChain, CurveCollection } from "../../curve/CurveCollection";
 import { CurvePrimitive } from "../../curve/CurvePrimitive";
 import { GeometryQuery } from "../../curve/GeometryQuery";
@@ -64,7 +64,7 @@ describe("MomentData", () => {
       x0 += shift;
     }
     GeometryCoreTestIO.saveGeometry(allGeometry, "Moments", "SimpleXYPointLoops");
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
 
   it("OrientedArea", () => {
@@ -74,7 +74,7 @@ describe("MomentData", () => {
     const regions: AnyRegion[] = [];
     const regionD0 = Loop.create(
       LineString3d.create([[1, 4], [0, 4], [0, 0], [1, 0]]),
-      Arc3d.createCircularStartMiddleEnd(Point3d.create(1, 0), Point3d.create(3, 2), Point3d.create(1, 4))!);
+      Arc3d.createCircularStartMiddleEnd(Point3d.create(1, 0), Point3d.create(3, 2), Point3d.create(1, 4)));
     const mirrorX = Transform.createFixedPointAndMatrix(undefined, Matrix3d.createScale(-1, 1, 1));
     const regionD1 = regionD0.cloneTransformed(mirrorX)!;
     regions.push(regionD0, regionD1 as Loop);
@@ -116,7 +116,7 @@ describe("MomentData", () => {
       y0 += 10.0;
     }
     GeometryCoreTestIO.saveGeometry(allGeometry, "Moments", "OrientedArea");
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
 
   it("Arcs", () => {
@@ -140,7 +140,7 @@ describe("MomentData", () => {
       for (const degrees of [5.0, 2.5, 1.25, 0.0625]) {
         strokeOptions.angleTol = Angle.createDegrees(degrees);
         const loop1 = loop0.cloneStroked(strokeOptions);
-        const momentData1 = RegionOps.computeXYAreaMoments(loop1 as Loop)!;
+        const momentData1 = RegionOps.computeXYAreaMoments(loop1)!;
         gyrationData.push(MomentData.inertiaProductsToPrincipalAxes(momentData1.origin, momentData1.sums)!);
         GeometryCoreTestIO.captureCloneGeometry(allGeometry, loop1, x0, y0, 0);
         GeometryCoreTestIO.showMomentData(allGeometry, momentData1, true, x0, y0, 0);
@@ -158,7 +158,7 @@ describe("MomentData", () => {
       x0 += shift;
     }
     GeometryCoreTestIO.saveGeometry(allGeometry, "Moments", "Arcs");
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
 
   it("ParityAndUnionRegions", () => {
@@ -180,7 +180,7 @@ describe("MomentData", () => {
       y0 += shift;
     }
     GeometryCoreTestIO.saveGeometry(allGeometry, "Moments", "ParityAndUnionRegions");
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
 
   it("WireMoments", () => {
@@ -217,7 +217,7 @@ describe("MomentData", () => {
       }
     }
     GeometryCoreTestIO.saveGeometry(allGeometry, "Moments", "WireMoments");
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
 
 });

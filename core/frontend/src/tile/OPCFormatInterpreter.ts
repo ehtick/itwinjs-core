@@ -6,7 +6,7 @@
 import { Cartographic, EcefLocation } from "@itwin/core-common";
 import { Range3d } from "@itwin/core-geometry";
 import { ALong, CRSManager, Downloader, DownloaderXhr, OnlineEngine, OPCReader, OrbitGtBounds, PageCachedFile, PointCloudReader, UrlFS } from "@itwin/core-orbitgt";
-import { FrontendLoggerCategory } from "../FrontendLoggerCategory";
+import { FrontendLoggerCategory } from "../common/FrontendLoggerCategory";
 import { BentleyError, Logger, LoggingMetaData, RealityDataStatus } from "@itwin/core-bentley";
 import { RealityDataError, SpatialLocationAndExtents } from "../RealityDataSource";
 
@@ -54,9 +54,14 @@ export class OPCFormatInterpreter  {
     worldRange = Range3d.createXYZXYZ(bounds.getMinX(), bounds.getMinY(), bounds.getMinZ(), bounds.getMaxX(), bounds.getMaxY(), bounds.getMaxZ());
     isGeolocated = false;
     const fileCrs = fileReader.getFileCRS();
-    if (fileCrs) {
+    // the CRS 9300 is not defined in the CRS registry database, so we cannot use CRSManager
+    // Check to isGeographicCRS and isProjectedCRS are both going to return false in that case and we will fallback to
+    // use un-georeferenced code path.
+    await CRSManager.ENGINE.prepareForArea(fileCrs, bounds);
+    const isGeographicCRS = CRSManager.ENGINE.isGeographicCRS(fileCrs);
+    const isProjectedCRS = CRSManager.ENGINE.isProjectedCRS(fileCrs);
+    if (fileCrs && (isProjectedCRS || isGeographicCRS)) {
       try {
-        await CRSManager.ENGINE.prepareForArea(fileCrs, bounds);
         const wgs84ECEFCrs = "4978";
         await CRSManager.ENGINE.prepareForArea(wgs84ECEFCrs, new OrbitGtBounds());
 

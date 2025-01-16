@@ -3,7 +3,7 @@
 * See LICENSE.md in the project root for license terms and full copyright notice.
 *--------------------------------------------------------------------------------------------*/
 
-import { ConvexClipPlaneSet, GrowableXYZArray, LineString3d, Point3d, PolyfaceQuery, Range3d, Transform } from "@itwin/core-geometry";
+import { ConvexClipPlaneSet, CurvePrimitive, Geometry, GrowableXYZArray, LineString3d, Loop, Matrix3d, Point3d, Polyface, PolyfaceClip, PolyfaceQuery, Range3d, SweepLineStringToFacetsOptions, Transform, Vector3d } from "@itwin/core-geometry";
 import { ColorDef, LinePixels } from "@itwin/core-common";
 import {
   BeButtonEvent, CollectTileStatus, DecorateContext, DisclosedTileTreeSet, EventHandled, GeometryTileTreeReference, GraphicType, HitDetail, IModelApp,
@@ -26,12 +26,12 @@ class DrapeLineStringCollector extends TileGeometryCollector {
 
   private rangeOverlapsLineString(range: Range3d) {
     let inside = false;
-    const clipper = ConvexClipPlaneSet.createRange3dPlanes (range, true, true, true, true, false, false);
+    const clipper = ConvexClipPlaneSet.createRange3dPlanes(range, true, true, true, true, false, false);
     if (this._options.transform)
       clipper.transformInPlace(this._options.transform);
 
     for (let i = 0; i < this._points.length - 1 && !inside; i++)
-      inside = clipper.announceClippedSegmentIntervals (0, 1, this._points.getPoint3dAtUncheckedPointIndex(i), this._points.getPoint3dAtUncheckedPointIndex(i+1));
+      inside = clipper.announceClippedSegmentIntervals(0, 1, this._points.getPoint3dAtUncheckedPointIndex(i), this._points.getPoint3dAtUncheckedPointIndex(i + 1));
 
     return inside;
   }
@@ -59,7 +59,7 @@ class TerrainDraper implements TileUser {
     trees.disclose(this.treeRef);
   }
 
-  public drapeLineString(outStrings: LineString3d[], inPoints: GrowableXYZArray, tolerance: number, maxDistance = 1.0E5): "loading" | "complete" {
+  public drapeLinear(outStrings: CurvePrimitive[], outMeshes: Polyface[], inPoints: GrowableXYZArray, tolerance: number, maxDistance = 1.0E5): "loading" | "complete" {
     const tree = this.treeRef.treeOwner.load();
     if (!tree)
       return "loading";
@@ -69,22 +69,40 @@ class TerrainDraper implements TileUser {
     range.extendZOnly(-maxDistance);  // Expand - but not so much that we get opposite side of globe.
     range.extendZOnly(maxDistance);
 
+    // when current point is near start point, create a polygon to drape
+    let polygon: Loop | undefined;
+    const isClosed = (inPoints.length > 2) && Geometry.isDistanceWithinTol(inPoints.distanceIndexIndex(0, inPoints.length - 1)!, 100 * tolerance);
+    if (isClosed) {
+      const flatPoints = inPoints.clone();
+      flatPoints.multiplyMatrix3dInPlace(Matrix3d.createRowValues(1, 0, 0, 0, 1, 0, 0, 0, 0));
+      polygon = Loop.createPolygon(flatPoints);
+    }
+
     const collector = new DrapeLineStringCollector(this, tolerance, range, tree.iModelTransform, inPoints);
     this.treeRef.collectTileGeometry(collector);
     collector.requestMissingTiles();
 
-    for (const polyface of collector.polyfaces)
-      outStrings.push(...PolyfaceQuery.sweepLinestringToFacetsXYReturnChains(inPoints, polyface));
-
+    for (const polyface of collector.polyfaces) {
+      if (polygon) {
+        const mesh = PolyfaceClip.drapeRegion(polyface, polygon);
+        if (mesh?.tryTranslateInPlace(0, 0, 10 * tolerance)) // shift up to see it better
+          outMeshes.push(mesh);
+      } else {
+        const sweepDir = Vector3d.unitZ();
+        const options = SweepLineStringToFacetsOptions.create(sweepDir, undefined, true, true, true, true);
+        outStrings.push(...PolyfaceQuery.sweepLineStringToFacets(inPoints, polyface, options));
+      }
+    }
     return collector.isAllGeometryLoaded ? "complete" : "loading";
   }
 }
 
-/** Demonstrates draping line strings on terrain meshes.  The terrain can be defined by map terrain (from Cesium World Terrain) or a reality model.
+/** Demonstrates draping line strings and polygons on terrain meshes.  The terrain can be defined by map terrain (from Cesium World Terrain) or a reality model.
  */
 export class TerrainDrapeTool extends PrimitiveTool {
   private _drapePoints = new GrowableXYZArray();
   private _drapedStrings?: LineString3d[];
+  private _drapedMeshes?: Polyface[];
   private _motionPoint?: Point3d;
   private _draper?: TerrainDraper;
   public static override toolId = "TerrainDrape";
@@ -120,26 +138,33 @@ export class TerrainDrapeTool extends PrimitiveTool {
       builder.setSymbology(ColorDef.red, ColorDef.red, 5);
 
       let loading = false;
-      if (!this._drapedStrings) {
+      if (!this._drapedStrings && !this._drapedMeshes) {
         this._drapedStrings = [];
+        this._drapedMeshes = [];
         const drapeRange = Range3d.createNull();
         drapeRange.extendArray(this._drapePoints);
 
         const tolerance = drapeRange.diagonal().magnitude() / 5000;
-        loading = "loading" === this._draper.drapeLineString(this._drapedStrings, this._drapePoints, tolerance);
+        loading = "loading" === this._draper.drapeLinear(this._drapedStrings, this._drapedMeshes, this._drapePoints, tolerance);
       }
 
-      for (const lineString of this._drapedStrings)
-        builder.addLineString(lineString.points);
+      if (this._drapedStrings) {
+        for (const lineString of this._drapedStrings)
+          builder.addLineString(lineString.points);
+      }
+      if (this._drapedMeshes) {
+        for (const mesh of this._drapedMeshes)
+          builder.addPolyface(mesh, true);
+      }
 
       if (loading)
-        this._drapedStrings = undefined;
+        this._drapedStrings = this._drapedMeshes = undefined;
 
       context.addDecorationFromBuilder(builder);
     }
 
     if (this._motionPoint) {
-      const builder =  context.createGraphicBuilder(GraphicType.WorldOverlay);
+      const builder = context.createGraphicBuilder(GraphicType.WorldOverlay);
       builder.setSymbology(ColorDef.white, ColorDef.white, 1, LinePixels.Code0);
       builder.addLineString([this._drapePoints.getPoint3dAtUncheckedPointIndex(this._drapePoints.length - 1), this._motionPoint]);
       context.addDecorationFromBuilder(builder);
@@ -194,7 +219,7 @@ export class TerrainDrapeTool extends PrimitiveTool {
   }
 
   public override async onResetButtonUp(ev: BeButtonEvent): Promise<EventHandled> {
-    this._drapedStrings = undefined;
+    this._drapedStrings = this._drapedMeshes = undefined;
     if (this._drapePoints.length)
       this._drapePoints.pop();
     else
@@ -221,7 +246,7 @@ export class TerrainDrapeTool extends PrimitiveTool {
       this._drapePoints.push(hit ? hit.hitPoint : ev.point);
     }
 
-    this._drapedStrings = undefined;
+    this._drapedStrings = this._drapedMeshes = undefined;
     this.setupAndPromptForNextAction();
     return EventHandled.No;
   }

@@ -196,7 +196,7 @@ class XMLHttpRequestProxy {
       this._xhrMethod = method;
       this._xhrUrl = url;
       if (username) {
-        this.setRequestHeader("Authorization", `Basic ${btoa(`${username}:${password}`)}`); // eslint-disable-line deprecation/deprecation
+        this.setRequestHeader("Authorization", `Basic ${btoa(`${username}:${password}`)}`);
       }
     }
   }
@@ -236,7 +236,6 @@ class XMLHttpRequestProxy {
     if (this._nativeXhr) {
       return this._nativeXhr.send(xhrBody);
     }
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this._fetchPromise = fetch(this._xhrUrl!, {
       body: xhrBody,
       method: this._xhrMethod,
@@ -359,7 +358,7 @@ export class HttpRequestHook {
     }
     if (typeof win[NATIVE_FETCH] === "undefined") {
       win[NATIVE_FETCH] = window.fetch;
-      win.fetch = FetchProxy.fetch;
+      win.fetch = async (input: RequestInfo) => FetchProxy.fetch(input);
     }
   }
 

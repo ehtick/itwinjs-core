@@ -4,24 +4,31 @@
 *--------------------------------------------------------------------------------------------*/
 import { Angle, Constant } from "@itwin/core-geometry";
 import { MapSubLayerProps } from "@itwin/core-common";
-import { MapCartoRectangle, MapLayerAccessClient, MapLayerAccessToken, MapLayerAccessTokenParams, MapLayerSource, MapLayerSourceStatus, MapLayerSourceValidation} from "../internal";
+import { MapCartoRectangle, MapLayerAccessClient, MapLayerAccessToken, MapLayerAccessTokenParams, MapLayerSource, MapLayerSourceStatus, MapLayerSourceValidation, ValidateSourceArgs} from "../internal";
 import { IModelApp } from "../../IModelApp";
+import { headersIncludeAuthMethod } from "../../request/utils";
 
 /** @packageDocumentation
  * @module Tiles
  */
-/** @internal */
+
+/**
+ * Class representing an ArcGIS error code.
+ * @internal
+ */
 export enum ArcGisErrorCode {
   InvalidCredentials = 401,
+  MissingPermissions = 403,
   InvalidToken = 498,
   TokenRequired = 499,
   UnknownError = 1000,
   NoTokenService = 1001,
 }
 
-/** Class representing an ArcGIS service metadata.
+/**
+ * Class representing an ArcGIS service metadata.
  * @internal
- * */
+ */
 export interface ArcGISServiceMetadata {
   /** JSON content from the service */
   content: any;
@@ -30,7 +37,31 @@ export interface ArcGISServiceMetadata {
   accessTokenRequired: boolean;
 }
 
-/** @internal */
+/** Arguments for validating ArcGIS sources
+ * @internal
+ */
+export interface ArcGisValidateSourceArgs extends ValidateSourceArgs {
+  /** List of capabilities 'keyword' that needs to be advertised in the service's metadata in order to be valid.  For example: 'Map', 'Query', etc*/
+  capabilitiesFilter: string[];
+}
+
+/** Arguments for fetching service metadata
+ * @internal
+ */
+export interface ArcGisGetServiceJsonArgs  {
+  url: string;
+  formatId: string;
+  userName?: string;
+  password?: string;
+  queryParams?: {[key: string]: string};
+  ignoreCache?: boolean;
+  requireToken?: boolean;
+}
+
+/**
+ * Class containing utilities relating to ArcGIS services and coordinate systems.
+ * @internal
+ */
 export class ArcGisUtilities {
 
   private static getBBoxString(range?: MapCartoRectangle) {
@@ -67,6 +98,7 @@ export class ArcGisUtilities {
     }
     return sources;
   }
+
   public static async getServiceDirectorySources(url: string, baseUrl?: string): Promise<MapLayerSource[]> {
     if (undefined === baseUrl)
       baseUrl = url;
@@ -94,6 +126,13 @@ export class ArcGisUtilities {
 
     return sources;
   }
+
+  /**
+   * Get map layer sources from an ArcGIS query.
+   * @param range Range for the query.
+   * @param url URL for the query.
+   * @returns List of map layer sources.
+   */
   public static async getSourcesFromQuery(range?: MapCartoRectangle, url = "https://usgs.maps.arcgis.com/sharing/rest/search"): Promise<MapLayerSource[]> {
     const sources = new Array<MapLayerSource>();
     for (let start = 1; start > 0;) {
@@ -116,18 +155,33 @@ export class ArcGisUtilities {
   }
 
   /**
+   * Parse the URL to check if it represents a valid ArcGIS service
+   * @param url URL to validate.
+   * @param serviceType Service type to validate (i.e FeatureServer, MapServer)
+   * @return Validation Status.
+   */
+  public static validateUrl(url: string, serviceType: string): MapLayerSourceStatus {
+    const urlObj = new URL(url.toLowerCase());
+    if (urlObj.pathname.includes("/rest/services/")) {
+      // This seem to be an ArcGIS URL, lets check the service type
+      if (urlObj.pathname.endsWith(`${serviceType.toLowerCase()}`)) {
+        return MapLayerSourceStatus.Valid;
+      } else {
+        return MapLayerSourceStatus.IncompatibleFormat;
+      }
+    } else {
+      return MapLayerSourceStatus.InvalidUrl;
+    }
+  }
+
+  /**
    * Attempt to access an ArcGIS service, and validate its service metadata.
-   * @param url URL of the source to validate.
-   * @param formatId Format Id of the source.
-   * @param capabilitiesFilter List of capabilities 'keyword' that needs to be advertised in the service's metadata
-   * in order to be valid.  For example: 'Map', 'Query', etc
-   * @param userName Username to use for legacy token based security.
-   * @param password Username to use for legacy token based security.
-   * @param ignoreCache Flag to skip cache lookup (i.e. force a new server request)
-   * @return Validation Status. If successful, a list of available sub-layers will also be returned.
+   * @param source Source to validate.
+   * @param opts Validation options
   */
-  public static async validateSource(url: string, formatId: string, capabilitiesFilter: string[], userName?: string, password?: string, ignoreCache?: boolean): Promise<MapLayerSourceValidation> {
-    const metadata = await this.getServiceJson(url, formatId, userName, password, ignoreCache);
+  public static async validateSource(args: ArcGisValidateSourceArgs): Promise<MapLayerSourceValidation> {
+    const {source, ignoreCache, capabilitiesFilter} = args;
+    const metadata = await this.getServiceJson({url: source.url, formatId: source.formatId, userName: source.userName, password: source.password, queryParams: source.collectQueryParams(), ignoreCache});
     const json = metadata?.content;
     if (json === undefined) {
       return { status: MapLayerSourceStatus.InvalidUrl };
@@ -136,8 +190,10 @@ export class ArcGisUtilities {
       // If we got a 'Token Required' error, lets check what authentification methods this ESRI service offers
       // and return information needed to initiate the authentification process... the end-user
       // will have to provide his credentials before we can fully validate this source.
-      if (json.error.code === ArcGisErrorCode.TokenRequired) {
-        return { status: MapLayerSourceStatus.RequireAuth};
+      // Note: Some servers will throw a error 403 (You do not have permissions to access this resource or perform this operation),
+      //       instead of 499 (TokenRequired)
+      if (json.error.code === ArcGisErrorCode.TokenRequired || json.error.code === ArcGisErrorCode.MissingPermissions)  {
+        return (source.userName || source.password) ? {status: MapLayerSourceStatus.InvalidCredentials} : {status: MapLayerSourceStatus.RequireAuth};
       } else if (json.error.code === ArcGisErrorCode.InvalidCredentials)
         return { status: MapLayerSourceStatus.InvalidCredentials};
     }
@@ -175,9 +231,7 @@ export class ArcGisUtilities {
     return { status: MapLayerSourceStatus.Valid, subLayers };
   }
 
-  /**
-   * Validate MapService tiling metadata and checks if the tile tree is 'Google Maps' compatible.
-  */
+  /** Validate MapService tiling metadata and checks if the tile tree is 'Google Maps' compatible. */
   public static isEpsg3857Compatible(tileInfo: any) {
     if (tileInfo.spatialReference?.latestWkid !== 3857 || !Array.isArray(tileInfo.lods))
       return false;
@@ -189,22 +243,44 @@ export class ArcGisUtilities {
   private static _serviceCache = new Map<string, ArcGISServiceMetadata|undefined>();
 
   /**
-   * Fetch an ArcGIS service metadata, and returns its JSON representation.
+   * Fetches an ArcGIS service metadata, and returns its JSON representation.
    * If an access client has been configured for the specified formatId,
    * it will be used to apply required security token.
    * By default, response for each URL are cached.
-  */
-  public static async getServiceJson(url: string, formatId: string, userName?: string, password?: string, ignoreCache?: boolean, requireToken?: boolean): Promise<ArcGISServiceMetadata|undefined> {
+   * @param url URL of the ArcGIS service
+   * @param formatId Format ID of the service
+   * @param userName Username to use for legacy token based security
+   * @param password Password to use for legacy token based security
+   * @param ignoreCache Flag to skip cache lookup (i.e. force a new server request)
+   * @param requireToken Flag to indicate if a token is required
+   */
+
+  public static async getServiceJson(args: ArcGisGetServiceJsonArgs): Promise<ArcGISServiceMetadata|undefined> {
+    const {url, formatId, userName, password, queryParams, ignoreCache, requireToken} = args;
     if (!ignoreCache) {
       const cached = ArcGisUtilities._serviceCache.get(url);
       if (cached !== undefined)
         return cached;
     }
+    const appendParams = (urlObj: URL, params?: {[key: string]: string}) => {
+      if (params) {
+        Object.keys(params).forEach((paramKey) => {
+          if (!urlObj.searchParams.has(paramKey))
+            urlObj.searchParams.append(paramKey, params[paramKey]);
+        });
+      }
+    };
+
+    const createUrlObj = () => {
+      const tmpUrl = new URL(url);
+      tmpUrl.searchParams.append("f", "json");
+      appendParams(tmpUrl, queryParams);
+      return tmpUrl;
+    };
 
     let accessTokenRequired = false;
     try {
-      let tmpUrl = new URL(url);
-      tmpUrl.searchParams.append("f", "json");
+      let tmpUrl = createUrlObj();
 
       // In some cases, caller might already know token is required, so append it immediately
       if (requireToken) {
@@ -214,19 +290,21 @@ export class ArcGisUtilities {
           await ArcGisUtilities.appendSecurityToken(tmpUrl, accessClient, {mapLayerUrl: new URL(url), userName, password});
         }
       }
-      let response = await fetch(tmpUrl.toString(), { method: "GET" });
+      let response = await fetch(tmpUrl, { method: "GET" });
+      if (response.status === 401 && !requireToken && headersIncludeAuthMethod(response.headers, ["ntlm", "negotiate"])) {
+        // We got a http 401 challenge, lets try again with SSO enabled (i.e. Windows Authentication)
+        response = await fetch(tmpUrl, {method: "GET", credentials: "include" });
+      }
 
       // Append security token when corresponding error code is returned by ArcGIS service
       let errorCode = await ArcGisUtilities.checkForResponseErrorCode(response);
       if (!accessTokenRequired
-        && errorCode !== undefined
-        && errorCode === ArcGisErrorCode.TokenRequired ) {
+        && (errorCode === ArcGisErrorCode.TokenRequired || errorCode === ArcGisErrorCode.MissingPermissions) ) {
         accessTokenRequired = true;
         // If token required
         const accessClient = IModelApp.mapLayerFormatRegistry.getAccessClient(formatId);
         if (accessClient) {
-          tmpUrl = new URL(url);
-          tmpUrl.searchParams.append("f", "json");
+          tmpUrl = createUrlObj();
           await ArcGisUtilities.appendSecurityToken(tmpUrl, accessClient, {mapLayerUrl: new URL(url), userName, password});
           response = await fetch(tmpUrl.toString(), { method: "GET" });
           errorCode = await ArcGisUtilities.checkForResponseErrorCode(response);
@@ -239,14 +317,13 @@ export class ArcGisUtilities {
       ArcGisUtilities._serviceCache.set(url, (errorCode === undefined ? info : undefined));
       return info;  // Always return json, even though it contains an error code.
 
-    } catch (_error) {
+    } catch {
       ArcGisUtilities._serviceCache.set(url, undefined);
       return undefined;
     }
   }
 
-  /** Read a response from ArcGIS server and check for error code in the response.
-  */
+  /** Read a response from ArcGIS server and check for error code in the response. */
   public static async checkForResponseErrorCode(response: Response) {
     const tmpResponse = response;
     if (response.headers && tmpResponse.headers.get("content-type")?.toLowerCase().includes("json")) {
@@ -292,8 +369,7 @@ export class ArcGisUtilities {
    * @param latitude Latitude in degrees to use to compute scales (i.e 0 for Equator)
    * @param tileSize Size of a tile in pixels (i.e 256)
    * @param screenDpi Monitor resolution in dots per inch (i.e. typically 96dpi is used by Google Maps)
-   *
-  * @returns An array containing resolution and scale values for each requested zoom level
+   * @returns An array containing resolution and scale values for each requested zoom level
    */
   public static computeZoomLevelsScales(startZoom: number = 0, endZoom: number = 20, latitude: number = 0, tileSize: number = 256, screenDpi = 96): {zoom: number, resolution: number, scale: number}[] {
     // Note: There is probably a more direct way to compute this, but I prefer to go for a simple and well documented approach.
@@ -316,12 +392,12 @@ export class ArcGisUtilities {
   }
 
   /**
-   * Match the provided minScale,maxScale values to corresponding wgs84 zoom levels
+   * Match the provided minScale, maxScale values to corresponding wgs84 zoom levels
    * @param defaultMaxLod Value of the last LOD (i.e 22)
    * @param tileSize Size of a tile in pixels (i.e 256)
    * @param minScale Minimum scale value that needs to be matched to a LOD level
    * @param maxScale Maximum  scale value that needs to be matched to a LOD level
-  * @returns minLod: LOD value matching minScale,  maxLod: LOD value matching maxScale
+   * @returns minLod: LOD value matching minScale,  maxLod: LOD value matching maxScale
    */
   public static getZoomLevelsScales( defaultMaxLod: number, tileSize: number, minScale?: number, maxScale?: number, tolerance: number = 0): {minLod?: number, maxLod?: number} {
 

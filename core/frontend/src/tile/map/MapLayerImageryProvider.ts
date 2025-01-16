@@ -7,12 +7,14 @@
  */
 
 import { assert, BeEvent } from "@itwin/core-bentley";
-import { Base64EncodedString, Cartographic, ImageMapLayerSettings, ImageSource, ImageSourceFormat } from "@itwin/core-common";
+import { Cartographic, ImageMapLayerSettings, ImageSource, ImageSourceFormat } from "@itwin/core-common";
 import { Angle } from "@itwin/core-geometry";
 import { IModelApp } from "../../IModelApp";
 import { NotifyMessageDetails, OutputMessagePriority } from "../../NotificationManager";
 import { ScreenViewport } from "../../Viewport";
-import { GeographicTilingScheme, ImageryMapTile, ImageryMapTileTree, MapCartoRectangle, MapLayerFeatureInfo, MapTilingScheme, QuadId, WebMercatorTilingScheme } from "../internal";
+import { appendQueryParams, GeographicTilingScheme, ImageryMapTile, ImageryMapTileTree, MapCartoRectangle, MapFeatureInfoOptions, MapLayerFeatureInfo, MapTilingScheme, QuadId, WebMercatorTilingScheme } from "../internal";
+import { HitDetail } from "../../HitDetail";
+import { headersIncludeAuthMethod, setBasicAuthorization, setRequestTimeout } from "../../request/utils";
 
 /** @internal */
 const tileImageSize = 256, untiledImageSize = 256;
@@ -25,6 +27,15 @@ const doDebugToolTips = false;
 export enum MapLayerImageryProviderStatus {
   Valid,
   RequireAuth,
+}
+
+/** @internal */
+export interface WGS84Extent
+{
+  longitudeLeft: number;
+  longitudeRight: number;
+  latitudeTop: number;
+  latitudeBottom: number;
 }
 
 /** Abstract class for map layer imagery providers.
@@ -45,7 +56,23 @@ export abstract class MapLayerImageryProvider {
   private _status = MapLayerImageryProviderStatus.Valid;
 
   /** @internal */
+  protected _includeUserCredentials = false;
+
+  /** @internal */
+  protected readonly onFirstRequestCompleted = new BeEvent<() => void>();
+
+  /** @internal */
+  protected _firstRequestPromise: Promise<void>|undefined;
+
+  /** @internal */
   public get status() { return this._status; }
+
+  /** Determine if this provider supports map feature info.
+   * For example, this can be used to show the map feature info tool only when a provider is registered to support it.
+   * @returns true if provider supports map feature info else return false.
+   * @public
+   */
+  public get supportsMapFeatureInfo(): boolean { return false; }
 
   public resetStatus() { this.setStatus(MapLayerImageryProviderStatus.Valid); }
 
@@ -69,11 +96,16 @@ export abstract class MapLayerImageryProvider {
 
   public cartoRange?: MapCartoRectangle;
 
-  // Those values are used internally for various computation, this should not get overriden.
-  /** @internal */
+  /**
+   * This value is used internally for various computations, this should not get overriden.
+   * @internal
+   */
   protected readonly defaultMinimumZoomLevel = 0;
 
-  /** @internal */
+  /**
+   * This value is used internally for various computations, this should not get overriden.
+   * @internal
+   */
   protected readonly defaultMaximumZoomLevel = 22;
 
   /** @internal */
@@ -84,7 +116,10 @@ export abstract class MapLayerImageryProvider {
     this._geographicTilingScheme = new GeographicTilingScheme(2, 1, true);
   }
 
-  /** @internal */
+  /**
+   * Initialize the provider by loading the first tile at its default maximum zoom level.
+   * @beta
+   */
   public async initialize(): Promise<void> {
     this.loadTile(0, 0, this.defaultMaximumZoomLevel).then((tileData: ImageSource | undefined) => { // eslint-disable-line @typescript-eslint/no-floating-promises
       if (tileData !== undefined)
@@ -96,7 +131,12 @@ export abstract class MapLayerImageryProvider {
 
   public get tilingScheme(): MapTilingScheme { return this.useGeographicTilingScheme ? this._geographicTilingScheme : this._mercatorTilingScheme; }
 
-  /** @internal */
+  /**
+   * Add attribution logo cards for the data supplied by this provider to the [[Viewport]]'s logo div.
+   * @param _cards Logo cards HTML element that may contain custom data attributes.
+   * @param _viewport Viewport to add logo cards to.
+   * @beta
+   */
   public addLogoCards(_cards: HTMLTableElement, _viewport: ScreenViewport): void { }
 
   /** @internal */
@@ -109,14 +149,20 @@ export abstract class MapLayerImageryProvider {
   protected async _areChildrenAvailable(_tile: ImageryMapTile): Promise<boolean> { return true; }
 
   /** @internal */
-  public getPotentialChildIds(tile: ImageryMapTile): QuadId[] {
-    const childLevel = tile.quadId.level + 1;
-    return tile.quadId.getChildIds(this.tilingScheme.getNumberOfXChildrenAtLevel(childLevel), this.tilingScheme.getNumberOfYChildrenAtLevel(childLevel));
+  public getPotentialChildIds(quadId: QuadId): QuadId[] {
+    const childLevel = quadId.level + 1;
+    return quadId.getChildIds(this.tilingScheme.getNumberOfXChildrenAtLevel(childLevel), this.tilingScheme.getNumberOfYChildrenAtLevel(childLevel));
   }
 
-  /** @internal */
-  protected _generateChildIds(tile: ImageryMapTile, resolveChildren: (childIds: QuadId[]) => void) {
-    resolveChildren(this.getPotentialChildIds(tile));
+  /**
+   * Get child IDs of a quad and generate tiles based on these child IDs.
+   * See [[ImageryTileTree._loadChildren]] for the definition of `resolveChildren` where this function is commonly called.
+   * @param quadId quad to generate child IDs for.
+   * @param resolveChildren Function that creates tiles from child IDs.
+   * @beta
+   */
+  protected _generateChildIds(quadId: QuadId, resolveChildren: (childIds: QuadId[]) => void) {
+    resolveChildren(this.getPotentialChildIds(quadId));
   }
 
   /** @internal */
@@ -125,10 +171,17 @@ export abstract class MapLayerImageryProvider {
       tile.setLeaf();
       return;
     }
-    this._generateChildIds(tile, resolveChildren);
+    this._generateChildIds(tile.quadId, resolveChildren);
   }
 
-  /** @internal */
+  /**
+   * Get tooltip text for a specific quad and cartographic position.
+   * @param strings List of strings to contain tooltip text.
+   * @param quadId Quad ID to get tooltip for.
+   * @param _carto Cartographic that may be used to retrieve and/or format tooltip text.
+   * @param tree Tree associated with the quad to get the tooltip for.
+   * @internal
+   */
   public async getToolTip(strings: string[], quadId: QuadId, _carto: Cartographic, tree: ImageryMapTileTree): Promise<void> {
     if (doDebugToolTips) {
       const range = quadId.getLatLongRangeDegrees(tree.tilingScheme);
@@ -137,7 +190,7 @@ export abstract class MapLayerImageryProvider {
   }
 
   /** @internal */
-  public async getFeatureInfo(featureInfos: MapLayerFeatureInfo[], _quadId: QuadId, _carto: Cartographic, _tree: ImageryMapTileTree): Promise<void> {
+  public async getFeatureInfo(featureInfos: MapLayerFeatureInfo[], _quadId: QuadId, _carto: Cartographic, _tree: ImageryMapTileTree, _hit: HitDetail, _options?: MapFeatureInfoOptions): Promise<void> {
     // default implementation; simply return an empty feature info
     featureInfos.push({ layerName: this._settings.name });
   }
@@ -169,7 +222,8 @@ export abstract class MapLayerImageryProvider {
     return undefined;
   }
 
-  /** Change the status of this provider.
+  /**
+   * Change the status of this provider.
    * Sub-classes should override 'onStatusUpdated' instead of this method.
    * @internal
    */
@@ -189,18 +243,73 @@ export abstract class MapLayerImageryProvider {
   /** @internal */
   protected setRequestAuthorization(headers: Headers) {
     if (this._settings.userName && this._settings.password) {
-      headers.set("Authorization", `Basic ${Base64EncodedString.encode(`${this._settings.userName}:${this._settings.password}`)}`);
+      setBasicAuthorization(headers, this._settings.userName, this._settings.password);
     }
   }
 
   /** @internal */
-  public async makeTileRequest(url: string) {
+  public async makeTileRequest(url: string, timeoutMs?: number): Promise<Response> {
+
+    // We want to complete the first request before letting other requests go;
+    // this done to avoid flooding server with requests missing credentials
+    if (!this._firstRequestPromise)
+      this._firstRequestPromise  = new Promise<void>((resolve: any) => this.onFirstRequestCompleted.addOnce(()=>resolve()));
+    else
+      await this._firstRequestPromise;
+
+    let response: Response|undefined;
+    try {
+      response = await this.makeRequest(url, timeoutMs);
+    } finally {
+      this.onFirstRequestCompleted.raiseEvent();
+    }
+
+    if (response === undefined)
+      throw new Error("fetch call failed");
+
+    return response;
+  }
+
+  /** @internal */
+  public async makeRequest(url: string, timeoutMs?: number) {
+
+    let response: Response|undefined;
+
     let headers: Headers | undefined;
+    let hasCreds = false;
     if (this._settings.userName && this._settings.password) {
+      hasCreds = true;
       headers = new Headers();
       this.setRequestAuthorization(headers);
     }
-    return fetch(url, { method: "GET", headers });
+    const opts: RequestInit = {
+      method: "GET",
+      headers,
+      credentials: this._includeUserCredentials ? "include" : undefined,
+    };
+
+    if (timeoutMs !== undefined)
+      setRequestTimeout(opts, timeoutMs);
+
+    response = await fetch(url, opts);
+
+    if (response.status === 401
+          && headersIncludeAuthMethod(response.headers, ["ntlm", "negotiate"])
+          && !this._includeUserCredentials
+          && !hasCreds
+    ) {
+      // Removed the previous headers and make sure "include" credentials is set
+      opts.headers = undefined;
+      opts.credentials = "include";
+
+      // We got a http 401 challenge, lets try again with SSO enabled (i.e. Windows Authentication)
+      response = await fetch(url,  opts);
+      if (response.status === 200) {
+        this._includeUserCredentials = true;    // avoid going through 401 challenges over and over
+      }
+    }
+
+    return response;
   }
 
   /** Returns a map layer tile at the specified settings. */
@@ -241,7 +350,11 @@ export abstract class MapLayerImageryProvider {
     this.setRequestAuthorization(headers);
 
     try {
-      const response = await fetch(url, { method: "GET", headers });
+      const response = await fetch(url, {
+        method: "GET",
+        headers,
+        credentials: this._includeUserCredentials ? "include" : undefined,
+      });
       const text = await response.text();
       if (undefined !== text) {
         strings.push(text);
@@ -264,36 +377,54 @@ export abstract class MapLayerImageryProvider {
     return true;
   }
 
-  /** @internal */
-  // calculates the projected x cartesian coordinate in EPSG:3857from the longitude in EPSG:4326 (WGS84)
+  /**
+   * Calculates the projected x cartesian coordinate in EPSG:3857 from the longitude in EPSG:4326 (WGS84)
+   * @param longitude Longitude in EPSG:4326 (WGS84)
+   * @internal
+   */
   public getEPSG3857X(longitude: number): number {
     return longitude * 20037508.34 / 180.0;
   }
 
-  /** @internal */
-  // calculates the projected y cartesian coordinate in EPSG:3857from the latitude in EPSG:4326 (WGS84)
+  /**
+   * Calculates the projected y cartesian coordinate in EPSG:3857 from the latitude in EPSG:4326 (WGS84)
+   * @param latitude Latitude in EPSG:4326 (WGS84)
+   * @internal
+   */
   public getEPSG3857Y(latitude: number): number {
     const y = Math.log(Math.tan((90.0 + latitude) * Math.PI / 360.0)) / (Math.PI / 180.0);
     return y * 20037508.34 / 180.0;
   }
 
-  /** @internal */
-  // calculates the longitude in EPSG:4326 (WGS84) from the projected x cartesian coordinate in EPSG:3857
+  /**
+   * Calculates the longitude in EPSG:4326 (WGS84) from the projected x cartesian coordinate in EPSG:3857
+   * @param x3857 Projected x cartesian coordinate in EPSG:3857
+   * @internal
+   */
   public getEPSG4326Lon(x3857: number): number {
     return Angle.radiansToDegrees(x3857 / earthRadius);
   }
 
-  /** @internal */
-  // calculates the latitude in EPSG:4326 (WGS84) from the projected y cartesian coordinate in EPSG:3857
+  /**
+   * Calculates the latitude in EPSG:4326 (WGS84) from the projected y cartesian coordinate in EPSG:3857
+   * @param y3857 Projected y cartesian coordinate in EPSG:3857
+   * @internal
+   */
   public getEPSG4326Lat(y3857: number): number {
     const y = 2 * Math.atan(Math.exp(y3857 / earthRadius)) - (Math.PI / 2);
     return Angle.radiansToDegrees(y);
   }
 
-  /** @internal */
-  // Map tile providers like Bing and Mapbox allow the URL to be constructed directory from the zoom level and tile coordinates.
-  // However, WMS-based servers take a bounding box instead. This method can help get that bounding box from a tile.
-  public getEPSG4326Extent(row: number, column: number, zoomLevel: number): { longitudeLeft: number, longitudeRight: number, latitudeTop: number, latitudeBottom: number } {
+  /**
+   * Get the bounding box/extents of a tile in EPSG:4326 (WGS84) format.
+   * Map tile providers like Bing and Mapbox allow the URL to be constructed directly from the zoom level and tile coordinates.
+   * However, WMS-based servers take a bounding box instead. This method can help get that bounding box from a tile.
+   * @param row Row of the tile
+   * @param column Column of the tile
+   * @param zoomLevel Desired zoom level of the tile
+   * @internal
+   */
+  public getEPSG4326Extent(row: number, column: number, zoomLevel: number): WGS84Extent {
     // Shift left (this.tileSize << zoomLevel) overflow when using 512 pixels tile at higher resolution,
     // so use Math.pow instead (I assume the performance lost to be minimal)
     const mapSize = this.tileSize * Math.pow(2, zoomLevel);
@@ -311,7 +442,13 @@ export abstract class MapLayerImageryProvider {
     return { longitudeLeft, longitudeRight, latitudeTop, latitudeBottom };
   }
 
-  /** @internal */
+  /**
+   * Get the bounding box/extents of a tile in EPSG:3857 format.
+   * @param row Row of the tile
+   * @param column Column of the tile
+   * @param zoomLevel Desired zoom level of the tile
+   * @internal
+   */
   public getEPSG3857Extent(row: number, column: number, zoomLevel: number): { left: number, right: number, top: number, bottom: number } {
     const epsg4326Extent = this.getEPSG4326Extent(row, column, zoomLevel);
 
@@ -330,14 +467,31 @@ export abstract class MapLayerImageryProvider {
   }
 
   /** @internal */
-  public getEPSG4326ExtentString(row: number, column: number, zoomLevel: number, latLongAxisOrdering: boolean) {
+  public getEPSG4326TileExtentString(row: number, column: number, zoomLevel: number, latLongAxisOrdering: boolean) {
     const tileExtent = this.getEPSG4326Extent(row, column, zoomLevel);
+    return this.getEPSG4326ExtentString(tileExtent, latLongAxisOrdering);
+
+  }
+
+  /** @internal */
+  public getEPSG4326ExtentString(tileExtent: WGS84Extent, latLongAxisOrdering: boolean) {
+
     if (latLongAxisOrdering) {
-      return `${tileExtent.latitudeBottom.toFixed(8)},${tileExtent.longitudeLeft.toFixed(8)},
-              ${tileExtent.latitudeTop.toFixed(8)},${tileExtent.longitudeRight.toFixed(8)}`;
+      return `${tileExtent.latitudeBottom.toFixed(8)},${tileExtent.longitudeLeft.toFixed(8)},${tileExtent.latitudeTop.toFixed(8)},${tileExtent.longitudeRight.toFixed(8)}`;
     } else {
-      return `${tileExtent.longitudeLeft.toFixed(8)},${tileExtent.latitudeBottom.toFixed(8)},
-              ${tileExtent.longitudeRight.toFixed(8)},${tileExtent.latitudeTop.toFixed(8)}`;
+      return `${tileExtent.longitudeLeft.toFixed(8)},${tileExtent.latitudeBottom.toFixed(8)},${tileExtent.longitudeRight.toFixed(8)},${tileExtent.latitudeTop.toFixed(8)}`;
     }
+  }
+
+  /** Append custom parameters for settings to provided URL object.
+   * @internal
+   */
+  protected appendCustomParams(url: string) {
+    if (!this._settings.savedQueryParams && !this._settings.unsavedQueryParams)
+      return url;
+
+    let tmpUrl = appendQueryParams(url, this._settings.savedQueryParams);
+    tmpUrl = appendQueryParams(tmpUrl, this._settings.unsavedQueryParams);
+    return tmpUrl;
   }
 }

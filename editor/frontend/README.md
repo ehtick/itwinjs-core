@@ -14,30 +14,13 @@ See the [iTwin.js](https://www.itwinjs.org) documentation for more information.
 
 The following key-ins are available for this package.
 
-###### Enabled by `EditorOptions.registerUndoRedoTools`
+###### Undo and Redo tools
 
 * `editor undo all` - Undo all changes to elements.
 * `editor undo single` - Undo last change to elements.
 * `editor redo` - Redo last undone change to elements.
 
-###### Enabled by `EditorOptions.registerBasicManipulationTools`
-
-* `editor delete elements` - Delete selected elements.
-* `editor move elements` - Move selected elements.
-* `editor rotate elements` - Rotate selected elements. Accepts 0-3 arguments:
-  * `method=0|1` How rotate angle will be specified. 0 for by 3 points, 1 for by specified angle.
-  * `about=0|1|2` Location to rotate about. 0 for point, 1 for placement origin, and 2 for center of range.
-  * `angle=number` Rotation angle in degrees when not defining angle by points.
-
-###### Enabled by `EditorOptions.registerSketchTools`
-
-* `editor create arc` - Create a new arc element or add an arc to an existing open path. Accepts 0-3 arguments:
-  * `method=0|1|2|3` How arc will be defined. 0 for center/start, 1 for start/center, 2 for start/mid/end, and 3 for start/end/mid.
-  * `radius=number` Arc radius for start/center or center/start, 0 to define by points.
-  * `sweep=number` Arc sweep angle in degrees for start/center or center/start, 0 to define by points.
-* `editor create linestring` - Create a new linestring element or add a linestring to an existing path.
-
-###### Enabled by `EditorOptions.registerProjectLocationTools`
+###### Project extents and geolocation tools
 
 * `editor project location show` - Show the decoration for editing the iModel's project extents and geolocation.
 * `editor project location hide` - Hide the decoration preserving unsaved changes (call show to redisplay).

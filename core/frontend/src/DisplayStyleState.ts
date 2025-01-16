@@ -123,12 +123,12 @@ export abstract class DisplayStyleState extends ElementState implements DisplayS
       const script = RenderSchedule.Script.fromJSON(scriptProps);
       if (script)
         newState = new RenderSchedule.ScriptReference(this.id, script);
-    } catch (_) {
+    } catch {
       // schedule state is undefined.
     }
 
     if (newState !== this._scriptReference) {
-      this.onScheduleScriptReferenceChanged.raiseEvent(newState); // eslint-disable-line deprecation/deprecation
+      this.onScheduleScriptReferenceChanged.raiseEvent(newState); // eslint-disable-line @typescript-eslint/no-deprecated
       this.onScheduleScriptChanged.raiseEvent(newState?.script);
       this._scriptReference = newState;
     }
@@ -150,14 +150,14 @@ export abstract class DisplayStyleState extends ElementState implements DisplayS
           if (script)
             newState = new RenderSchedule.ScriptReference(timelineId, script);
         }
-      } catch (_) {
+      } catch {
         // schedule state is undefined.
       }
     }
 
     this._queryRenderTimelinePropsPromise = undefined;
     if (newState !== this._scriptReference) {
-      this.onScheduleScriptReferenceChanged.raiseEvent(newState); // eslint-disable-line deprecation/deprecation
+      this.onScheduleScriptReferenceChanged.raiseEvent(newState); // eslint-disable-line @typescript-eslint/no-deprecated
       this.onScheduleScriptChanged.raiseEvent(newState?.script);
       this._scriptReference = newState;
     }
@@ -166,8 +166,9 @@ export abstract class DisplayStyleState extends ElementState implements DisplayS
   /** @internal */
   protected async queryRenderTimelineProps(timelineId: Id64String): Promise<RenderTimelineProps | undefined> {
     try {
-      return await this.iModel.elements.loadProps(timelineId, { renderTimeline: { omitScriptElementIds: true } }) as RenderTimelineProps;
-    } catch (_) {
+      const omitScriptElementIds = !IModelApp.tileAdmin.enableFrontendScheduleScripts;
+      return await this.iModel.elements.loadProps(timelineId, { renderTimeline: { omitScriptElementIds } }) as RenderTimelineProps;
+    } catch {
       return undefined;
     }
   }
@@ -241,9 +242,25 @@ export abstract class DisplayStyleState extends ElementState implements DisplayS
     }
   }
 
+  private * getRealityModels(): Iterable<ContextRealityModelState> {
+    for (const model of this.settings.contextRealityModels.models) {
+      assert(model instanceof ContextRealityModelState);
+      yield model;
+    }
+  }
+
+  /** Iterate over the reality models attached to this display style. */
+  public get realityModels(): Iterable<ContextRealityModelState> {
+    return this.getRealityModels();
+  }
+
   /** @internal */
   public forEachRealityTileTreeRef(func: (ref: TileTreeReference) => void): void {
-    this.forEachRealityModel((model) => func(model.treeRef));
+    this.forEachRealityModel((model) => {
+      if (!model.invisible) {
+        func(model.treeRef);
+      }
+    });
   }
 
   /** @internal */
@@ -292,7 +309,7 @@ export abstract class DisplayStyleState extends ElementState implements DisplayS
 
     try {
       const scriptRef = script ? new RenderSchedule.ScriptReference(script) : undefined;
-      this.onScheduleScriptReferenceChanged.raiseEvent(scriptRef); // eslint-disable-line deprecation/deprecation
+      this.onScheduleScriptReferenceChanged.raiseEvent(scriptRef); // eslint-disable-line @typescript-eslint/no-deprecated
       this.onScheduleScriptChanged.raiseEvent(script);
       this._scriptReference = scriptRef;
 
@@ -516,7 +533,7 @@ export abstract class DisplayStyleState extends ElementState implements DisplayS
    * @param mapLayerIndex the [[MapLayerIndex]] of the map layer to change the credentials of.
    * @public
    */
-  public changeMapLayerCredentials(mapLayerIndex: MapLayerIndex, userName?: string, password?: string,) {
+  public changeMapLayerCredentials(mapLayerIndex: MapLayerIndex, userName?: string, password?: string) {
     const layers = this.getMapLayers(mapLayerIndex.isOverlay);
     const index = mapLayerIndex.index;
     if (index < 0 || index >= layers.length)

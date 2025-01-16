@@ -8,7 +8,7 @@
  */
 
 import {
-  ClipStyle, ClipStyleProps, ColorByName, ColorDef, LinePixels, RenderMode, RgbColor,
+  ClipIntersectionStyle, ClipStyle, ClipStyleProps, ColorByName, ColorDef, CutStyleProps, LinePixels, RenderMode, RgbColor,
 } from "@itwin/core-common";
 import { IModelApp, Tool, Viewport } from "@itwin/core-frontend";
 import { parseToggle } from "./parseToggle";
@@ -83,6 +83,101 @@ export class ClipColorTool extends Tool {
   }
 }
 
+/** This tool specifies or un-specifies a color and width to use for pixels within the specified width of a clip plane.
+ * Arguments can be:
+ * - off
+ * - default
+ * - color   <color string>
+ * - width   <number>
+ * <color string> must be in one of the following forms:
+ * "rgb(255,0,0)"
+ * "rgba(255,0,0,255)"
+ * "rgb(100%,0%,0%)"
+ * "hsl(120,50%,50%)"
+ * "#rrbbgg"
+ * "blanchedAlmond" (see possible values from [[ColorByName]]). Case insensitive.
+ * @see [ColorDef]
+ * @beta
+ */
+export class ClipIntersectionTool extends Tool {
+  public static override toolId = "ClipIntersectionTool";
+  public static override get minArgs() { return 0; }
+  public static override get maxArgs() { return 4; }
+
+  private _toggleIntersectionStyle(toggle: boolean) {
+    const vp = IModelApp.viewManager.selectedView;
+    if (undefined !== vp) {
+      const props = vp.displayStyle.settings.clipStyle.toJSON() ?? {};
+      props.colorizeIntersection = toggle;
+      vp.displayStyle.settings.clipStyle = ClipStyle.fromJSON(props);
+    }
+  }
+
+  private _defaultClipIntersection() {
+    const vp = IModelApp.viewManager.selectedView;
+    if (undefined !== vp) {
+      const props = vp.displayStyle.settings.clipStyle.toJSON() ?? {};
+      if (!props.intersectionStyle) {
+        props.intersectionStyle = ClipIntersectionStyle.defaults;
+      } else {
+        props.intersectionStyle.color = RgbColor.fromColorDef(ColorDef.white);
+        props.intersectionStyle.width = 1;
+      }
+      vp.displayStyle.settings.clipStyle = ClipStyle.fromJSON(props);
+    }
+  }
+
+  private setClipIntersection(colStr: string, width: number) {
+    const vp = IModelApp.viewManager.selectedView;
+    if (vp) {
+      const props = vp.displayStyle.settings.clipStyle.toJSON() ?? {};
+
+      if (!props.intersectionStyle) {
+        props.intersectionStyle = ClipIntersectionStyle.defaults;
+      }
+      if (colStr) {
+        props.intersectionStyle.color = RgbColor.fromColorDef(ColorDef.fromString(colStr));
+      }
+      if (width) {
+        props.intersectionStyle.width = width;
+      }
+
+      vp.displayStyle.settings.clipStyle = ClipStyle.fromJSON(props);
+    }
+  }
+
+  /** This runs the tool using the given arguments, specifying or unspecifying a color and width to use for pixels within the specified width of a clip plane.
+   * Arguments can be:
+   * - off
+   * - default
+   * - color   <color string>
+   * - width   <number>
+   * <color string> must be in one of the following forms:
+   * "rgb(255,0,0)"
+   * "rgba(255,0,0,255)"
+   * "rgb(100%,0%,0%)"
+   * "hsl(120,50%,50%)"
+   * "#rrbbgg"
+   * "blanchedAlmond" (see possible values from [[ColorByName]]). Case insensitive.
+   * @beta
+   */
+  public override async parseAndRun(...args: string[]): Promise<boolean> {
+    if (args[0] === "off") {
+      this._toggleIntersectionStyle(false);
+      return true;
+    }
+
+    this._toggleIntersectionStyle(true);
+    if (args[0] === "default") {
+      this._defaultClipIntersection();
+      return true;
+    }
+
+    args[0] === "color" ? this.setClipIntersection(args[1], +args[3]) : this.setClipIntersection(args[3], +args[1]);
+    return true;
+  }
+}
+
 /** Controls a view state's view details' flag for producing cut geometry for a clip style.
  * @beta
  */
@@ -130,41 +225,47 @@ export class ToggleSectionCutTool extends Tool {
  */
 export class TestClipStyleTool extends DisplayStyleTool {
   public static override toolId = "TestClipStyle";
-  public static override get maxArgs() { return 1; }
+  public static override get maxArgs() { return 2; }
   public static override get minArgs() { return 1; }
 
   private _useStyle = false;
+  private _style?: CutStyleProps;
 
   protected override get require3d() { return true; }
 
   protected async parse(args: string[]): Promise<boolean> {
     this._useStyle = parseBoolean(args[0]) ?? false;
+    if (this._useStyle && args.length > 1)
+      this._style = JSON.parse(args[1]);
     return true;
   }
 
   protected async execute(vp: Viewport) {
     const props: ClipStyleProps = { produceCutGeometry: true };
     if (this._useStyle) {
-      props.cutStyle = {
-        viewflags: {
-          renderMode: RenderMode.SmoothShade,
-          visibleEdges: true,
-          hiddenEdges: false,
-        },
-        appearance: {
-          rgb: { r: 0xff, g: 0x7f, b: 0 },
-          transparency: 0.5,
-          nonLocatable: true,
-        },
-        hiddenLine: {
-          visible: {
-            ovrColor: true,
-            color: ColorByName.blue,
-            pattern: LinePixels.Solid,
-            width: 3,
+      if (this._style)
+        props.cutStyle = this._style;
+      else
+        props.cutStyle = {
+          viewflags: {
+            renderMode: RenderMode.SmoothShade,
+            visibleEdges: true,
+            hiddenEdges: false,
           },
-        },
-      };
+          appearance: {
+            rgb: { r: 0xff, g: 0x7f, b: 0 },
+            transparency: 0.5,
+            nonLocatable: true,
+          },
+          hiddenLine: {
+            visible: {
+              ovrColor: true,
+              color: ColorByName.blue,
+              pattern: LinePixels.Solid,
+              width: 3,
+            },
+          },
+        };
     }
 
     vp.displayStyle.settings.clipStyle = ClipStyle.fromJSON(props);

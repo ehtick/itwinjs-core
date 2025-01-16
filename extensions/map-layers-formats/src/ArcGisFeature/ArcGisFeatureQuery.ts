@@ -69,7 +69,15 @@ export interface FeatureQueryQuantizationParams {
 }
 
 /** @internal */
-export type ArcGisFeatureFormat = "JSON" | "PBF";
+export type ArcGisFeatureFormat = "json" | "pbf";
+
+/**
+* @internal
+*/
+export const arcgisFeatureFormats = {
+  json: "json" as ArcGisFeatureFormat,
+  pbf: "pbf"  as ArcGisFeatureFormat,
+}
 
 // Based on official documentation:
 // https://developers.arcgis.com/rest/services-reference/query-feature-service-layer-.htm
@@ -102,6 +110,11 @@ export interface ArcGisFeatureQueryParams {
   returnExceededLimitFeatures?: boolean;
   quantizationParameters?: FeatureQueryQuantizationParams;
 
+  /** Maximum Allowable Offset means the map distance ( usually per pixel) within which two points are considered identical.
+   * It is used to generalize thus reduce the number of points
+* */
+  maxAllowableOffset?: number;
+
   /** The list of fields to be included in the returned result set. This list is a comma-delimited list of field names.
    * You can also specify the wildcard "*" as the value of this parameter.
    *  */
@@ -128,6 +141,7 @@ export class ArcGisFeatureQuery {
   public outSR: number;
   public outFields?: string;
   public distance?: number;
+  public maxAllowableOffset?: number;
 
   // public envelopeFilter?: CartographicRange;
   public quantizationParams?: FeatureQueryQuantizationParams;
@@ -152,6 +166,7 @@ export class ArcGisFeatureQuery {
       this.quantizationParams = params.quantizationParameters;
       this.outFields = params.outFields;
       this.distance = params.distance;
+      this.maxAllowableOffset = params.maxAllowableOffset;
     }
 
   }
@@ -218,6 +233,10 @@ export class ArcGisFeatureQuery {
 
     if (this.distance) {
       url.searchParams.append("distance", `${this.distance}`);
+    }
+
+    if (this.maxAllowableOffset) {
+      url.searchParams.append("maxAllowableOffset", `${this.maxAllowableOffset}`);
     }
 
     return url.toString();
