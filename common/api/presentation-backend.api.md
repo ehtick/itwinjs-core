@@ -23,15 +23,15 @@ import { ElementProperties } from '@itwin/presentation-common';
 import { Entity } from '@itwin/core-backend';
 import { FilterByInstancePathsHierarchyRequestOptions } from '@itwin/presentation-common';
 import { FilterByTextHierarchyRequestOptions } from '@itwin/presentation-common';
-import { FormatProps } from '@itwin/core-quantity';
+import { FormatsMap } from '@itwin/presentation-common';
 import { HierarchyCompareInfo } from '@itwin/presentation-common';
 import { HierarchyCompareOptions } from '@itwin/presentation-common';
 import { HierarchyLevelDescriptorRequestOptions } from '@itwin/presentation-common';
 import { HierarchyRequestOptions } from '@itwin/presentation-common';
 import { Id64String } from '@itwin/core-bentley';
-import { IDisposable } from '@itwin/core-bentley';
 import { IModelDb } from '@itwin/core-backend';
 import { InstanceKey } from '@itwin/presentation-common';
+import { Item } from '@itwin/presentation-common';
 import { KeySet } from '@itwin/presentation-common';
 import { LabelDefinition } from '@itwin/presentation-common';
 import { MultiElementPropertiesRequestOptions } from '@itwin/presentation-common';
@@ -49,22 +49,21 @@ import { SelectClassInfo } from '@itwin/presentation-common';
 import { SelectionScope } from '@itwin/presentation-common';
 import { SelectionScopeRequestOptions } from '@itwin/presentation-common';
 import { SingleElementPropertiesRequestOptions } from '@itwin/presentation-common';
+import { UnitSystemFormat as UnitSystemFormat_2 } from '@itwin/presentation-common';
 import { UnitSystemKey } from '@itwin/core-quantity';
-import { UpdateInfo } from '@itwin/presentation-common';
 import { VariableValue } from '@itwin/presentation-common';
 import { VariableValueTypes } from '@itwin/presentation-common';
 import { WithCancelEvent } from '@itwin/presentation-common';
 
 // @public
 export interface BackendDiagnosticsAttribute {
-    // @beta
     diagnostics?: BackendDiagnosticsOptions;
 }
 
-// @beta
+// @public
 export type BackendDiagnosticsHandler<TContext = any> = (logs: Diagnostics, requestContext?: TContext) => void;
 
-// @beta
+// @public
 export interface BackendDiagnosticsOptions<TContext = any> extends DiagnosticsOptions {
     handler: BackendDiagnosticsHandler<TContext>;
     requestContextSupplier?: () => TContext;
@@ -122,19 +121,15 @@ export interface MemoryHierarchyCacheConfig extends HierarchyCacheConfigBase {
 }
 
 // @public
-export interface MultiElementPropertiesResponse {
+export interface MultiElementPropertiesResponse<TParsedContent = ElementProperties> {
     // (undocumented)
-    iterator: () => AsyncGenerator<ElementProperties[]>;
+    iterator: () => AsyncGenerator<TParsedContent[]>;
     // (undocumented)
     total: number;
 }
 
-// @public
-export interface MultiManagerPresentationProps extends PresentationPropsBase {
-    // @internal
-    clientManagerFactory?: (clientId: string, props: PresentationManagerProps) => PresentationManager;
-    unusedClientLifetime?: number;
-}
+// @public @deprecated
+export type MultiManagerPresentationProps = PresentationProps;
 
 // @internal (undocumented)
 export function normalizeVersion(version?: string): string;
@@ -151,8 +146,6 @@ export class Presentation {
 // @public
 export interface PresentationAssetsRootConfig {
     backend: string;
-    // @deprecated
-    common: string;
 }
 
 // @public
@@ -222,40 +215,37 @@ export enum PresentationBackendNativeLoggerCategory {
 
 // @public
 export class PresentationManager {
+    [Symbol.dispose](): void;
     constructor(props?: PresentationManagerProps);
-    // @deprecated
-    activeLocale: string | undefined;
     get activeUnitSystem(): UnitSystemKey | undefined;
     set activeUnitSystem(value: UnitSystemKey | undefined);
     compareHierarchies(requestOptions: HierarchyCompareOptions<IModelDb, NodeKey>): Promise<HierarchyCompareInfo>;
     // @deprecated
-    computeSelection(requestOptions: SelectionScopeRequestOptions<IModelDb> & {
-        ids: Id64String[];
-        scopeId: string;
-    } & BackendDiagnosticsAttribute): Promise<KeySet>;
     computeSelection(requestOptions: ComputeSelectionRequestOptions<IModelDb> & BackendDiagnosticsAttribute): Promise<KeySet>;
+    // @deprecated (undocumented)
     dispose(): void;
     getContent(requestOptions: WithCancelEvent<Prioritized<Paged<ContentRequestOptions<IModelDb, Descriptor | DescriptorOverrides, KeySet, RulesetVariable>>>> & BackendDiagnosticsAttribute): Promise<Content | undefined>;
     getContentDescriptor(requestOptions: WithCancelEvent<Prioritized<ContentDescriptorRequestOptions<IModelDb, KeySet, RulesetVariable>>> & BackendDiagnosticsAttribute): Promise<Descriptor | undefined>;
+    getContentSet(requestOptions: WithCancelEvent<Prioritized<Paged<ContentRequestOptions<IModelDb, Descriptor, KeySet, RulesetVariable>>>> & BackendDiagnosticsAttribute): Promise<Item[]>;
     getContentSetSize(requestOptions: WithCancelEvent<Prioritized<ContentRequestOptions<IModelDb, Descriptor | DescriptorOverrides, KeySet, RulesetVariable>>> & BackendDiagnosticsAttribute): Promise<number>;
     getContentSources(requestOptions: WithCancelEvent<Prioritized<ContentSourcesRequestOptions<IModelDb>>> & BackendDiagnosticsAttribute): Promise<SelectClassInfo[]>;
     // @internal (undocumented)
     getDetail(): PresentationManagerDetail;
     getDisplayLabelDefinition(requestOptions: WithCancelEvent<Prioritized<DisplayLabelRequestOptions<IModelDb, InstanceKey>>> & BackendDiagnosticsAttribute): Promise<LabelDefinition>;
     getDisplayLabelDefinitions(requestOptions: WithCancelEvent<Prioritized<Paged<DisplayLabelsRequestOptions<IModelDb, InstanceKey>>>> & BackendDiagnosticsAttribute): Promise<LabelDefinition[]>;
-    getElementProperties(requestOptions: WithCancelEvent<Prioritized<SingleElementPropertiesRequestOptions<IModelDb>>> & BackendDiagnosticsAttribute): Promise<ElementProperties | undefined>;
-    getElementProperties(requestOptions: WithCancelEvent<Prioritized<MultiElementPropertiesRequestOptions<IModelDb>>> & BackendDiagnosticsAttribute): Promise<MultiElementPropertiesResponse>;
+    getElementProperties<TParsedContent = ElementProperties>(requestOptions: WithCancelEvent<Prioritized<SingleElementPropertiesRequestOptions<IModelDb, TParsedContent>>> & BackendDiagnosticsAttribute): Promise<TParsedContent | undefined>;
+    getElementProperties<TParsedContent = ElementProperties>(requestOptions: WithCancelEvent<Prioritized<MultiElementPropertiesRequestOptions<IModelDb, TParsedContent>>> & BackendDiagnosticsAttribute): Promise<MultiElementPropertiesResponse<TParsedContent>>;
     getFilteredNodePaths(requestOptions: WithCancelEvent<Prioritized<FilterByTextHierarchyRequestOptions<IModelDb, RulesetVariable>>> & BackendDiagnosticsAttribute): Promise<NodePathElement[]>;
     // @internal (undocumented)
     getNativePlatform: () => NativePlatformDefinition;
     getNodePaths(requestOptions: WithCancelEvent<Prioritized<FilterByInstancePathsHierarchyRequestOptions<IModelDb, RulesetVariable>>> & BackendDiagnosticsAttribute): Promise<NodePathElement[]>;
     getNodes(requestOptions: WithCancelEvent<Prioritized<Paged<HierarchyRequestOptions<IModelDb, NodeKey, RulesetVariable>>>> & BackendDiagnosticsAttribute): Promise<Node_2[]>;
     getNodesCount(requestOptions: WithCancelEvent<Prioritized<HierarchyRequestOptions<IModelDb, NodeKey, RulesetVariable>>> & BackendDiagnosticsAttribute): Promise<number>;
-    // @beta
     getNodesDescriptor(requestOptions: WithCancelEvent<Prioritized<HierarchyLevelDescriptorRequestOptions<IModelDb, NodeKey, RulesetVariable>>> & BackendDiagnosticsAttribute): Promise<Descriptor | undefined>;
     getPagedDistinctValues(requestOptions: WithCancelEvent<Prioritized<DistinctValuesRequestOptions<IModelDb, Descriptor | DescriptorOverrides, KeySet, RulesetVariable>>> & BackendDiagnosticsAttribute): Promise<PagedResponse<DisplayValueGroup>>;
     // @internal (undocumented)
     getRulesetId(rulesetOrId: Ruleset | string): string;
+    // @deprecated
     getSelectionScopes(_requestOptions: SelectionScopeRequestOptions<IModelDb> & BackendDiagnosticsAttribute): Promise<SelectionScope[]>;
     get props(): PresentationManagerProps;
     rulesets(): RulesetManager;
@@ -271,55 +261,39 @@ export interface PresentationManagerCachingConfig {
     workerConnectionCacheSize?: number;
 }
 
-// @public @deprecated
-export enum PresentationManagerMode {
-    ReadOnly = 0,
-    ReadWrite = 1
-}
-
 // @public
 export interface PresentationManagerProps {
     // @internal (undocumented)
     addon?: NativePlatformDefinition;
     caching?: PresentationManagerCachingConfig;
-    defaultFormats?: {
-        [phenomenon: string]: UnitSystemFormat;
-    };
-    // @deprecated
-    defaultLocale?: string;
+    defaultFormats?: FormatsMap;
     defaultUnitSystem?: UnitSystemKey;
-    // @beta
     diagnostics?: BackendDiagnosticsOptions;
-    // @deprecated
-    enableSchemasPreload?: boolean;
-    // @beta
     getLocalizedString?: (key: string) => string;
     // @internal
     id?: string;
     // @deprecated
-    localeDirectories?: string[];
-    // @deprecated
-    mode?: PresentationManagerMode;
     presentationAssetsRoot?: string | PresentationAssetsRootConfig;
     rulesetDirectories?: string[];
-    // @alpha
     schemaContextProvider?: (imodel: IModelDb) => SchemaContext;
     supplementalRulesetDirectories?: string[];
-    // @beta
+    // @beta @deprecated
     updatesPollInterval?: number;
-    // @beta
     useMmap?: boolean | number;
     workerThreadsCount?: number;
 }
 
 // @public
-export type PresentationProps = MultiManagerPresentationProps | SingleManagerPresentationProps;
-
-// @public
-export interface PresentationPropsBase extends PresentationManagerProps {
+export interface PresentationProps extends Omit<PresentationManagerProps, "enableSchemasPreload"> {
+    // @internal
+    clientManagerFactory?: (clientId: string, props: PresentationManagerProps) => PresentationManager;
     enableSchemasPreload?: boolean;
     requestTimeout?: number;
+    unusedClientLifetime?: number;
 }
+
+// @public @deprecated
+export type PresentationPropsBase = PresentationProps;
 
 // @internal (undocumented)
 export function reportDiagnostics<TContext>(diagnostics: Diagnostics, options: BackendDiagnosticsOptions<TContext>, context?: TContext): void;
@@ -334,6 +308,7 @@ export class RulesetEmbedder {
 // @public
 export interface RulesetEmbedderProps {
     imodel: IModelDb;
+    parentSubjectId?: Id64String;
 }
 
 // @public
@@ -407,19 +382,11 @@ export class RulesetVariablesManagerImpl implements RulesetVariablesManager {
     unset(variableId: string): void;
 }
 
-// @public
-export interface SingleManagerPresentationProps extends PresentationPropsBase {
-    // @alpha
-    useSingleManager?: boolean;
-}
+// @public @deprecated
+export type SingleManagerPresentationProps = Omit<PresentationProps, "clientManagerFactory" | "unusedClientLifetime">;
 
-// @public
-export interface UnitSystemFormat {
-    // (undocumented)
-    format: FormatProps;
-    // (undocumented)
-    unitSystems: UnitSystemKey[];
-}
+// @public @deprecated
+export type UnitSystemFormat = UnitSystemFormat_2;
 
 // (No @packageDocumentation comment for this package)
 

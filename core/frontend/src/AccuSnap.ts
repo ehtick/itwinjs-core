@@ -19,6 +19,7 @@ import { ToolSettings } from "./tools/ToolSettings";
 import { DecorateContext } from "./ViewContext";
 import { Decorator } from "./ViewManager";
 import { ScreenViewport, Viewport } from "./Viewport";
+import { _requestSnap } from "./common/internal/Symbols";
 
 // cspell:ignore dont primitivetools
 
@@ -233,7 +234,7 @@ export class AccuSnap implements Decorator {
   private setIsFlashed(view: Viewport) { this.areFlashed.add(view); }
   private clearIsFlashed(view: Viewport) { this.areFlashed.delete(view); }
   private static toSnapDetail(hit?: HitDetail): SnapDetail | undefined { return (hit && hit instanceof SnapDetail) ? hit : undefined; }
-  /** @internal */
+  /** Currently active snap */
   public getCurrSnapDetail(): SnapDetail | undefined { return AccuSnap.toSnapDetail(this.currHit); }
   /** Determine whether there is a current hit that is *hot*. */
   public get isHot(): boolean {
@@ -270,7 +271,7 @@ export class AccuSnap implements Decorator {
   /** Get the current snap divisor to use to use for SnapMode.NearestKeypoint.
    * @public
    */
-  public get keypointDivisor() { return 2; }
+  public get keypointDivisor() { return this._settings.keypointDivisor; }
 
   /** Get the current active SnapModes. SnapMode position determines priority, with the first entry being the highest. The SnapDetail will be returned for the first SnapMode that produces a hot snap.
    * @public
@@ -388,6 +389,9 @@ export class AccuSnap implements Decorator {
     if (!IModelApp.viewManager.doesHostHaveFocus || undefined !== this._toolTipPromise)
       return;
 
+    if (!IModelApp.toolAdmin.wantToolTip(hit))
+      return;
+
     const promise = this._toolTipPromise = delay.executeAfter(async () => {
       if (promise !== this._toolTipPromise)
         return; // we abandoned this request during delay
@@ -395,7 +399,7 @@ export class AccuSnap implements Decorator {
         const msg = await IModelApp.toolAdmin.getToolTip(hit);
         if (this._toolTipPromise === promise) // have we abandoned this request while awaiting getToolTip?
           this.showLocateMessage(viewPt, vp, msg);
-      } catch (error) { } // happens if getToolTip was canceled
+      } catch { } // happens if getToolTip was canceled
     });
   }
 
@@ -680,8 +684,14 @@ export class AccuSnap implements Decorator {
       }
     }
 
+    let hitVp;
+    if (thisHit.path) {
+      hitVp = thisHit.path.sectionDrawingAttachment?.viewport ?? thisHit.path.viewAttachment?.viewport;
+    }
+
+    hitVp = hitVp ?? thisHit.viewport;
     if (undefined !== thisHit.subCategoryId && !thisHit.isExternalIModelHit) {
-      const appearance = thisHit.viewport.getSubCategoryAppearance(thisHit.subCategoryId);
+      const appearance = hitVp.getSubCategoryAppearance(thisHit.subCategoryId);
       if (appearance.dontSnap) {
         if (out) {
           out.snapStatus = SnapStatus.NotSnappable;
@@ -695,13 +705,14 @@ export class AccuSnap implements Decorator {
       id: thisHit.sourceId,
       testPoint: thisHit.testPoint,
       closePoint: thisHit.hitPoint,
-      worldToView: thisHit.viewport.worldToViewMap.transform0.toJSON(),
-      viewFlags: thisHit.viewport.viewFlags,
+      worldToView: hitVp.worldToViewMap.transform0.toJSON(),
+      viewFlags: hitVp.viewFlags,
       snapModes,
-      snapAperture: thisHit.viewport.pixelsFromInches(hotDistanceInches),
+      snapAperture: hitVp.pixelsFromInches(hotDistanceInches),
       snapDivisor: keypointDivisor,
       subCategoryId: thisHit.subCategoryId,
       geometryClass: thisHit.geometryClass,
+      modelToWorld: thisHit.transformFromSourceIModel?.toJSON(),
     };
 
     const thisGeom = (thisHit.isElementHit ? IModelApp.viewManager.overrideElementGeometry(thisHit) : IModelApp.viewManager.getDecorationGeometry(thisHit));
@@ -750,7 +761,7 @@ export class AccuSnap implements Decorator {
     }
 
     try {
-      const result = await thisHit.iModel.requestSnap(requestProps);
+      const result = await thisHit.iModel[_requestSnap](requestProps);
 
       if (out)
         out.snapStatus = result.status;
@@ -763,8 +774,17 @@ export class AccuSnap implements Decorator {
         return parsed instanceof GeometryQuery && "curvePrimitive" === parsed.geometryCategory ? parsed : undefined;
       };
 
+      let displayTransform;
+      if (undefined !== thisHit.modelId) {
+        displayTransform = thisHit.viewport.view.computeDisplayTransform({
+          modelId: thisHit.modelId,
+          elementId: thisHit.sourceId,
+          viewAttachmentId: thisHit.path?.viewAttachment?.id,
+          inSectionDrawingAttachment: undefined !== thisHit.path?.sectionDrawingAttachment,
+        });
+      }
+
       const snapPoint = Point3d.fromJSON(result.snapPoint);
-      const displayTransform = undefined !== thisHit.modelId ? thisHit.viewport.view.computeDisplayTransform({ modelId: thisHit.modelId, elementId: thisHit.sourceId }) : undefined;
       displayTransform?.multiplyPoint3d(snapPoint, snapPoint);
 
       const snap = new SnapDetail(thisHit, result.snapMode, result.heat, snapPoint);
@@ -798,7 +818,7 @@ export class AccuSnap implements Decorator {
 
       const intersect = new IntersectDetail(snap, snap.heat, snap.snapPoint, otherPrimitive, result.intersectId);
       return intersect;
-    } catch (_err) {
+    } catch {
       if (out)
         out.snapStatus = SnapStatus.Aborted;
 
@@ -843,6 +863,21 @@ export class AccuSnap implements Decorator {
     IModelApp.accuDraw.onSnap(thisSnap); // AccuDraw can adjust nearest snap to intersection of circle (polar distance lock) or line (axis lock) with snapped to curve...
     hitList.setCurrentHit(thisHit);
     return thisSnap;
+  }
+
+  /** Request a snap from the backend for the supplied HitDetail.
+   * @param hit The HitDetail to snap to.
+   * @param snapMode Optional SnapMode, uses active snap modes if not specified.
+   * @return A Promise for the SnapDetail or undefined if no snap could be created.
+   */
+  public async doSnapRequest(hit: HitDetail, snapMode?: SnapMode): Promise<SnapDetail | undefined> {
+    let snapModes: SnapMode[];
+    if (undefined === snapMode)
+      snapModes = this.getActiveSnapModes();
+    else
+      snapModes = [snapMode];
+
+    return AccuSnap.requestSnap(hit, snapModes, this._hotDistanceInches, this.keypointDivisor);
   }
 
   private findHits(ev: BeButtonEvent, force: boolean = false): SnapStatus {
@@ -1139,12 +1174,19 @@ export class AccuSnap implements Decorator {
   }
 }
 
-/** @internal */
+/** TentativeOrAccuSnap returns information about an active snap generated by either [[AccuSnap]] or [[TentativePoint]].
+ * @public
+ */
 export class TentativeOrAccuSnap {
+  /** @return true if AccuSnap is *hot* or TentativePoint is active and snapped to pickable geometry. */
   public static get isHot(): boolean { return IModelApp.accuSnap.isHot || IModelApp.tentativePoint.isSnapped; }
 
+  /** Get the current snap from either AccuSnap or TentativePoint.
+   * @param checkIsHot true to only return the snap from AccuSnap when it is *hot*.
+   * @return The current snap from AccuSnap, TentativePoint, or undefined.
+   */
   public static getCurrentSnap(checkIsHot: boolean = true): SnapDetail | undefined {
-    // Checking for a hot AccuSnap hit before checking tentative is probably necessary for extended intersections?
+    // Checking for a hot AccuSnap before checking TentativePoint is done to support extended intersections...
     if (IModelApp.accuSnap.isHot)
       return IModelApp.accuSnap.getCurrSnapDetail();
 
@@ -1154,6 +1196,7 @@ export class TentativeOrAccuSnap {
     return (checkIsHot ? undefined : IModelApp.accuSnap.getCurrSnapDetail());
   }
 
+  /** @return The current snap location from AccuSnap or TentativePoint */
   public static getCurrentPoint(): Point3d {
     if (IModelApp.accuSnap.isHot) {
       const snap = IModelApp.accuSnap.getCurrSnapDetail();
@@ -1164,6 +1207,7 @@ export class TentativeOrAccuSnap {
     return IModelApp.tentativePoint.getPoint();
   }
 
+  /** @return The current snap Viewport from AccuSnap or TentativePoint */
   public static getCurrentView(): ScreenViewport | undefined {
     const snap = IModelApp.accuSnap.getCurrSnapDetail();
     return snap ? snap.viewport : IModelApp.tentativePoint.viewport;
@@ -1171,7 +1215,7 @@ export class TentativeOrAccuSnap {
 }
 
 /** @public */
-export namespace AccuSnap { // eslint-disable-line no-redeclare
+export namespace AccuSnap {
   export class ToolState {
     public enabled = false;
     public locate = false;
@@ -1191,12 +1235,21 @@ export namespace AccuSnap { // eslint-disable-line no-redeclare
   }
 
   export class Settings {
+    /** How far cursor can be from snap location (relative to snap aperture) and be considered a hot snap */
     public hotDistanceFactor = 1.2;
+    /** When moving along an element, affects the affinity for snapping to the same curve as the previous snap */
     public stickyFactor = 1.0;
+    /** Factor applied to locate aperture when snapping is enabled and used to pick snap candidates */
     public searchDistance = 2.0;
+    /** Whether the snapped element is also hilited when the snap is not hot */
     public hiliteColdHits = true;
+    /** Enables snap on cursor motion when true, only snap using Tentative snap when false */
     public enableFlag = true;
+    /** Whether to show a tooltip for snap and element locate */
     public toolTip = true;
-    public toolTipDelay = BeDuration.fromSeconds(.5); // delay before tooltip pops up
+    /** Delay before tooltip appears */
+    public toolTipDelay = BeDuration.fromSeconds(.5);
+    /** Curve segment divisor used by SnapMode.NearestKeypoint */
+    public keypointDivisor = 2;
   }
 }

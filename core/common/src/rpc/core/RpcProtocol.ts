@@ -17,7 +17,7 @@ import { RpcMarshaling, RpcSerializedValue } from "./RpcMarshaling";
 import { RpcOperation } from "./RpcOperation";
 import { RpcRequest } from "./RpcRequest";
 
-/* eslint-disable deprecation/deprecation */
+/* eslint-disable @typescript-eslint/no-deprecated */
 
 /** A serialized RPC operation descriptor.
  * @internal
@@ -65,14 +65,14 @@ export interface RpcRequestFulfillment {
   /* A protocol-specific value for retrying this request. */
   retry?: string;
 
-  /** Whether to compress the result with one of the client's supported encodings. */
+  /** Whether to compress the result with one of the client's supported encodings. Defaults to true. */
   allowCompression?: boolean;
 }
 
 /** @internal */
 export namespace RpcRequestFulfillment {
   export async function forUnknownError(request: SerializedRpcRequest, error: any): Promise<RpcRequestFulfillment> {
-    const result = await RpcMarshaling.serialize(undefined, error);
+    const result = RpcMarshaling.serialize(undefined, error);
 
     return {
       interfaceName: request.operation.interfaceDefinition,
@@ -202,7 +202,7 @@ export abstract class RpcProtocol {
       },
       method: request.method,
       path: request.path,
-      parameters: await RpcMarshaling.serialize(request.protocol, request.parameters),
+      parameters: RpcMarshaling.serialize(request.protocol, request.parameters),
       caching: RpcResponseCacheControl.None,
       protocolVersion: RpcProtocol.protocolVersion,
     };

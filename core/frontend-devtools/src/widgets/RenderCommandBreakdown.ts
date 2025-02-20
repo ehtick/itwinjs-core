@@ -12,7 +12,7 @@ import { createCheckBox } from "../ui/CheckBox";
 export class RenderCommandBreakdown {
   private readonly _div: HTMLDivElement;
   private readonly _cellDiv: HTMLDivElement;
-  private _curIntervalId?: NodeJS.Timer;
+  private _curIntervalId?: number;
   private readonly _cells = new Map<string, HTMLElement>();
   private readonly _total: HTMLElement;
 
@@ -34,7 +34,7 @@ export class RenderCommandBreakdown {
     this._total.innerText = "Total: 0";
   }
 
-  public dispose(): void {
+  public [Symbol.dispose](): void {
     this.clearInterval();
   }
 
@@ -45,13 +45,13 @@ export class RenderCommandBreakdown {
     } else {
       this._div.style.display = "block";
       this.update();
-      this._curIntervalId = setInterval(() => this.update(), 500);
+      this._curIntervalId = window.setInterval(() => this.update(), 500);
     }
   }
 
   private clearInterval(): void {
     if (undefined !== this._curIntervalId) {
-      clearInterval(this._curIntervalId);
+      window.clearInterval(this._curIntervalId);
       this._curIntervalId = undefined;
     }
   }

@@ -40,19 +40,22 @@ class AttachMapLayerBaseTool extends Tool {
 
         if (validation.status === MapLayerSourceStatus.Valid) {
           vp.invalidateRenderPlan();
-          const msg = IModelApp.localization.getLocalizedString("FrontendDevTools:tools.AttachMapLayerTool.Messages.MapLayerAttached", { sourceName: source.name, sourceUrl: source.url });
+          const msg = IModelApp.localization.getLocalizedString("FrontendDevTools:tools.AttachMapLayerTool.Messages.MapLayerAttached", { sourceName: source.name });
           IModelApp.notifications.outputMessage(new NotifyMessageDetails(OutputMessagePriority.Info, msg));
         } else if (validation.status === MapLayerSourceStatus.RequireAuth) {
           const msg = IModelApp.localization.getLocalizedString("FrontendDevTools:tools.AttachMapLayerTool.Messages.MapLayerAttachedRequiresAuth", { sourceName: source.name });
           IModelApp.notifications.outputMessage(new NotifyMessageDetails(OutputMessagePriority.Warning, msg));
         }
 
+      } else if (validation.status === MapLayerSourceStatus.IncompatibleFormat) {
+        const msg = IModelApp.localization.getLocalizedString("FrontendDevTools:tools.AttachMapLayerTool.Messages.MapLayersIncompatibleFormat", { sourceName: source.name });
+        IModelApp.notifications.outputMessage(new NotifyMessageDetails(OutputMessagePriority.Error, msg));
       } else {
-        const msg = IModelApp.localization.getLocalizedString("FrontendDevTools:tools.AttachMapLayerTool.Messages.MapLayerValidationFailed", { sourceUrl: source.url });
+        const msg = IModelApp.localization.getLocalizedString("FrontendDevTools:tools.AttachMapLayerTool.Messages.MapLayerValidationFailed", { sourceName: source.name });
         IModelApp.notifications.outputMessage(new NotifyMessageDetails(OutputMessagePriority.Error, msg));
       }
     }).catch((error) => {
-      const msg = IModelApp.localization.getLocalizedString("FrontendDevTools:tools.AttachMapLayerTool.Messages.MapLayerAttachError", { error, sourceUrl: source.url });
+      const msg = IModelApp.localization.getLocalizedString("FrontendDevTools:tools.AttachMapLayerTool.Messages.MapLayerAttachError", { error, sourceName: source.name });
       IModelApp.notifications.outputMessage(new NotifyMessageDetails(OutputMessagePriority.Error, msg));
     });
   }
@@ -159,6 +162,14 @@ export class AttachArcGISMapLayerByUrlTool extends AttachMapLayerByURLBaseTool {
 export class AttachArcGISFeatureMapLayerByUrlTool extends AttachMapLayerByURLBaseTool {
   public static override toolId = "AttachArcGISFeatureMapLayerTool";
   constructor() { super("ArcGISFeature"); }
+}
+
+/** This tool attaches an ArcGIS map layer from a given URL.
+ * @beta
+ */
+export class AttachOgcApiFeaturesMapLayerTool extends AttachMapLayerByURLBaseTool {
+  public static override toolId = "AttachOgcApiFeaturesMapLayerTool";
+  constructor() { super("OgcApiFeatures"); }
 }
 
 /** This tool attaches a map layer from a given tile URL.

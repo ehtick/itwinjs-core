@@ -3,25 +3,25 @@
 * See LICENSE.md in the project root for license terms and full copyright notice.
 *--------------------------------------------------------------------------------------------*/
 
-import { expect } from "chai";
-import { AnyCurve } from "../../curve/CurveChain";
+import { describe, expect, it } from "vitest";
+import * as fs from "fs";
+import { Arc3d } from "../../curve/Arc3d";
+import { AnyCurve } from "../../curve/CurveTypes";
+import { CurveChain } from "../../curve/CurveCollection";
 import { GeometryQuery } from "../../curve/GeometryQuery";
-import { JointOptions } from "../../curve/internalContexts/PolygonOffsetContext";
+import { LineSegment3d } from "../../curve/LineSegment3d";
 import { LineString3d } from "../../curve/LineString3d";
 import { Loop } from "../../curve/Loop";
+import { JointOptions } from "../../curve/OffsetOptions";
 import { Path } from "../../curve/Path";
 import { RegionOps } from "../../curve/RegionOps";
-import { Sample } from "../../serialization/GeometrySamples";
-import { Checker } from "../Checker";
-import { GeometryCoreTestIO } from "../GeometryCoreTestIO";
-import { IModelJson } from "../../serialization/IModelJsonSchema";
-import * as fs from "fs";
-import { CurveChain } from "../../curve/CurveCollection";
-import { LineSegment3d } from "../../curve/LineSegment3d";
-import { Arc3d } from "../../curve/Arc3d";
+import { Matrix3d } from "../../geometry3d/Matrix3d";
 import { Point3d } from "../../geometry3d/Point3dVector3d";
 import { Transform } from "../../geometry3d/Transform";
-import { Matrix3d } from "../../geometry3d/Matrix3d";
+import { Sample } from "../../serialization/GeometrySamples";
+import { IModelJson } from "../../serialization/IModelJsonSchema";
+import { Checker } from "../Checker";
+import { GeometryCoreTestIO } from "../GeometryCoreTestIO";
 
 /**
  * Exercise PolygonWireOffset and output to a file.
@@ -67,7 +67,7 @@ function testCurveOffset(allPaths: AnyCurve[],
     }
   }
   GeometryCoreTestIO.saveGeometry(allGeometry, "CurveOffset", caseName);
-  expect(ck.getNumErrors()).equals(0);
+  expect(ck.getNumErrors()).toBe(0);
 }
 
 describe("CurveOffset", () => {
@@ -157,8 +157,8 @@ describe("CurveOffset", () => {
     const ck = new Checker();
     const allGeometry: GeometryQuery[] = [];
     const path = IModelJson.Reader.parse(JSON.parse(fs.readFileSync(
-      "./src/test/testInputs/ChainCollector/gapAtSmallShift.imjs", "utf8")))!;
-    if (ck.testDefined(path) && path instanceof CurveChain) {
+      "./src/test/data/ChainCollector/gapAtSmallShift.imjs", "utf8")))!;
+    if (ck.testType(path, CurveChain)) {
       const x0 = 0;
       const y0 = 0;
       GeometryCoreTestIO.captureCloneGeometry(allGeometry, path, x0, y0, 0.1);
@@ -186,7 +186,7 @@ describe("CurveOffset", () => {
     const path1 = Loop.create(LineString3d.create(pointA, pointB, [2, -e], pointA));
     const arcA = Arc3d.createCircularStartMiddleEnd(pointA, Point3d.create(2, 0.5), pointB) as Arc3d;
     const arcB = Arc3d.createCircularStartMiddleEnd(pointB, Point3d.create(2, 0.25), pointA) as Arc3d;
-    const arcC = arcA.clonePartialCurve(1.0, 0.0)!;
+    const arcC = arcA.clonePartialCurve(1.0, 0.0);
     arcC.tryTransformInPlace(Transform.createFixedPointAndMatrix(arcA.center, Matrix3d.createScale(sC, sC, sC)));
     const path2 = Loop.create(arcA, arcB);
     const path3 = Loop.create(LineString3d.create(pointA, pointB, pointA.interpolatePerpendicularXY(1.0, pointB, -f),
@@ -210,7 +210,7 @@ describe("CurveOffset", () => {
       x0 += 10;
     }
     GeometryCoreTestIO.saveGeometry(allGeometry, "CurveOffset", "TrivialPath");
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
 
 });

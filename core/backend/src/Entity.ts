@@ -6,12 +6,13 @@
  * @module Schema
  */
 
-import { Id64, Id64String, isSubclassOf } from "@itwin/core-bentley";
+import { Id64, Id64String } from "@itwin/core-bentley";
 import { EntityProps, EntityReferenceSet, PropertyCallback, PropertyMetaData } from "@itwin/core-common";
 import type { IModelDb } from "./IModelDb";
 import { Schema } from "./Schema";
+import { EntityClass, SchemaItemKey } from "@itwin/ecschema-metadata";
 
-/** Represents an entity in an [[IModelDb]] such as an [[Element]], [[Model]], or [[Relationship]].
+/** Represents one of the fundamental building block in an [[IModelDb]]: as an [[Element]], [[Model]], or [[Relationship]].
  * Every subclass of Entity represents one BIS [ECClass]($ecschema-metadata).
  * An Entity is typically instantiated from an [EntityProps]($common) and can be converted back to this representation via [[Entity.toJSON]].
  * @public
@@ -22,7 +23,7 @@ export class Entity {
    */
   public readonly isInstanceOfEntity = true as const;
   /** The Schema that defines this class. */
-  public static schema: typeof Schema;
+  public static schema: typeof Schema; // TODO: Schema key on the static level, but it requires a version which may differ between imodels
 
   private get _ctor(): typeof Entity { return this.constructor as typeof Entity; }
 
@@ -32,6 +33,20 @@ export class Entity {
    * be one JavaScript class for a given BIS class (usually the errant class will collide with its superclass.)
    */
   public static get className(): string { return "Entity"; }
+
+  private static _schemaItemKey?: SchemaItemKey;
+
+  /** Serves as a unique identifier for this class. Typed variant of [[classFullName]].
+   * @beta
+   */
+  public static get schemaItemKey(): SchemaItemKey {
+    if (!this._schemaItemKey) {
+      this._schemaItemKey = new SchemaItemKey(this.className, this.schema.schemaKey);
+    }
+    return this._schemaItemKey;
+  }
+
+  private _metadata?: EntityClass;
 
   /** When working with an Entity it can be useful to set property values directly, bypassing the compiler's type checking.
    * This property makes such code slightly less tedious to read and write.
@@ -51,12 +66,19 @@ export class Entity {
   /** The Id of this Entity. May be invalid if the Entity has not yet been saved in the database. */
   public id: Id64String;
 
-  /** @internal */
-  constructor(props: EntityProps, iModel: IModelDb) {
+
+  protected constructor(props: EntityProps, iModel: IModelDb) {
     this.iModel = iModel;
     this.id = Id64.fromJSON(props.id);
     // copy all auto-handled properties from input to the object being constructed
     this.forEachProperty((propName: string, meta: PropertyMetaData) => (this as any)[propName] = meta.createProperty((props as any)[propName]), false);
+  }
+
+  /** Invoke the constructor of the specified `Entity` subclass.
+   * @internal
+   */
+  public static instantiate(subclass: typeof Entity, props: EntityProps, iModel: IModelDb): Entity {
+    return new subclass(props, iModel);
   }
 
   /** Obtain the JSON representation of this Entity. Subclasses of [[Entity]] typically override this method to return their corresponding sub-type of [EntityProps]($common) -
@@ -85,6 +107,29 @@ export class Entity {
 
   /** Get the full BIS class name of this Entity in the form "schema:class". */
   public get classFullName(): string { return this._ctor.classFullName; }
+  /**
+   * Get the item key used by the ecschema-metadata package to identify this entity class
+   * @beta
+   */
+  public get schemaItemKey(): SchemaItemKey { return this._ctor.schemaItemKey; }
+
+  /** query metadata for this entity class from the iModel's schema
+   * @throws [[IModelError]] if there is a problem querying the schema
+   * @returns The metadata for the current entity
+   * @beta
+   */
+  public async getMetaData(): Promise<EntityClass> {
+    if (!this._metadata) {
+      this._metadata = await this.iModel.schemaContext.getSchemaItem(this.schemaItemKey, EntityClass);
+    }
+
+    if(!this._metadata) {
+      throw new Error(`Cannot get metadata for ${this.classFullName}`);
+    }
+
+    return this._metadata;
+  }
+
 
   /** @internal */
   public static get protectedOperations(): string[] { return []; }
@@ -95,7 +140,10 @@ export class Entity {
    * @note this should have a type of `is<T extends typeof Entity>(otherClass: T): this is T` but can't because of
    * typescript's restriction on the `this` type in static methods
    */
-  public static is(otherClass: typeof Entity): boolean { return isSubclassOf(this, otherClass); }
+  public static is(otherClass: typeof Entity): boolean {
+    // inline of @itwin/core-bentley's isSubclassOf due to protected constructor.
+    return this === otherClass || this.prototype instanceof otherClass;
+  }
 
   /** whether this JavaScript class was generated for this ECClass because there was no registered custom implementation
    * ClassRegistry overrides this when generating a class
@@ -145,4 +193,4 @@ export class Entity {
 /** Parameter type that can accept both abstract constructor types and non-abstract constructor types for `instanceof` to test.
  * @public
  */
-export type EntityClassType<T> = Function & { prototype: T };
+export type EntityClassType<T> = Function & { prototype: T }; // eslint-disable-line @typescript-eslint/no-unsafe-function-type

@@ -84,15 +84,20 @@ export class BuildAverageNormalsContext {
     let sectorIndex = 0;
     // create one IndexedAreaNormal structure for each facet.
     // At each sector of each face, notate (a) IndexedAreaNormal of the facet, (b) the sector index, (c) the point index.
-
     while (visitor.moveToNextFacet()) {
-      const facetNormal = PolygonOps.areaNormalGo(visitor.point)!;
-      let area = facetNormal.magnitude();
-      if (area < smallArea) {
-        facetNormal.setFromVector3d(defaultNormal);
+      let facetNormal = PolygonOps.areaNormalGo(visitor.point);
+      let area = 0.0;
+      if (!facetNormal) {
+        facetNormal = defaultNormal.clone();
         area = 0.0;
       } else {
-        facetNormal.scaleInPlace(1.0 / area);
+        area = facetNormal.magnitude();
+        if (area < smallArea) {
+          facetNormal.setFromVector3d(defaultNormal);
+          area = 0.0;
+        } else {
+          facetNormal.scaleInPlace(1.0 / area);
+        }
       }
       const facetData = new IndexedAreaAndNormal(facetIndex++, area, facetNormal);
       for (let i = 0; i < visitor.pointCount; i++) {
@@ -100,7 +105,7 @@ export class BuildAverageNormalsContext {
       }
     }
     // Sort by the vertex index so all the sectors around each vertex are clustered . .
-    sectors.sort(SectorData.cbVertexSort);
+    sectors.sort((left, right) => SectorData.cbVertexSort(left, right));
 
     // Walk the sectors around each vertex .  ..
     // For each unassigned sector
@@ -120,7 +125,7 @@ export class BuildAverageNormalsContext {
         const clusterNormal = new IndexedAreaAndNormal(clusterIndex++, 0.0, Vector3d.createZero());
         clusters.push(clusterNormal);
         // Accumulate with equal weights . . .
-        clusterNormal.addWeightedNormal(1.0, baseData.facetData.normal.clone());
+        clusterNormal.addWeightedNormal(1.0, baseData.facetData.normal);
         for (let candidateSectorIndex = baseSectorIndex;
           candidateSectorIndex < sectors.length;
           candidateSectorIndex++) {
@@ -137,7 +142,7 @@ export class BuildAverageNormalsContext {
       }
     }
     // Resort by original sector index.
-    sectors.sort(SectorData.cbSectorSort);
+    sectors.sort((left, right) => SectorData.cbSectorSort(left, right));
     // normalize the sums and emplace in the facets  . . .
     polyface.data.normalIndex = [];
     polyface.data.normal = new GrowableXYZArray(sectors.length);

@@ -33,7 +33,7 @@ export interface DtaBooleanConfiguration {
   cacheTileMetadata?: boolean; // default false
   ignoreCache?: boolean; // default is undefined, set to true to delete a cached version of a remote imodel before opening it.
   noElectronAuth?: boolean; // if true, don't initialize auth client. It currently has a bug that produces an exception on every attempt to obtain access token, i.e., every RPC call.
-  useFrontendTiles?: boolean; // if true, use @itwin/frontend-tiles to obtain tile trees for spatial views
+  noImdlWorker?: boolean; // if true, parse iMdl content on main thread instead of web worker (easier to debug).
 }
 
 export interface DtaStringConfiguration {
@@ -54,6 +54,7 @@ export interface DtaStringConfiguration {
   oidcClientId?: string; // default is undefined, used for auth setup
   oidcScope?: string; // default is undefined, used for auth setup
   oidcRedirectUri?: string; // default is undefined, used for auth setup
+  frontendTilesUrlTemplate?: string; // if set, specifies url for @itwin/frontend-tiles to obtain tile trees for spatial views.  See README.md
 }
 
 export interface DtaNumberConfiguration {
@@ -96,6 +97,7 @@ export const getConfig = (): DtaConfiguration => {
   configuration.standalonePath = process.env.IMJS_STANDALONE_FILEPATH; // optional (browser-use only)
   configuration.viewName = process.env.IMJS_STANDALONE_VIEWNAME; // optional
   configuration.startupMacro = process.env.IMJS_STARTUP_MACRO;
+  configuration.frontendTilesUrlTemplate = process.env.IMJS_FRONTEND_TILES_URL_TEMPLATE;
 
   if (undefined !== process.env.IMJS_DISABLE_DIAGNOSTICS)
     configuration.enableDiagnostics = false;
@@ -155,7 +157,7 @@ export const getConfig = (): DtaConfiguration => {
   configuration.cacheTileMetadata = undefined !== process.env.IMJS_CACHE_TILE_METADATA;
   configuration.useProjectExtents = undefined === process.env.IMJS_NO_USE_PROJECT_EXTENTS;
   configuration.noElectronAuth = undefined !== process.env.IMJS_NO_ELECTRON_AUTH;
-  configuration.useFrontendTiles = undefined !== process.env.IMJS_USE_FRONTEND_TILES;
+  configuration.noImdlWorker = undefined !== process.env.IMJS_NO_IMDL_WORKER;
   const gpuMemoryLimit = process.env.IMJS_GPU_MEMORY_LIMIT;
   if (undefined !== gpuMemoryLimit) {
     const gpuByteLimit = Number.parseInt(gpuMemoryLimit, 10);
@@ -230,9 +232,16 @@ export const getConfig = (): DtaConfiguration => {
 
   configuration.iModelId = process.env.IMJS_IMODEL_ID;
   configuration.urlPrefix = process.env.IMJS_URL_PREFIX;
-  configuration.oidcClientId = process.env.IMJS_OIDC_CLIENT_ID;
-  configuration.oidcScope = process.env.IMJS_OIDC_SCOPE;
-  configuration.oidcRedirectUri = process.env.IMJS_OIDC_REDIRECT_URI;
+  if (ProcessDetector.isElectronAppFrontend) {
+    configuration.oidcClientId = process.env.IMJS_OIDC_ELECTRON_TEST_CLIENT_ID;
+    configuration.oidcScope = process.env.IMJS_OIDC_ELECTRON_TEST_SCOPES;
+    configuration.oidcRedirectUri = process.env.IMJS_OIDC_ELECTRON_TEST_REDIRECT_URI;
+  } else {
+    configuration.oidcClientId = process.env.IMJS_OIDC_CLIENT_ID;
+    configuration.oidcScope = process.env.IMJS_OIDC_SCOPE;
+    configuration.oidcRedirectUri = process.env.IMJS_OIDC_REDIRECT_URI;
+  }
+
   configuration.ignoreCache = undefined !== process.env.IMJS_IGNORE_CACHE;
 
   return configuration;

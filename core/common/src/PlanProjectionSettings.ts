@@ -61,8 +61,7 @@ export class PlanProjectionSettings {
     return new PlanProjectionSettings(props);
   }
 
-  /** @internal */
-  public constructor(props: PlanProjectionSettingsProps) {
+  private constructor(props: PlanProjectionSettingsProps) {
     this.elevation = props.elevation;
     this.overlay = true === props.overlay;
     this.enforceDisplayPriority = true === props.enforceDisplayPriority;
@@ -96,5 +95,13 @@ export class PlanProjectionSettings {
       props.enforceDisplayPriority = changedProps.enforceDisplayPriority;
 
     return new PlanProjectionSettings(props);
+  }
+
+  /** Return true if these settings are equivalent to the specified settings. */
+  public equals(other: PlanProjectionSettings): boolean {
+    if (this === other)
+      return true;
+
+    return this.elevation === other.elevation && this.transparency === other.transparency && this.overlay === other.overlay && this.enforceDisplayPriority === other.enforceDisplayPriority;
   }
 }

@@ -12,7 +12,7 @@ import { Easing, GeometryStreamProps, NpcCenter } from "@itwin/core-common";
 import { DialogItemValue, DialogPropertyItem, DialogPropertySyncItem } from "@itwin/appui-abstract";
 import { AccuSnap, TentativeOrAccuSnap } from "../AccuSnap";
 import { LocateOptions } from "../ElementLocateManager";
-import { FrontendLoggerCategory } from "../FrontendLoggerCategory";
+import { FrontendLoggerCategory } from "../common/FrontendLoggerCategory";
 import { HitDetail } from "../HitDetail";
 import { IModelApp } from "../IModelApp";
 import { linePlaneIntersect } from "../LinePlaneIntersect";
@@ -45,8 +45,9 @@ export enum ManipulatorToolEvent { Start = 1, Stop = 2, Suspend = 3, Unsuspend =
 
 const enum MouseButton { Left = 0, Middle = 1, Right = 2 } // eslint-disable-line no-restricted-syntax
 
-/** Class that maintains the state of tool settings properties for the current session
- * @internal
+/** Maintains the state of tool settings properties for the current session.
+ * @see [[ToolAdmin.toolSettingsState]] to access the state for the current session.
+ * @public
  */
 export class ToolSettingsState {
   /** Retrieve saved tool settings DialogItemValue by property name. */
@@ -318,7 +319,16 @@ interface ToolEvent {
   vp?: ScreenViewport; // Viewport is optional - keyboard events aren't associated with a Viewport.
 }
 
+/** Supplied by EditTools.initialize to make sure the current edit command finishes before starting a new primitive tool in the event that
+ * the current edit tool that did not do so in it's onCleanup.
+ * @internal
+ */
+export interface EditCommandHandler {
+  finishCommand(): Promise<string>;
+}
+
 /** Controls the operation of [[Tool]]s, administering the current [[ViewTool]], [[PrimitiveTool]], and [[IdleTool]] and forwarding events to the appropriate tool.
+ * @see [[IModelApp.toolAdmin]] to access the session's `ToolAdmin`.
  * @public
  * @extensions
  */
@@ -328,7 +338,7 @@ export class ToolAdmin {
   public readonly currentInputState = new CurrentInputState();
   /** @internal */
   public readonly toolState = new ToolState();
-  /** @internal */
+  /** Maintains the state of tool settings properties for the current session. */
   public readonly toolSettingsState = new ToolSettingsState();
   private _canvasDecoration?: CanvasDecoration;
   private _suspendedByViewTool?: SuspendedToolState;
@@ -343,8 +353,11 @@ export class ToolAdmin {
   private _defaultToolArgs?: any[];
   private _lastHandledMotionTime?: BeTimePoint;
   private _mouseMoveOverTimeout?: NodeJS.Timeout;
+  private _editCommandHandler?: EditCommandHandler;
 
-  /** The name of the [[PrimitiveTool]] to use as the default tool. Defaults to "Select", referring to [[SelectionTool]].
+  /** The name of the [[PrimitiveTool]] to use as the default tool.
+   * Defaults to "Select", referring to [[SelectionTool]].
+   * @note An empty string signifies no default tool allowing more events to be handled by [[idleTool]].
    * @see [[startDefaultTool]] to activate the default tool.
    * @see [[defaultToolArgs]] to supply arguments when starting the tool.
    */
@@ -674,8 +687,10 @@ export class ToolAdmin {
         if (undefined === current.touchTapTimer) {
           current.touchTapTimer = Date.now();
           current.touchTapCount = 1;
+          // NOTE: We cannot await the executeAfter call below, because that prevents any other
+          // taps from being processed, which makes it impossible for double tap to happen.
           // eslint-disable-next-line @typescript-eslint/unbound-method
-          await ToolSettings.doubleTapTimeout.executeAfter(this.doubleTapTimeout, this);
+          void ToolSettings.doubleTapTimeout.executeAfter(this.doubleTapTimeout, this);
         } else if (undefined !== current.touchTapCount) {
           current.touchTapCount++;
         }
@@ -841,6 +856,9 @@ export class ToolAdmin {
   /** The current tool. May be ViewTool, InputCollector, PrimitiveTool, or IdleTool - in that priority order. */
   public get currentTool(): InteractiveTool { return this.activeTool ? this.activeTool : this.idleTool; }
 
+  /** Allow applications to inhibit specific tooltips, such as for maps. */
+  public wantToolTip(_hit: HitDetail): boolean { return true; }
+
   /** Ask the current tool to provide tooltip contents for the supplied HitDetail. */
   public async getToolTip(hit: HitDetail): Promise<HTMLElement | string> { return this.currentTool.getToolTip(hit); }
 
@@ -904,9 +922,20 @@ export class ToolAdmin {
       else
         this.fillEventFromCursorLocation(ev);
 
-      // NOTE: Do not call adjustPoint when snapped, refer to CurrentInputState.fromButton
-      if (adjustPoint && undefined !== ev.viewport && undefined === TentativeOrAccuSnap.getCurrentSnap(false))
-        this.adjustPoint(ev.point, ev.viewport);
+      if (adjustPoint && undefined !== ev.viewport) {
+        // Use ev.rawPoint for cursor location when not snapped as ev.point gets adjusted in fromButton...
+        const snap = TentativeOrAccuSnap.getCurrentSnap(false);
+        if (undefined !== snap) {
+          // Account for changes to locks, reset and re-adjust snap point...
+          snap.adjustedPoint.setFrom(snap.getPoint());
+          this.adjustSnapPoint();
+          ev.point.setFrom(snap.isPointAdjusted ? snap.adjustedPoint : snap.getPoint());
+        } else {
+          ev.point.setFrom(IModelApp.tentativePoint.isActive ? IModelApp.tentativePoint.getPoint() : ev.rawPoint);
+          this.adjustPoint(ev.point, ev.viewport);
+        }
+        IModelApp.accuDraw.onMotion(ev);
+      }
     }
 
     if (undefined === ev.viewport)
@@ -1053,11 +1082,13 @@ export class ToolAdmin {
       if (overlayHit.onMouseMove)
         overlayHit.onMouseMove(ev);
 
-      return; // we're inside a pickable decoration, don't send event to tool
+      if (undefined === overlayHit.propagateMouseMove || !overlayHit.propagateMouseMove(ev))
+        return; // we're inside a pickable decoration that doesn't want event sent to tool
     }
 
     this._mouseMoveOverTimeout = setTimeout(async () => {
       await this.onMotionEnd(vp, pt2d, inputSource);
+      await processMotion();
     }, 100);
 
     const processMotion = async (): Promise<void> => {
@@ -1306,8 +1337,8 @@ export class ToolAdmin {
     if (!updateDynamics)
       return;
 
-    // Update tool dynamics. Use last data button location which was potentially adjusted by onDataButtonDown and not current event
-    this.updateDynamics(undefined, true, true);
+    // Update tool dynamics for current cursor location to not require a motion event.
+    this.updateDynamics(undefined, undefined, true);
   }
 
   private async onButtonDown(vp: ScreenViewport, pt2d: XAndY, button: BeButton, inputSource: InputSource): Promise<any> {
@@ -1437,14 +1468,7 @@ export class ToolAdmin {
     if (undefined === imodel || imodel.isReadonly || !imodel.isBriefcaseConnection())
       return false;
 
-    if (IModelStatus.Success !== await imodel.txns.reverseSingleTxn())
-      return false;
-
-    // ### TODO Restart of primitive tool should be handled by Txn event listener...needs to happen even if not the active tool...
-    if (undefined !== this._primitiveTool)
-      await this._primitiveTool.onRestartTool();
-
-    return true;
+    return (IModelStatus.Success === await imodel.txns.reverseSingleTxn() ? true : false);
   }
 
   /** Called to redo previous data button for primitive tools or undo last write operation. */
@@ -1460,14 +1484,7 @@ export class ToolAdmin {
     if (undefined === imodel || imodel.isReadonly || !imodel.isBriefcaseConnection())
       return false;
 
-    if (IModelStatus.Success !== await imodel.txns.reinstateTxn())
-      return false;
-
-    // ### TODO Restart of primitive tool should be handled by Txn event listener...needs to happen even if not the active tool...
-    if (undefined !== this._primitiveTool)
-      await this._primitiveTool.onRestartTool();
-
-    return true;
+    return (IModelStatus.Success === await imodel.txns.reinstateTxn() ? true : false);
   }
 
   private onActiveToolChanged(tool: Tool, start: StartOrResume): void {
@@ -1594,9 +1611,16 @@ export class ToolAdmin {
   }
 
   /** @internal */
+  public setEditCommandHandler(handler?: EditCommandHandler) {
+    this._editCommandHandler = handler;
+  }
+
+  /** @internal */
   public async setPrimitiveTool(newTool?: PrimitiveTool) {
     if (undefined !== this._primitiveTool) {
       await this._primitiveTool.onCleanup();
+      if (undefined !== this._editCommandHandler)
+        await this._editCommandHandler.finishCommand();
       this._primitiveTool = undefined;
     }
     this._primitiveTool = newTool;
@@ -1693,15 +1717,37 @@ export class ToolAdmin {
   }
 
   /**
-   * Starts the default [[Tool]], if any. Generally invoked automatically when other tools exit, so shouldn't be called directly.
-   * @note The default tool is expected to be a subclass of [[PrimitiveTool]]. A call to startDefaultTool is required to terminate
-   * an active [[ViewTool]] or [[InputCollector]] and replace or clear the current [[PrimitiveTool]].
+   * Starts the default [[PrimitiveTool]], if any. Generally invoked automatically when other tools exit, so shouldn't be called directly.
+   * @note The default tool, when specified, must be a subclass of [[PrimitiveTool]]. A call to startDefaultTool is required to terminate
+   * an active [[ViewTool]] or [[InputCollector]] and replace or clear the current [[PrimitiveTool]]. The default tool can not be
+   * a subclass of [[ViewTool]] as view tools replace each other and aren't suspended. This means [[ViewTool.exitTool]] would
+   * result in the active tool being undefined instead of making the default tool active.
    * The tool's [[Tool.run]] method is invoked with arguments specified by [[defaultToolArgs]].
    * @see [[defaultToolId]] to configure the default tool.
    */
   public async startDefaultTool(): Promise<void> {
-    if (!await IModelApp.tools.run(this.defaultToolId, this.defaultToolArgs))
-      return this.startPrimitiveTool(undefined);
+    const tool = IModelApp.tools.create(this.defaultToolId, this.defaultToolArgs);
+
+    if (tool instanceof PrimitiveTool) {
+      if (!await tool.run(this.defaultToolArgs))
+        return this.startPrimitiveTool(undefined);
+    } else {
+      await this.startPrimitiveTool(undefined); // Ensure active primitive tool is terminated...
+      if (undefined !== tool)
+        throw new Error("Default tool must be a subclass of PrimitiveTool");
+    }
+  }
+
+  /**
+   * Call from external events or immediate tools that may have invalidated the current primitive tool's state.
+   * Examples are undo, which may invalidate any references to elements, or an immediate tool that uses an edit command to write to the iModel,
+   * since immediate tools do not replace the active tool.
+   * The current primitive tool is expected to call installTool with a new instance, or exitTool to start the default tool.
+   * @note Should be called even if the primitive tool is currently suspended by a view tool or input collector.
+   */
+  public async restartPrimitiveTool(): Promise<void> {
+    if (undefined !== this._primitiveTool)
+      await this._primitiveTool.onRestartTool();
   }
 
   public setCursor(cursor: string | undefined): void {
@@ -1765,9 +1811,9 @@ export class ToolAdmin {
     this.setCursor(IModelApp.viewManager.crossHairCursor);
   }
 
-  /** @internal */
-  public fillEventFromCursorLocation(ev: BeButtonEvent) { this.currentInputState.toEvent(ev, true); }
-  /** @internal */
+  /** Fill the supplied button event from the current cursor location. */
+  public fillEventFromCursorLocation(ev: BeButtonEvent, useSnap = true) { this.currentInputState.toEvent(ev, useSnap); }
+  /** Fill the supplied button event from the last data button location. */
   public fillEventFromLastDataButton(ev: BeButtonEvent) { this.currentInputState.toEventFromLastDataPoint(ev); }
   /** @internal */
   public setAdjustedDataPoint(ev: BeButtonEvent) { this.currentInputState.adjustLastDataPoint(ev); }
@@ -1802,6 +1848,11 @@ export class ToolAdmin {
   /** Can be called by tools that wish to emulate a mouse motion event for onTouchMove. */
   public async convertTouchMoveToMotion(ev: BeTouchEvent): Promise<void> {
     return this.onMotion(ev.viewport!, ev.viewPoint, InputSource.Touch);
+  }
+
+  /** Can be called by tools to invoke their [[InteractiveTool.onDynamicFrame]] method without requiring a motion event. */
+  public simulateMotionEvent(): void {
+    this.updateDynamics(undefined, undefined, true);
   }
 
   /** @internal */

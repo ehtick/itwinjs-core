@@ -5,13 +5,13 @@
 /** @packageDocumentation
  * @module RpcInterface
  */
-
-import { BentleyStatus, IModelError } from "../../IModelError";
-import { BackendReadable } from "../../BackendTypes";
+import { BentleyStatus } from "@itwin/core-bentley";
+import { IModelError } from "../../IModelError";
+import { BackendReadable } from "../../internal/BackendTypes";
 import { RpcProtocol } from "./RpcProtocol";
 
 // cspell:ignore unmarshal
-/* eslint-disable deprecation/deprecation */
+/* eslint-disable @typescript-eslint/no-deprecated */
 
 function isBuffer(val: any): boolean {
   return val && typeof (val.constructor) !== "undefined" && typeof (val.constructor.isBuffer) === "function" && val.constructor.isBuffer(val);
@@ -55,16 +55,15 @@ export class RpcMarshaling {
   private constructor() { }
 
   /** Serializes a value. */
-  public static async serialize(protocol: RpcProtocol | undefined, value: any): Promise<RpcSerializedValue> {
+  public static serialize(protocol: RpcProtocol | undefined, value: any): RpcSerializedValue {
     const serialized = RpcSerializedValue.create();
 
-    if (typeof (value) === "undefined") {
+    if (value === undefined)
       return serialized;
-    }
 
     marshalingTarget = serialized;
     chunkThreshold = protocol ? protocol.transferChunkThreshold : 0;
-    serialized.objects = JSON.stringify(value, WireFormat.marshal);
+    serialized.objects = JSON.stringify(value, (_key, _value) => WireFormat.marshal(_key, _value));
     marshalingTarget = undefined as any;
     chunkThreshold = 0;
 
@@ -81,7 +80,7 @@ export class RpcMarshaling {
     chunkThreshold = protocol ? protocol.transferChunkThreshold : 0;
     let result;
     try {
-      result = JSON.parse(value.objects, WireFormat.unmarshal);
+      result = JSON.parse(value.objects, (_key, _value) => WireFormat.unmarshal(_key, _value));
     } catch (error) {
       if (error instanceof SyntaxError)
         throw new IModelError(BentleyStatus.ERROR, `Invalid JSON: "${value.objects}"`);
@@ -119,7 +118,7 @@ class WireFormat {
     return value;
   }
 
-  private static marshalBinary(value: any): any {
+  private static marshalBinary(value: Uint8Array): MarshalingBinaryMarker | undefined {
     if (value instanceof Uint8Array || isBuffer(value)) {
       const marker: MarshalingBinaryMarker = { isBinary: true, index: -1, size: value.byteLength, chunks: 1 };
 
@@ -154,7 +153,7 @@ class WireFormat {
     }
   }
 
-  private static unmarshalBinary(value: MarshalingBinaryMarker): any {
+  private static unmarshalBinary(value: MarshalingBinaryMarker): Uint8Array {
     if (value.index >= marshalingTarget.data.length) {
       throw new IModelError(BentleyStatus.ERROR, `Cannot unmarshal missing binary value.`);
     }
@@ -178,7 +177,7 @@ class WireFormat {
     }
   }
 
-  private static marshalError(value: any) {
+  private static marshalError(value: unknown) {
     if (value instanceof Error) {
       const props = Object.getOwnPropertyDescriptors(value);
       props.isError = { configurable: true, enumerable: true, writable: true, value: true };

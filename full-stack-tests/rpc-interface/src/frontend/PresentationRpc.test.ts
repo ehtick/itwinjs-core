@@ -1,7 +1,7 @@
 /*---------------------------------------------------------------------------------------------
-* Copyright (c) Bentley Systems, Incorporated. All rights reserved.
-* See LICENSE.md in the project root for license terms and full copyright notice.
-*--------------------------------------------------------------------------------------------*/
+ * Copyright (c) Bentley Systems, Incorporated. All rights reserved.
+ * See LICENSE.md in the project root for license terms and full copyright notice.
+ *--------------------------------------------------------------------------------------------*/
 import { expect } from "chai";
 import { Id64 } from "@itwin/core-bentley";
 import { CheckpointConnection, IModelApp, IModelConnection } from "@itwin/core-frontend";
@@ -11,19 +11,19 @@ import { Presentation } from "@itwin/presentation-frontend";
 import { TestContext } from "./setup/TestContext";
 
 describe("PresentationRpcInterface tests", () => {
-
   let imodel: IModelConnection;
 
   before(async function () {
     const testContext = await TestContext.instance();
-    if (!testContext.settings.runPresentationRpcTests)
+    if (!testContext.settings.runPresentationRpcTests) {
       this.skip();
+    }
 
     await Presentation.initialize();
 
     const iModelId = testContext.iModelWithChangesets!.iModelId;
     const iTwinId = testContext.iModelWithChangesets!.iTwinId;
-    const accessToken = testContext.adminUserAccessToken;
+    const accessToken = testContext.serviceAuthToken;
     IModelApp.authorizationClient = new TestFrontendAuthorizationClient(accessToken);
     imodel = await CheckpointConnection.openRemote(iTwinId, iModelId);
   });
@@ -33,19 +33,11 @@ describe("PresentationRpcInterface tests", () => {
   });
 
   it("getNodes works as expected", async () => {
-    const rootNodes = await Presentation.presentation.getNodes({
+    const rootNodes = await Presentation.presentation.getNodesIterator({
       imodel,
       rulesetOrId: createNodesRuleset(),
     });
     expect(rootNodes).to.not.be.empty;
-  });
-
-  it("getNodesAndCount works as expected", async () => {
-    const nodesAndCount = await Presentation.presentation.getNodesAndCount({
-      imodel,
-      rulesetOrId: createNodesRuleset(),
-    });
-    expect(nodesAndCount.count).to.not.be.undefined;
   });
 
   it("getNodesCount works as expected", async () => {
@@ -100,6 +92,7 @@ describe("PresentationRpcInterface tests", () => {
     const key1: InstanceKey = { id: Id64.fromString("0x1"), className: "BisCore:Subject" };
     const key2: InstanceKey = { id: Id64.fromString("0x17"), className: "BisCore:SpatialCategory" };
     const keys = new KeySet([key1, key2]);
+    // eslint-disable-next-line @typescript-eslint/no-deprecated
     const contentAndSize = await Presentation.presentation.getContentAndSize({
       imodel,
       rulesetOrId: createContentRuleset(),
@@ -113,6 +106,7 @@ describe("PresentationRpcInterface tests", () => {
     const key1: InstanceKey = { id: Id64.fromString("0x1"), className: "BisCore:Subject" };
     const key2: InstanceKey = { id: Id64.fromString("0x17"), className: "BisCore:SpatialCategory" };
     const keys = new KeySet([key1, key2]);
+    // eslint-disable-next-line @typescript-eslint/no-deprecated
     const content = await Presentation.presentation.getContent({
       imodel,
       rulesetOrId: createContentRuleset(),
@@ -154,7 +148,7 @@ describe("PresentationRpcInterface tests", () => {
   it("getDisplayLabelDefinitions works as expected", async () => {
     const key1: InstanceKey = { id: Id64.fromString("0x1"), className: "BisCore:Subject" };
     const key2: InstanceKey = { id: Id64.fromString("0x17"), className: "BisCore:SpatialCategory" };
-    const displayLabels = await Presentation.presentation.getDisplayLabelDefinitions({
+    const displayLabels = await Presentation.presentation.getDisplayLabelDefinitionsIterator({
       imodel,
       keys: [key1, key2],
     });
@@ -162,15 +156,16 @@ describe("PresentationRpcInterface tests", () => {
   });
 
   it("getSelectionScopes works as expected", async () => {
+    // eslint-disable-next-line @typescript-eslint/no-deprecated
     const scopeIds = await Presentation.selection.scopes.getSelectionScopes(imodel);
     expect(scopeIds).to.not.be.undefined;
   });
 
   it("computeSelection works as expected", async () => {
+    // eslint-disable-next-line @typescript-eslint/no-deprecated
     const computedSelections = await Presentation.selection.scopes.computeSelection(imodel, ["0x1"], "element");
     expect(computedSelections).to.not.be.undefined;
   });
-
 });
 
 const createNodesRuleset = (): Ruleset => ({
@@ -184,8 +179,8 @@ const createNodesRuleset = (): Ruleset => ({
           classes: {
             schemaName: "BisCore",
             classNames: ["Model"],
+            arePolymorphic: true,
           },
-          arePolymorphic: true,
         },
       ],
     },

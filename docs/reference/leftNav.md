@@ -7,22 +7,28 @@ packageClassification:
       "packages":
         [
           "core-frontend",
-          "core-common",
           "core-backend",
+          "core-common",
+          "core-bentley",
+          "core-geometry",
           "core-electron",
           "core-markup",
           "core-mobile",
           "core-i18n",
           "core-quantity",
-          "core-bentley",
-          "ecschema-metadata",
           "ecschema-editing",
-          "core-geometry",
+          "ecschema-locaters",
+          "ecschema-metadata",
           "frontend-devtools",
           "hypermodeling-frontend",
           "webgl-compatibility",
           "map-layers-formats",
         ],
+    },
+    {
+      "order": "2",
+      "header": "Editor Packages",
+      "packages": ["editor-backend", "editor-common", "editor-frontend"],
     },
     {
       "order": "3",
@@ -33,7 +39,6 @@ packageClassification:
           "core-react",
           "components-react",
           "imodel-components-react",
-          "appui-layout-react",
           "appui-react",
         ],
     },
@@ -64,14 +69,21 @@ packageClassification:
       "header": "Transformer",
       "packages": ["imodel-transformer"],
     },
-    { 
-      "order": "7", 
-      "header": "Auth", 
-      "packages": ["browser-authorization"] 
-      },
+    {
+      "order": "7",
+      "header": "Connector Framework",
+      "packages": ["connector-framework"],
+    },
+    {
+      "order": "8",
+      "header": "Authorization",
+      "packages":
+        [
+          "browser-authorization",
+          "electron-authorization",
+          "node-cli-authorization",
+          "service-authorization",
+        ],
+    },
   ]
 ---
-
-<div>
-    {{{referenceLeftNav this}}}
-</div>

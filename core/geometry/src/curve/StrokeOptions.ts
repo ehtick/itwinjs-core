@@ -10,42 +10,42 @@
 import { Geometry } from "../Geometry";
 import { Angle } from "../geometry3d/Angle";
 
-/* eslint-disable @typescript-eslint/naming-convention, no-empty */
-
 /**
  * Tolerance blob for various stroking methods.
  *
  * * Across many applications, the critical concepts are:   chordTol, angleTol, maxEdgeLength
- * * Chord error is an distance measured from a curve or facet to its approximating stroke or facet.
- * * angle is the angle between two contiguous strokes or across a facet edge.
- * * maxEdgeLength is the length of a stroke or a edge of a facet.
- *
- * It is rare for all three to be active at once:
+ *   * Chord error is an distance measured from a curve or facet to its approximating stroke or facet.
+ *   * angle is the angle between two contiguous strokes or across a facet edge.
+ *   * maxEdgeLength is the length of a stroke or a edge of a facet.
+ * * It is rare for all three to be active at once.
  * * Nearly all stroke and facet use cases will apply an angle tolerance.
- * * * For curves, 15 degrees is typical
- * * * For facets, 22.5 degrees is typical.
- * * * Halving the angle tolerance will (roughly) make curves get twice as many strokes, and surfaces get 4 times as many facets.
- * * * The angle tolerance has the useful property that its effect is independent of scale of that data.  If data is suddenly scaled into millimeters rather than meters, the facet counts remain the same.
+ *   * For curves, 15 degrees is typical
+ *   * For facets, 22.5 degrees is typical.
+ *   * Halving the angle tolerance will (roughly) make curves get twice as many strokes, and surfaces get 4 times as many facets.
+ *   * The angle tolerance has the useful property that its effect is independent of scale of that data.  If data is suddenly scaled into millimeters rather than meters, the facet counts remain the same.
  * * When creating output for devices such as 3D printing will want a chord tolerance.
  * * For graphics display, use an angle tolerance of around 15 degrees and an chord tolerance which is the size of several pixels.
  * * Analysis meshes (e.g. Finite Elements) commonly need to apply maxEdgeLength.
- * * * Using maxEdgeLength for graphics probably produces too many facets.   For example, it causes long cylinders to get many nearly-square facets instead of the small number of long quads usually used for graphics.
+ *   * Using maxEdgeLength for graphics probably produces too many facets.   For example, it causes long cylinders to get many nearly-square facets instead of the small number of long quads usually used for graphics.
  * * Facet tolerances are, as the Pirates' Code, guidelines, not absolute rules.   Facet and stroke code may ignore tolerances in awkward situations.
  * * If multiple tolerances are in effect, the actual count will usually be based on the one that demands the most strokes or facets, unless it is so high that it violates some upper limit on the number of facets on an arc or a section of a curve.
  * @public
  */
 export class StrokeOptions {
-  /** Distance from stroke to actual geometry */
+  /** Distance from stroke to actual geometry. */
   public chordTol?: number;
-  /** Turning angle between strokes. */
+  /** Turning angle between strokes. Larger value leads to fewer strokes. */
   public angleTol?: Angle;
   /** Maximum length of a single stroke. */
   public maxEdgeLength?: number;
-  /** Caller expects convex facets.  */
+  /**
+   * Caller expects convex facets.
+   * @deprecated in 4.x - never used. See [[shouldTriangulate]] and [[maximizeConvexFacets]].
+   */
   public needConvexFacets?: boolean;
-  /** Minimum strokes on a primitive */
+  /** Minimum strokes on a primitive. */
   public minStrokesPerPrimitive?: number;
-  /** Whether or not to triangulate each added facet */
+  /** Whether or not to triangulate each added facet. */
   public shouldTriangulate: boolean = false;
   private _needNormals?: boolean;
   private _needTwoSided?: boolean;
@@ -61,12 +61,16 @@ export class StrokeOptions {
   public get needNormals(): boolean {
     return this._needNormals !== undefined ? this._needNormals : false;
   }
-  public set needNormals(value: boolean) { this._needNormals = value; }
+  public set needNormals(value: boolean) {
+    this._needNormals = value;
+  }
   /** Whether twoSided is requested. */
   public get needTwoSided(): boolean {
     return this._needTwoSided !== undefined ? this._needTwoSided : false;
   }
-  public set needTwoSided(value: boolean) { this._needTwoSided = value; }
+  public set needTwoSided(value: boolean) {
+    this._needTwoSided = value;
+  }
   /** Optional color request flag */
   public needColors?: boolean;
   /** Default number of strokes for a circle. */
@@ -83,13 +87,25 @@ export class StrokeOptions {
   public get hasMaxEdgeLength(): boolean {
     return this.maxEdgeLength !== undefined && this.maxEdgeLength > 0.0;
   }
+  private _maximizeConvexFacets?: boolean;
+  /**
+   * Whether to post-process a planar triangulation by removing edges to maximize the size of convex facets.
+   * * Setting this to true also sets [[shouldTriangulate]] to true.
+   */
+  public get maximizeConvexFacets(): boolean {
+    return this._maximizeConvexFacets ?? false;
+  }
+  public set maximizeConvexFacets(value: boolean) {
+    this._maximizeConvexFacets = value;
+    if (value)
+      this.shouldTriangulate = value;
+  }
   /** Return a deep clone  */
   public clone(): StrokeOptions {
     const options = new StrokeOptions();
     options.chordTol = this.chordTol;
     options.angleTol = this.angleTol?.clone();
     options.maxEdgeLength = this.maxEdgeLength;
-    options.needConvexFacets = this.needConvexFacets;
     options.minStrokesPerPrimitive = this.minStrokesPerPrimitive;
     options.shouldTriangulate = this.shouldTriangulate;
     options._needNormals = this._needNormals;
@@ -97,6 +113,7 @@ export class StrokeOptions {
     options._needParams = this._needParams;
     options.needColors = this.needColors;
     options.defaultCircleStrokes = this.defaultCircleStrokes;
+    options._maximizeConvexFacets = this._maximizeConvexFacets;
     return options;
   }
   /** Return stroke count which is the larger of the minCount or count needed for edge length condition. */
@@ -120,7 +137,7 @@ export class StrokeOptions {
    * from the options.
    */
   public static applyAngleTol(
-    options: StrokeOptions | undefined, minCount: number, sweepRadians: number, defaultStepRadians?: number
+    options: StrokeOptions | undefined, minCount: number, sweepRadians: number, defaultStepRadians?: number,
   ): number {
     sweepRadians = Math.abs(sweepRadians);
     let stepRadians = defaultStepRadians ? defaultStepRadians : Math.PI / 8.0;
@@ -137,7 +154,7 @@ export class StrokeOptions {
    * @param edgeLength
    */
   public static applyMaxEdgeLength(
-    options: StrokeOptions | undefined, minCount: number, edgeLength: number
+    options: StrokeOptions | undefined, minCount: number, edgeLength: number,
   ): number {
     if (edgeLength < 0)
       edgeLength = - edgeLength;

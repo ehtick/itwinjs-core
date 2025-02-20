@@ -4,8 +4,6 @@
 
 ```ts
 
-/// <reference types="node" />
-
 import type { SpanAttributes } from '@opentelemetry/api';
 import type { SpanContext } from '@opentelemetry/api';
 import type { SpanOptions } from '@opentelemetry/api';
@@ -146,11 +144,6 @@ export enum BriefcaseStatus {
 
 // @public
 export class ByteStream {
-    // @deprecated
-    constructor(buffer: ArrayBuffer | SharedArrayBuffer, subView?: {
-        byteOffset: number;
-        byteLength: number;
-    });
     advance(numBytes: number): boolean;
     get arrayBuffer(): ArrayBuffer | SharedArrayBuffer;
     get curPos(): number;
@@ -164,23 +157,7 @@ export class ByteStream {
     get isPastTheEnd(): boolean;
     get length(): number;
     nextBytes(numBytes: number): Uint8Array;
-    // @deprecated (undocumented)
-    get nextFloat32(): number;
-    // @deprecated (undocumented)
-    get nextFloat64(): number;
-    // @deprecated (undocumented)
-    get nextId64(): Id64String;
-    // @deprecated (undocumented)
-    get nextInt32(): number;
-    // @deprecated (undocumented)
-    get nextUint16(): number;
-    // @deprecated (undocumented)
-    get nextUint24(): number;
-    // @deprecated (undocumented)
-    get nextUint32(): number;
     nextUint32s(numUint32s: number): Uint32Array;
-    // @deprecated (undocumented)
-    get nextUint8(): number;
     readBytes(readPos: number, numBytes: number): Uint8Array;
     readFloat32(): number;
     readFloat64(): number;
@@ -276,6 +253,35 @@ export type ComputePriorityFunction<T> = (value: T) => number;
 
 // @public
 export type Constructor<T> = new (...args: any[]) => T;
+
+// @internal (undocumented)
+export enum DbChangeStage {
+    // (undocumented)
+    New = 1,
+    // (undocumented)
+    Old = 0
+}
+
+// @internal
+export enum DbConflictCause {
+    // (undocumented)
+    Conflict = 3,
+    // (undocumented)
+    Constraint = 4,
+    // (undocumented)
+    Data = 1,
+    // (undocumented)
+    ForeignKey = 5,
+    // (undocumented)
+    NotFound = 2
+}
+
+// @internal (undocumented)
+export enum DbConflictResolution {
+    Abort = 2,
+    Replace = 1,
+    Skip = 0
+}
 
 // @public
 export enum DbOpcode {
@@ -424,6 +430,20 @@ export enum DbResult {
     BE_SQLITE_TOOBIG = 18
 }
 
+// @internal (undocumented)
+export enum DbValueType {
+    // (undocumented)
+    BlobVal = 4,
+    // (undocumented)
+    FloatVal = 2,
+    // (undocumented)
+    IntegerVal = 1,
+    // (undocumented)
+    NullVal = 5,
+    // (undocumented)
+    TextVal = 3
+}
+
 // @public
 export class Dictionary<K, V> implements Iterable<DictionaryEntry<K, V>> {
     [Symbol.iterator](): Iterator<DictionaryEntry<K, V>>;
@@ -481,9 +501,15 @@ export class DisposableList implements IDisposable {
 }
 
 // @public
+export function dispose(disposable?: Disposable): undefined;
+
+// @public @deprecated (undocumented)
 export function dispose(disposable?: IDisposable): undefined;
 
 // @public
+export function disposeArray(list?: Disposable[]): undefined;
+
+// @public @deprecated (undocumented)
 export function disposeArray(list?: IDisposable[]): undefined;
 
 // @public
@@ -545,7 +571,7 @@ export enum GeoServiceStatus {
     OutOfMathematicalDomain = 147458,
     // (undocumented)
     OutOfUsefulRange = 147457,
-    // (undocumented)
+    // @deprecated (undocumented)
     Pending = 147462,
     // (undocumented)
     Success = 0,
@@ -628,6 +654,7 @@ export namespace Id64 {
         delete(low: number, high: number): void;
         deleteId(id: Id64String): void;
         deleteIds(ids: Id64Arg): void;
+        equals(other: Uint32Set): boolean;
         forEach(func: (lo: number, hi: number) => void): void;
         has(low: number, high: number): boolean;
         hasId(id: Id64String): boolean;
@@ -653,7 +680,7 @@ export type Id64Set = Set<Id64String>;
 // @public
 export type Id64String = string;
 
-// @public
+// @public @deprecated
 export interface IDisposable {
     dispose(): void;
 }
@@ -784,6 +811,8 @@ export enum IModelHubStatus {
 
 // @public
 export enum IModelStatus {
+    // (undocumented)
+    Aborted = 65608,
     // (undocumented)
     AlreadyLoaded = 65537,
     // (undocumented)
@@ -965,15 +994,18 @@ export class IndexMap<T> {
 }
 
 // @public
+export function isDisposable(obj: unknown): obj is Disposable;
+
+// @public @deprecated
 export function isIDisposable(obj: unknown): obj is IDisposable;
 
 // @public
 export function isInstanceOf<T>(obj: any, constructor: Constructor<T>): boolean;
 
-// @internal
+// @public
 export function isProperSubclassOf<SuperClass extends new (..._: any[]) => any, NonSubClass extends new (..._: any[]) => any, SubClass extends new (..._: any[]) => InstanceType<SuperClass>>(subclass: SubClass | NonSubClass, superclass: SuperClass): subclass is SubClass;
 
-// @internal
+// @public
 export function isSubclassOf<SuperClass extends new (..._: any[]) => any, NonSubClass extends new (..._: any[]) => any, SubClass extends new (..._: any[]) => InstanceType<SuperClass>>(subclass: SuperClass | SubClass | NonSubClass, superclass: SuperClass): subclass is SubClass | SuperClass;
 
 // @public (undocumented)
@@ -1124,7 +1156,7 @@ export namespace JsonUtils {
     export function asString(json: any, defaultVal?: string): string;
     export function isEmptyObject(json: any): boolean;
     export function isEmptyObjectOrUndefined(json: any): boolean;
-    export function isNonEmptyObject(value: any): value is Object;
+    export function isNonEmptyObject(value: any): value is object;
     export function setOrRemoveBoolean(json: any, key: string, val: boolean, defaultVal: boolean): void;
     export function setOrRemoveNumber(json: any, key: string, val: number, defaultVal: number): void;
     export function toObject(val: any): any;
@@ -1134,10 +1166,20 @@ export namespace JsonUtils {
 export type Listener = (...arg: any[]) => void;
 
 // @public
+export type ListenerType<TEvent extends {
+    addListener(listener: Listener): () => void;
+}> = TEvent extends {
+    addListener(listener: infer TListener): () => void;
+} ? TListener : never;
+
+// @public
 export type LogFunction = (category: string, message: string, metaData: LoggingMetaData) => void;
 
 // @public
 export class Logger {
+    static get categoryFilter(): Readonly<{
+        [categoryName: string]: LogLevel | undefined;
+    }>;
     static configureLevels(cfg: LoggerLevelsConfig): void;
     static getLevel(category: string): LogLevel | undefined;
     static getMetaData(metaData?: LoggingMetaData): object;
@@ -1152,19 +1194,19 @@ export class Logger {
     static logInfo(category: string, message: string, metaData?: LoggingMetaData): void;
     // (undocumented)
     protected static _logInfo: LogFunction | undefined;
-    // @internal (undocumented)
-    static logLevelChangedFn?: VoidFunction;
     static logTrace(category: string, message: string, metaData?: LoggingMetaData): void;
     // (undocumented)
     protected static _logTrace: LogFunction | undefined;
     static logWarning(category: string, message: string, metaData?: LoggingMetaData): void;
     // (undocumented)
     protected static _logWarning: LogFunction | undefined;
+    static get minLevel(): LogLevel | undefined;
+    static get onLogLevelChanged(): BeEvent<() => void>;
     static parseLogLevel(str: string): LogLevel;
     static setLevel(category: string, minLevel: LogLevel): void;
     static setLevelDefault(minLevel: LogLevel): void;
-    // @internal
-    static staticMetaData: Map<string, LoggingMetaData>;
+    // @beta
+    static get staticMetaData(): StaticLoggerMetaData;
     static stringifyMetaData(metaData?: LoggingMetaData): string;
     static turnOffCategories(): void;
     static turnOffLevelDefault(): void;
@@ -1245,13 +1287,16 @@ export class LRUMap<K, V> extends LRUCache<K, V> {
 export type MarkRequired<T, K extends keyof T> = Pick<Required<T>, K> & Omit<T, K>;
 
 // @public
+export type MaybePromise<T> = T | Promise<T>;
+
+// @public
 export type Mutable<T> = {
     -readonly [K in keyof T]: T[K];
 };
 
 // @public
 export class MutableCompressedId64Set implements OrderedId64Iterable {
-    [Symbol.iterator](): Iterator<string, any, undefined>;
+    [Symbol.iterator](): Iterator<string, any, any>;
     constructor(ids?: CompressedId64Set);
     add(id: Id64String): void;
     clear(): void;
@@ -1270,15 +1315,13 @@ export type NonFunctionPropertiesOf<T> = Pick<T, NonFunctionPropertyNamesOf<T>>;
 
 // @public
 export type NonFunctionPropertyNamesOf<T> = {
-    [K in keyof T]: T[K] extends Function ? never : K;
+    [K in keyof T]: T[K] extends (...args: any) => any ? never : K;
 }[keyof T];
 
 // @public
 export class ObservableSet<T> extends Set<T> {
     constructor(elements?: Iterable<T> | undefined);
-    // @internal (undocumented)
     clear(): void;
-    // @internal (undocumented)
     delete(item: T): boolean;
     readonly onAdded: BeEvent<(item: T) => void>;
     readonly onCleared: BeEvent<() => void>;
@@ -1286,7 +1329,7 @@ export class ObservableSet<T> extends Set<T> {
 }
 
 // @public
-export function omit<T extends {}, K extends readonly (keyof T)[]>(t: T, keys: K): Omit<T, K[number]>;
+export function omit<T extends object, K extends readonly (keyof T)[]>(t: T, keys: K): Omit<T, K[number]>;
 
 // @beta
 export class OneAtATimeAction<T> {
@@ -1351,9 +1394,11 @@ export class OrderedSet<T> extends ReadonlyOrderedSet<T> {
 export function partitionArray<T>(array: T[], criterion: (element: T) => boolean): number;
 
 // @public
-export class PerfLogger implements IDisposable {
-    constructor(operation: string, metaData?: LoggingMetaData);
+export class PerfLogger implements Disposable {
     // (undocumented)
+    [Symbol.dispose](): void;
+    constructor(operation: string, metaData?: LoggingMetaData);
+    // @deprecated (undocumented)
     dispose(): void;
 }
 
@@ -1364,7 +1409,7 @@ export type PickAsyncMethods<T> = {
 
 // @public
 export type PickMethods<T> = {
-    [P in keyof T]: T[P] extends Function ? T[P] : never;
+    [P in keyof T]: T[P] extends (...args: any) => any ? T[P] : never;
 };
 
 // @public
@@ -1472,6 +1517,9 @@ export enum RealityDataStatus {
     Success = 0
 }
 
+// @public
+export type RemapTransientLocalId = (sourceLocalId: number) => number;
+
 // @internal
 export enum RepositoryStatus {
     CannotCreateChangeSet = 86023,
@@ -1520,7 +1568,7 @@ export class SortedArray<T> extends ReadonlySortedArray<T> {
     slice(start?: number, end?: number): SortedArray<T>;
 }
 
-// @public
+// @public @deprecated
 export enum SpanKind {
     // (undocumented)
     CLIENT = 2,
@@ -1534,6 +1582,12 @@ export enum SpanKind {
     SERVER = 1
 }
 
+// @beta
+export interface StaticLoggerMetaData {
+    delete(key: string): void;
+    set(key: string, metadata: LoggingMetaData): void;
+}
+
 // @alpha
 export abstract class StatusCategory {
     // (undocumented)
@@ -1541,7 +1595,7 @@ export abstract class StatusCategory {
     // (undocumented)
     abstract error: boolean;
     // (undocumented)
-    static for(error: BentleyError): StatusCategory;
+    static for(error: Error): StatusCategory;
     // (undocumented)
     static handlers: Set<StatusCategoryHandler>;
     // (undocumented)
@@ -1549,15 +1603,7 @@ export abstract class StatusCategory {
 }
 
 // @alpha (undocumented)
-export type StatusCategoryHandler = (error: BentleyError) => StatusCategory | undefined;
-
-// @internal
-export interface StatusCodeWithMessage<ErrorCodeType> {
-    // (undocumented)
-    message: string;
-    // (undocumented)
-    status: ErrorCodeType;
-}
+export type StatusCategoryHandler = (error: Error) => StatusCategory | undefined;
 
 // @public
 export class StopWatch {
@@ -1579,19 +1625,31 @@ export abstract class SuccessCategory extends StatusCategory {
     error: boolean;
 }
 
-// @public
+// @public @deprecated
 export class Tracing {
     static enableOpenTelemetry(tracer: Tracer, api: typeof Tracing._openTelemetry): void;
+    static recordException(e: Error): void;
     static setAttributes(attributes: SpanAttributes): void;
     static withSpan<T>(name: string, fn: () => Promise<T>, options?: SpanOptions, parentContext?: SpanContext): Promise<T>;
 }
 
 // @public
 export class TransientIdSequence {
+    constructor(initialLocalId?: number);
+    get currentLocalId(): number;
+    fork(): TransientIdSequenceProps;
+    static fromJSON(props: TransientIdSequenceProps): TransientIdSequence;
     getNext(): Id64String;
-    // @deprecated
-    get next(): Id64String;
+    readonly initialLocalId: number;
+    merge(source: TransientIdSequenceProps): (sourceLocalId: number) => number;
     peekNext(): Id64String;
+    toJSON(): TransientIdSequenceProps;
+}
+
+// @public
+export interface TransientIdSequenceProps {
+    currentLocalId: number;
+    initialLocalId: number;
 }
 
 // @public
@@ -1679,29 +1737,21 @@ export class UnexpectedErrors {
     static setHandler(handler: OnUnexpectedError): OnUnexpectedError;
 }
 
-// @public
+// @public @deprecated
 export function using<T extends IDisposable, TResult>(resources: T | T[], func: (...r: T[]) => TResult): TResult;
 
 // @public
 export function utf8ToString(utf8: Uint8Array): string | undefined;
 
-// @internal
-export function utf8ToStringPolyfill(utf8: Uint8Array): string | undefined;
-
-// @internal
+// @public
 export class YieldManager {
     constructor(options?: YieldManagerOptions);
-    // (undocumented)
-    protected actualYield(): Promise<void>;
-    // (undocumented)
     allowYield(): Promise<void>;
-    // (undocumented)
-    options: Readonly<Required<YieldManagerOptions>>;
+    readonly options: Readonly<Required<YieldManagerOptions>>;
 }
 
-// @internal
+// @public
 export interface YieldManagerOptions {
-    // (undocumented)
     iterationsBeforeYield?: number;
 }
 

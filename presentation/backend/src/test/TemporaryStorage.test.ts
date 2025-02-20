@@ -1,55 +1,47 @@
 /*---------------------------------------------------------------------------------------------
-* Copyright (c) Bentley Systems, Incorporated. All rights reserved.
-* See LICENSE.md in the project root for license terms and full copyright notice.
-*--------------------------------------------------------------------------------------------*/
+ * Copyright (c) Bentley Systems, Incorporated. All rights reserved.
+ * See LICENSE.md in the project root for license terms and full copyright notice.
+ *--------------------------------------------------------------------------------------------*/
 import { expect } from "chai";
-import * as lolex from "lolex";
+import * as fakeTimers from "@sinonjs/fake-timers";
 import * as sinon from "sinon";
-import { using } from "@itwin/core-bentley";
 import { PresentationError } from "@itwin/presentation-common";
-import { FactoryBasedTemporaryStorage, TemporaryStorage } from "../presentation-backend/TemporaryStorage";
+import { FactoryBasedTemporaryStorage, FactoryBasedTemporaryStorageProps, TemporaryStorage } from "../presentation-backend/TemporaryStorage";
 
 describe("TemporaryStorage", () => {
-
-  let clock: lolex.Clock;
+  let clock: fakeTimers.InstalledClock;
   beforeEach(() => {
-    clock = lolex.install();
+    clock = fakeTimers.install();
   });
   afterEach(() => {
     clock.uninstall();
   });
 
   describe("constructor", () => {
-
     it("doesn't set up timer callback when interval is not set", () => {
       const s = sinon.spy(clock, "setInterval");
-      using(new TemporaryStorage<string>({}), (_r) => {
-        expect(s).to.not.be.called;
-      });
+      using _r = new TemporaryStorage<string>({});
+      expect(s).to.not.be.called;
     });
 
     it("doesn't set up timer callback when interval is set to 0", () => {
       const s = sinon.spy(clock, "setInterval");
-      using(new TemporaryStorage<string>({ cleanupInterval: 0 }), (_r) => {
-        expect(s).to.not.be.called;
-      });
+      using _r = new TemporaryStorage<string>({ cleanupInterval: 0 });
+      expect(s).to.not.be.called;
     });
 
     it("sets up timer callback when interval is set to more than 0", () => {
       const s = sinon.spy(clock, "setInterval");
-      using(new TemporaryStorage<string>({ cleanupInterval: 1 }), (_r) => {
-        expect(s).to.be.calledOnce;
-      });
+      using _r = new TemporaryStorage<string>({ cleanupInterval: 1 });
+      expect(s).to.be.calledOnce;
     });
-
   });
 
   describe("dispose", () => {
-
     it("stops automatic cleanup when cleanup interval is set", () => {
       const s = sinon.spy(clock, "clearInterval");
       const storage = new TemporaryStorage<string>({ cleanupInterval: 1 });
-      storage.dispose();
+      storage[Symbol.dispose]();
       expect(s).to.be.calledOnce;
     });
 
@@ -62,7 +54,7 @@ describe("TemporaryStorage", () => {
       const values = ["a", "b", "c"];
       values.forEach((v) => storage.addValue(v, v));
 
-      storage.dispose();
+      storage[Symbol.dispose]();
 
       expect(cleanupHandler.callCount).to.eq(values.length);
       expect(cleanupHandler.getCall(0)).to.be.calledWithExactly("a", "a", "dispose");
@@ -79,21 +71,19 @@ describe("TemporaryStorage", () => {
       const values = ["a", "b", "c"];
       values.forEach((v) => storage.addValue(v, v));
 
-      storage.dispose();
+      storage[Symbol.dispose]();
 
       expect(spy).to.be.calledOnce;
     });
-
   });
 
   describe("addValue", () => {
-
     let storage: TemporaryStorage<string>;
     beforeEach(() => {
       storage = new TemporaryStorage<string>({});
     });
     afterEach(() => {
-      storage.dispose();
+      storage[Symbol.dispose]();
     });
 
     it("adds a new value", () => {
@@ -106,11 +96,9 @@ describe("TemporaryStorage", () => {
       expect(() => storage.addValue("a", "X")).to.throw(PresentationError);
       expect(storage.values).to.deep.eq(["A"]);
     });
-
   });
 
   describe("getValue", () => {
-
     it("returns undefined if value does not exist", () => {
       const storage = new TemporaryStorage<string>({});
       const value = storage.getValue("a");
@@ -123,11 +111,9 @@ describe("TemporaryStorage", () => {
       const value = storage.getValue("a");
       expect(value).to.eq("A");
     });
-
   });
 
   describe("deleteValue", () => {
-
     it("calls cleanup handler", () => {
       const cleanupHandler = sinon.spy();
       const storage = new TemporaryStorage<string>({
@@ -137,11 +123,9 @@ describe("TemporaryStorage", () => {
       storage.deleteValue("a");
       expect(cleanupHandler).to.be.calledOnceWithExactly("a", "A", "request");
     });
-
   });
 
   describe("disposeOutdatedValues", () => {
-
     it("doesn't dispose value if neither `unusedValueLifetime` nor `maxValueLifetime` are specified", () => {
       const storage = new TemporaryStorage<string>({});
       storage.addValue("a", "A");
@@ -151,7 +135,6 @@ describe("TemporaryStorage", () => {
     });
 
     describe("disposing based on `unusedValueLifetime`", () => {
-
       it("disposes value immediately if `unusedValueLifetime` is 0", () => {
         const storage = new TemporaryStorage<string>({
           unusedValueLifetime: 0,
@@ -211,11 +194,9 @@ describe("TemporaryStorage", () => {
         storage.disposeOutdatedValues();
         expect(storage.values).to.deep.eq(["B"]);
       });
-
     });
 
     describe("disposing based on `maxValueLifetime`", () => {
-
       it("disposes value immediately if `maxValueLifetime` is 0", () => {
         const storage = new TemporaryStorage<string>({
           maxValueLifetime: 0,
@@ -255,7 +236,6 @@ describe("TemporaryStorage", () => {
         expect(storage.values.length).to.eq(1);
         expect(storage.values[0]).to.eq("B");
       });
-
     });
 
     it("calls cleanup handler for disposed values", () => {
@@ -288,15 +268,11 @@ describe("TemporaryStorage", () => {
       expect(spy.firstCall).to.be.calledWith("a");
       expect(spy.secondCall).to.be.calledWith("b");
     });
-
   });
-
 });
 
 describe("FactoryBasedTemporaryStorage", () => {
-
   describe("getValue", () => {
-
     it("creates value if not exists", () => {
       const factory = sinon.fake((id: string) => id);
       const storage = new FactoryBasedTemporaryStorage<string>({
@@ -305,7 +281,10 @@ describe("FactoryBasedTemporaryStorage", () => {
 
       const value = storage.getValue("a");
       expect(value).to.eq("a");
-      expect(factory).to.be.calledOnceWith("a", sinon.match((arg) => typeof arg === "function"));
+      expect(factory).to.be.calledOnceWith(
+        "a",
+        sinon.match((arg) => typeof arg === "function"),
+      );
     });
 
     it("doesn't create value if already exists", () => {
@@ -316,7 +295,10 @@ describe("FactoryBasedTemporaryStorage", () => {
 
       const value1 = storage.getValue("a");
       expect(value1).to.eq("a");
-      expect(factory).to.be.calledOnceWith("a", sinon.match((arg) => typeof arg === "function"));
+      expect(factory).to.be.calledOnceWith(
+        "a",
+        sinon.match((arg) => typeof arg === "function"),
+      );
       factory.resetHistory();
 
       const value2 = storage.getValue("a");
@@ -325,7 +307,7 @@ describe("FactoryBasedTemporaryStorage", () => {
     });
 
     it("provides a function to update last used timestamp when calling factory", () => {
-      const factory = sinon.fake((id: string) => id);
+      const factory = sinon.fake<Parameters<FactoryBasedTemporaryStorageProps<string>["factory"]>, string>((id: string) => id);
       const storage = new FactoryBasedTemporaryStorage<string>({
         factory,
       });
@@ -337,7 +319,5 @@ describe("FactoryBasedTemporaryStorage", () => {
       lastUsedTimestampUpdateHandler();
       expect(updateSpy).to.be.calledOnceWith("a");
     });
-
   });
-
 });

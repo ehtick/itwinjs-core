@@ -8,13 +8,12 @@
  */
 
 import { Geometry } from "../Geometry";
-import { MultiLineStringDataVariant } from "../topology/Triangulation";
 import { GrowableXYZArray } from "./GrowableXYZArray";
 import { IndexedXYCollection } from "./IndexedXYCollection";
+import { MultiLineStringDataVariant } from "./IndexedXYZCollection";
 import { Matrix3d } from "./Matrix3d";
 import { Point2d, Vector2d } from "./Point2dVector2d";
 import { Point3d } from "./Point3dVector3d";
-import { PointStreamGrowableXYZArrayCollector, VariantPointDataStream } from "./PointStreaming";
 import { Range2d } from "./Range";
 import { Transform } from "./Transform";
 import { XAndY, XYAndZ } from "./XYZProps";
@@ -58,13 +57,13 @@ export class GrowableXYArray extends IndexedXYCollection {
    * @param destOffset copy to instance array starting at this point index; zero if undefined
    * @return count and offset of points copied
    */
-  protected copyData(source: Float64Array | number[], sourceCount?: number, destOffset?: number): {count: number, offset: number} {
+  protected copyData(source: Float64Array | number[], sourceCount?: number, destOffset?: number): { count: number, offset: number } {
     // validate inputs and convert from points to entries
     let myOffset = (undefined !== destOffset) ? destOffset * 2 : 0;
     if (myOffset < 0)
       myOffset = 0;
     if (myOffset >= this._data.length)
-      return {count: 0, offset: 0};
+      return { count: 0, offset: 0 };
     let myCount = (undefined !== sourceCount) ? sourceCount * 2 : source.length;
     if (myCount > 0) {
       if (myCount > source.length)
@@ -75,14 +74,14 @@ export class GrowableXYArray extends IndexedXYCollection {
         myCount -= myCount % 2;
     }
     if (myCount <= 0)
-      return {count: 0, offset: 0};
+      return { count: 0, offset: 0 };
     if (myCount === source.length)
       this._data.set(source, myOffset);
     else if (source instanceof Float64Array)
       this._data.set(source.subarray(0, myCount), myOffset);
     else
       this._data.set(source.slice(0, myCount), myOffset);
-    return {count: myCount / 2, offset: myOffset / 2};
+    return { count: myCount / 2, offset: myOffset / 2 };
   }
 
   /** The number of points in use. When the length is increased, the array is padded with zeroes. */
@@ -113,7 +112,7 @@ export class GrowableXYArray extends IndexedXYCollection {
    * @param pointCount new number of active points in array
    * @param padWithZero when increasing point count, whether to zero out new points (default false)
    */
-   public resize(pointCount: number, padWithZero?: boolean) {
+  public resize(pointCount: number, padWithZero?: boolean) {
     if (pointCount >= 0 && pointCount < this._xyInUse)
       this._xyInUse = pointCount;
     else if (pointCount > this._xyInUse) {
@@ -134,26 +133,33 @@ export class GrowableXYArray extends IndexedXYCollection {
     return newPoints;
   }
   /** Create an array populated from
-   * * An array of Point2d
-   * * An array of Point3d (hidden as XAndY)
-   * * An array of objects with keyed values, et `{x:1, y:1}`
-   * * A `GrowableXYZArray`
+   * Valid inputs are:
+   * * Point2d
+   * * Point3d
+   * * An array of 2 doubles
+   * * An array of 3 doubles
+   * * A GrowableXYZArray
+   * * A GrowableXYArray
+   * * Any json object satisfying Point3d.isXAndY
+   * * A Float64Array of doubles, interpreted as xyxy
+   * * An array of any of the above
    */
-  public static create(data: XAndY[] | GrowableXYZArray): GrowableXYArray {
-    const newPoints = new GrowableXYArray(data.length);
-    if (data instanceof GrowableXYZArray) {
-      newPoints.pushAllXYAndZ(data);
+  public static create(data: any, result?: GrowableXYArray): GrowableXYArray {
+    if (result) {
+      result.clear();
     } else {
-      newPoints.pushAll(data);
+      const pointCount = typeof data[0] === "number" ? data.length / 2 : data.length;
+      result = new GrowableXYArray(pointCount);
     }
-    return newPoints;
+    result.pushFrom(data);
+    return result;
   }
 
-  /** Restructure MultiLineStringDataVariant as array of GrowableXYZArray */
+  /** Restructure MultiLineStringDataVariant as array of GrowableXYZArray
+   * @deprecated in 4.x. Moved to GrowableXYZArray class.
+   */
   public static createArrayOfGrowableXYZArray(data: MultiLineStringDataVariant): GrowableXYZArray[] | undefined {
-    const collector = new PointStreamGrowableXYZArrayCollector();
-    VariantPointDataStream.streamXYZ(data, collector);
-    return collector.claimArrayOfGrowableXYZArray();
+    return GrowableXYZArray.createArrayOfGrowableXYZArray(data);
   }
   /** push a point to the end of the array */
   public push(toPush: XAndY) {
@@ -163,7 +169,8 @@ export class GrowableXYArray extends IndexedXYCollection {
   /** push all points of an array */
   public pushAll(points: XAndY[]) {
     this.ensureCapacity(this._xyInUse + points.length, false);
-    for (const p of points) this.push(p);
+    for (const p of points)
+      this.push(p);
   }
   /** push all points of an array */
   public pushAllXYAndZ(points: XYAndZ[] | GrowableXYZArray) {
@@ -177,7 +184,44 @@ export class GrowableXYArray extends IndexedXYCollection {
       for (const p of points) this.pushXY(p.x, p.y);
     }
   }
-
+  /** Push copies of points from variant sources.
+   * Valid inputs are:
+   * * Point2d
+   * * Point3d
+   * * An array of 2 doubles
+   * * A GrowableXYArray
+   * * A GrowableXYZArray
+   * * Any json object satisfying Point3d.isXAndY
+   * * A Float64Array of doubles, interpreted as xyxy
+   * * An array of any of the above
+   */
+  public pushFrom(p: any) {
+    if (p instanceof Point3d) {
+      this.pushXY(p.x, p.y);
+    } else if (p instanceof GrowableXYZArray) {
+      this.pushAllXYAndZ(p);
+    } else if (p instanceof Point2d) {
+      this.pushXY(p.x, p.y);
+    } else if (Geometry.isNumberArray(p, 3) || p instanceof Float64Array) {
+      const xyToAdd = Math.trunc(p.length / 2);
+      this.ensureCapacity(this._xyInUse + xyToAdd, false);
+      this.copyData(p, xyToAdd, this._xyInUse);
+      this._xyInUse += xyToAdd;
+    } else if (Geometry.isNumberArray(p, 2)) {
+      this.pushXY(p[0], p[1]);
+    } else if (Array.isArray(p)) {
+      // direct recursion re-wraps p and goes infinite. Unroll here.
+      for (const q of p)
+        this.pushFrom(q);
+    } else if (Point3d.isXAndY(p)) {
+      this.pushXY(p.x, p.y);
+    } else if (p instanceof IndexedXYCollection) {
+      const n = p.length;
+      this.ensureCapacity(this._xyInUse + n, false);
+      for (let i = 0; i < n; i++)
+        this.pushXY(p.getXAtUncheckedPointIndex(i), p.getYAtUncheckedPointIndex(i));
+    }
+  }
   /**
    * Replicate numWrap xy values from the front of the array as new values at the end.
    * @param numWrap number of xy values to replicate
@@ -407,14 +451,6 @@ export class GrowableXYArray extends IndexedXYCollection {
     this._data[index + 1] = y;
     return true;
   }
-  /**
-   * Set the coordinates of a single point given as coordinates.
-   * @deprecated in 3.x. Use setXYAtCheckedPointIndex instead
-   */
-   public setXYZAtCheckedPointIndex(pointIndex: number, x: number, y: number): boolean {
-    return this.setXYAtCheckedPointIndex(pointIndex, x, y);
-  }
-
   /**
    * Copy all points into a simple array of Point3d with given z.
    */

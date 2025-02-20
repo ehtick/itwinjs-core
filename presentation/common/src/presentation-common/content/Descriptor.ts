@@ -1,19 +1,27 @@
 /*---------------------------------------------------------------------------------------------
-* Copyright (c) Bentley Systems, Incorporated. All rights reserved.
-* See LICENSE.md in the project root for license terms and full copyright notice.
-*--------------------------------------------------------------------------------------------*/
+ * Copyright (c) Bentley Systems, Incorporated. All rights reserved.
+ * See LICENSE.md in the project root for license terms and full copyright notice.
+ *--------------------------------------------------------------------------------------------*/
 /** @packageDocumentation
  * @module Content
  */
 
 import { assert, Id64String } from "@itwin/core-bentley";
 import {
-  ClassInfo, ClassInfoJSON, CompressedClassInfoJSON, RelatedClassInfo, RelatedClassInfoJSON, RelatedClassInfoWithOptionalRelationship,
-  RelatedClassInfoWithOptionalRelationshipJSON, RelationshipPath, RelationshipPathJSON,
+  ClassInfo,
+  CompressedClassInfoJSON,
+  RelatedClassInfo,
+  RelatedClassInfoJSON,
+  RelatedClassInfoWithOptionalRelationship,
+  RelatedClassInfoWithOptionalRelationshipJSON,
+  RelationshipPath,
+  RelationshipPathJSON,
 } from "../EC";
 import { InstanceFilterDefinition } from "../InstanceFilterDefinition";
+import { Ruleset } from "../rules/Ruleset";
 import { CategoryDescription, CategoryDescriptionJSON } from "./Category";
-import { Field, FieldDescriptor, FieldJSON, getFieldByName } from "./Fields";
+import { Field, FieldDescriptor, FieldJSON, getFieldByDescriptor, getFieldByName } from "./Fields";
+import { omitUndefined } from "../Utils";
 
 /**
  * Data structure that describes an ECClass in content [[Descriptor]].
@@ -43,8 +51,7 @@ export interface SelectClassInfo {
  * Serialized [[SelectClassInfo]] JSON representation
  * @public
  */
-// eslint-disable-next-line deprecation/deprecation
-export interface SelectClassInfoJSON<TClassInfoJSON = ClassInfoJSON> {
+export interface SelectClassInfoJSON<TClassInfoJSON = ClassInfo> {
   selectClassInfo: TClassInfoJSON;
   isSelectPolymorphic: boolean;
   pathFromInputToSelectClass?: RelatedClassInfoWithOptionalRelationshipJSON<TClassInfoJSON>[];
@@ -61,10 +68,22 @@ export namespace SelectClassInfo {
     return {
       selectClassInfo: { id: json.selectClassInfo, ...classesMap[json.selectClassInfo] },
       isSelectPolymorphic: json.isSelectPolymorphic,
-      ...(json.navigationPropertyClasses ? { navigationPropertyClasses: json.navigationPropertyClasses.map((item) => RelatedClassInfo.fromCompressedJSON(item, classesMap)) } : undefined),
-      ...(json.relatedInstancePaths ? { relatedInstancePaths: json.relatedInstancePaths.map((rip) => rip.map((item) => RelatedClassInfo.fromCompressedJSON(item, classesMap))) } : undefined),
-      ...(json.pathFromInputToSelectClass ? { pathFromInputToSelectClass: json.pathFromInputToSelectClass.map((item) => RelatedClassInfoWithOptionalRelationship.fromCompressedJSON(item, classesMap)) } : undefined),
-      ...(json.relatedPropertyPaths ? { relatedPropertyPaths: json.relatedPropertyPaths.map((path) => path.map((item) => RelatedClassInfo.fromCompressedJSON(item, classesMap))) } : undefined),
+      ...(json.navigationPropertyClasses
+        ? { navigationPropertyClasses: json.navigationPropertyClasses.map((item) => RelatedClassInfo.fromCompressedJSON(item, classesMap)) }
+        : undefined),
+      ...(json.relatedInstancePaths
+        ? { relatedInstancePaths: json.relatedInstancePaths.map((rip) => rip.map((item) => RelatedClassInfo.fromCompressedJSON(item, classesMap))) }
+        : undefined),
+      ...(json.pathFromInputToSelectClass
+        ? {
+            pathFromInputToSelectClass: json.pathFromInputToSelectClass.map((item) =>
+              RelatedClassInfoWithOptionalRelationship.fromCompressedJSON(item, classesMap),
+            ),
+          }
+        : undefined),
+      ...(json.relatedPropertyPaths
+        ? { relatedPropertyPaths: json.relatedPropertyPaths.map((path) => path.map((item) => RelatedClassInfo.fromCompressedJSON(item, classesMap))) }
+        : undefined),
     };
   }
 
@@ -75,10 +94,30 @@ export namespace SelectClassInfo {
     return {
       selectClassInfo: id,
       isSelectPolymorphic: selectClass.isSelectPolymorphic,
-      ...(selectClass.relatedInstancePaths ? { relatedInstancePaths: selectClass.relatedInstancePaths.map((rip) => rip.map((item) => RelatedClassInfo.toCompressedJSON(item, classesMap))) } : undefined),
-      ...(selectClass.navigationPropertyClasses ? { navigationPropertyClasses: selectClass.navigationPropertyClasses.map((propertyClass) => RelatedClassInfo.toCompressedJSON(propertyClass, classesMap)) } : undefined),
-      ...(selectClass.pathFromInputToSelectClass ? { pathFromInputToSelectClass: selectClass.pathFromInputToSelectClass.map((item) => RelatedClassInfoWithOptionalRelationship.toCompressedJSON(item, classesMap)) } : undefined),
-      ...(selectClass.relatedPropertyPaths ? { relatedPropertyPaths: selectClass.relatedPropertyPaths.map((path) => path.map((relatedClass) => RelatedClassInfo.toCompressedJSON(relatedClass, classesMap))) } : undefined),
+      ...(selectClass.relatedInstancePaths
+        ? { relatedInstancePaths: selectClass.relatedInstancePaths.map((rip) => rip.map((item) => RelatedClassInfo.toCompressedJSON(item, classesMap))) }
+        : undefined),
+      ...(selectClass.navigationPropertyClasses
+        ? {
+            navigationPropertyClasses: selectClass.navigationPropertyClasses.map((propertyClass) =>
+              RelatedClassInfo.toCompressedJSON(propertyClass, classesMap),
+            ),
+          }
+        : undefined),
+      ...(selectClass.pathFromInputToSelectClass
+        ? {
+            pathFromInputToSelectClass: selectClass.pathFromInputToSelectClass.map((item) =>
+              RelatedClassInfoWithOptionalRelationship.toCompressedJSON(item, classesMap),
+            ),
+          }
+        : undefined),
+      ...(selectClass.relatedPropertyPaths
+        ? {
+            relatedPropertyPaths: selectClass.relatedPropertyPaths.map((path) =>
+              path.map((relatedClass) => RelatedClassInfo.toCompressedJSON(relatedClass, classesMap)),
+            ),
+          }
+        : undefined),
     };
   }
 
@@ -101,12 +140,6 @@ export namespace SelectClassInfo {
 export enum ContentFlags {
   /** Each content record only has [[InstanceKey]] and no data */
   KeysOnly = 1 << 0,
-
-  /**
-   * Each content record additionally has an image id
-   * @deprecated in 3.x. Use [[ExtendedDataRule]] instead. See [extended data usage page]($docs/presentation/customization/ExtendedDataUsage.md) for more details.
-   */
-  ShowImages = 1 << 1,
 
   /** Each content record additionally has a display label */
   ShowLabels = 1 << 2,
@@ -164,8 +197,6 @@ export interface DescriptorJSON {
   classesMap: { [id: string]: CompressedClassInfoJSON };
   connectionId: string;
   inputKeysHash: string;
-  /** @deprecated in 3.x. The attribute is not used anymore. */
-  contentOptions: any;
   selectionInfo?: SelectionInfo;
   displayType: string;
   selectClasses: SelectClassInfoJSON<Id64String>[];
@@ -174,11 +205,9 @@ export interface DescriptorJSON {
   sortingFieldName?: string;
   sortDirection?: SortDirection;
   contentFlags: number;
-  /** @deprecated in 3.x. The attribute was replaced with [[fieldsFilterExpression]]. */
-  filterExpression?: string;
   fieldsFilterExpression?: string;
-  /** @beta */
   instanceFilter?: InstanceFilterDefinition;
+  ruleset?: Ruleset;
 }
 
 /**
@@ -212,11 +241,6 @@ export interface DescriptorOverrides {
   };
 
   /**
-   * [ECExpression]($docs/presentation/advanced/ECExpressions.md) for filtering content
-   * @deprecated in 3.x. The attribute was replaced with [[fieldsFilterExpression]].
-   */
-  filterExpression?: string;
-  /**
    * [ECExpression]($docs/presentation/advanced/ECExpressions.md) for filtering content by
    * select fields.
    *
@@ -236,8 +260,6 @@ export interface DescriptorOverrides {
    * specific select class rather than a union of multiple select classes. This means the filter has
    * access to properties of that class and they can be referenced using symbols like `this.Property`.
    * This is useful for filtering instances of specific class.
-   *
-   * @beta
    */
   instanceFilter?: InstanceFilterDefinition;
 }
@@ -268,10 +290,10 @@ export interface DescriptorSource {
   /** Sorting direction */
   readonly sortDirection?: SortDirection;
   /**
-   * [ECExpression]($docs/presentation/advanced/ECExpressions.md) for filtering content
-   * @deprecated in 3.x. The attribute was replaced with [[fieldsFilterExpression]].
+   * A ruleset used to create this descriptor.
+   * Only set if descriptor is created using a ruleset different from the input ruleset, e.g. when creating a hierarchy level descriptor.
    */
-  filterExpression?: string;
+  readonly ruleset?: Ruleset;
   /**
    * [ECExpression]($docs/presentation/advanced/ECExpressions.md) for filtering content by
    * select fields.
@@ -292,8 +314,6 @@ export interface DescriptorSource {
    * specific select class rather than a union of multiple select classes. This means the filter has
    * access to properties of that class and they can be referenced using symbols like `this.Property`.
    * This is useful for filtering instances of specific class.
-   *
-   * @beta
    */
   instanceFilter?: InstanceFilterDefinition;
 }
@@ -309,11 +329,6 @@ export class Descriptor implements DescriptorSource {
   public readonly connectionId?: string;
   /** Hash of the input keys used to create the descriptor */
   public readonly inputKeysHash?: string;
-  /**
-   * Extended options used to create the descriptor.
-   * @deprecated in 3.6. The attribute is not used anymore.
-   */
-  public readonly contentOptions: any;
   /** Selection info used to create the descriptor */
   public readonly selectionInfo?: SelectionInfo;
   /** Display type used to create the descriptor */
@@ -326,15 +341,15 @@ export class Descriptor implements DescriptorSource {
   public readonly fields: Field[];
   /** [[ContentFlags]] used to create the descriptor */
   public readonly contentFlags: number;
+  /**
+   * A ruleset used to create this descriptor.
+   * Only set if descriptor is created using a ruleset different from the input ruleset, e.g. when creating a hierarchy level descriptor.
+   */
+  public readonly ruleset?: Ruleset;
   /** Field used to sort the content */
   public sortingField?: Field;
   /** Sorting direction */
   public sortDirection?: SortDirection;
-  /**
-   * [ECExpression]($docs/presentation/advanced/ECExpressions.md) for filtering content
-   * @deprecated in 3.x. The attribute was replaced with [[fieldsFilterExpression]].
-   */
-  public filterExpression?: string;
   /**
    * [ECExpression]($docs/presentation/advanced/ECExpressions.md) for filtering content by
    * select fields.
@@ -355,8 +370,6 @@ export class Descriptor implements DescriptorSource {
    * specific select class rather than a union of multiple select classes. This means the filter has
    * access to properties of that class and they can be referenced using symbols like `this.Property`.
    * This is useful for filtering instances of specific class.
-   *
-   * @beta
    */
   public instanceFilter?: InstanceFilterDefinition;
 
@@ -372,9 +385,9 @@ export class Descriptor implements DescriptorSource {
     this.fields = [...source.fields];
     this.sortingField = source.sortingField;
     this.sortDirection = source.sortDirection;
-    this.filterExpression = source.fieldsFilterExpression ?? source.filterExpression; // eslint-disable-line deprecation/deprecation
-    this.fieldsFilterExpression = source.fieldsFilterExpression ?? source.filterExpression; // eslint-disable-line deprecation/deprecation
+    this.fieldsFilterExpression = source.fieldsFilterExpression;
     this.instanceFilter = source.instanceFilter;
+    this.ruleset = source.ruleset;
   }
 
   /** Serialize [[Descriptor]] to JSON */
@@ -382,53 +395,64 @@ export class Descriptor implements DescriptorSource {
     const classesMap: { [id: string]: CompressedClassInfoJSON } = {};
     const selectClasses: SelectClassInfoJSON<string>[] = this.selectClasses.map((selectClass) => SelectClassInfo.toCompressedJSON(selectClass, classesMap));
     const fields: FieldJSON<string>[] = this.fields.map((field) => field.toCompressedJSON(classesMap));
-    return Object.assign(
-      {
-        displayType: this.displayType,
-        contentFlags: this.contentFlags,
-        categories: this.categories.map(CategoryDescription.toJSON),
-        fields,
-        selectClasses,
-        classesMap,
-      },
-      this.connectionId !== undefined && { connectionId: this.connectionId },
-      this.inputKeysHash !== undefined && { inputKeysHash: this.inputKeysHash },
-      // istanbul ignore next
-      this.contentOptions !== undefined && { contentOptions: this.contentOptions }, // eslint-disable-line deprecation/deprecation
-      this.sortingField !== undefined && { sortingFieldName: this.sortingField.name },
-      this.sortDirection !== undefined && { sortDirection: this.sortDirection },
-      this.filterExpression !== undefined && { filterExpression: this.filterExpression }, // eslint-disable-line deprecation/deprecation
-      this.fieldsFilterExpression !== undefined && { fieldsFilterExpression: this.fieldsFilterExpression },
-      this.instanceFilter !== undefined && { instanceFilter: this.instanceFilter },
-      this.selectionInfo !== undefined && { selectionInfo: this.selectionInfo },
-    );
+    return omitUndefined({
+      displayType: this.displayType,
+      contentFlags: this.contentFlags,
+      categories: this.categories.map(CategoryDescription.toJSON),
+      fields,
+      selectClasses,
+      classesMap,
+      connectionId: this.connectionId ?? "",
+      inputKeysHash: this.inputKeysHash ?? "",
+      sortingFieldName: this.sortingField?.name,
+      sortDirection: this.sortDirection,
+      fieldsFilterExpression: this.fieldsFilterExpression,
+      instanceFilter: this.instanceFilter,
+      selectionInfo: this.selectionInfo,
+      ruleset: this.ruleset,
+    });
   }
 
   /** Deserialize [[Descriptor]] from JSON */
   public static fromJSON(json: DescriptorJSON | undefined): Descriptor | undefined {
-    if (!json)
+    if (!json) {
       return undefined;
+    }
 
-    const { classesMap, ...leftOverJson } = json;
-    const categories = CategoryDescription.listFromJSON(json.categories);
-    const selectClasses = SelectClassInfo.listFromCompressedJSON(json.selectClasses, classesMap);
-    const fields = this.getFieldsFromJSON(json.fields, (fieldJson) => Field.fromCompressedJSON(fieldJson, classesMap, categories));
+    const {
+      categories: jsonCategories,
+      selectClasses: jsonSelectClasses,
+      fields: jsonFields,
+      connectionId,
+      inputKeysHash,
+      classesMap,
+      sortingFieldName,
+      ...leftOverJson
+    } = json;
+    const categories = CategoryDescription.listFromJSON(jsonCategories);
+    const selectClasses = SelectClassInfo.listFromCompressedJSON(jsonSelectClasses, classesMap);
+    const fields = this.getFieldsFromJSON(jsonFields, (fieldJson) => Field.fromCompressedJSON(fieldJson, classesMap, categories));
     return new Descriptor({
       ...leftOverJson,
+      ...(connectionId ? /* istanbul ignore next */ { connectionId } : undefined),
+      ...(inputKeysHash ? /* istanbul ignore next */ { inputKeysHash } : undefined),
       selectClasses,
       categories,
       fields,
-      sortingField: getFieldByName(fields, json.sortingFieldName, true),
+      sortingField: getFieldByName(fields, sortingFieldName, true),
     });
   }
 
   private static getFieldsFromJSON(json: FieldJSON[], factory: (json: FieldJSON) => Field | undefined): Field[] {
-    return json.map((fieldJson: FieldJSON) => {
-      const field = factory(fieldJson);
-      if (field)
-        field.rebuildParentship();
-      return field;
-    }).filter((field): field is Field => !!field);
+    return json
+      .map((fieldJson: FieldJSON) => {
+        const field = factory(fieldJson);
+        if (field) {
+          field.rebuildParentship();
+        }
+        return field;
+      })
+      .filter((field): field is Field => !!field);
   }
 
   /**
@@ -441,21 +465,33 @@ export class Descriptor implements DescriptorSource {
   }
 
   /**
+   * Get field by its descriptor.
+   */
+  public getFieldByDescriptor(fieldDescriptor: FieldDescriptor, recurse?: boolean): Field | undefined {
+    return getFieldByDescriptor(this.fields, fieldDescriptor, recurse);
+  }
+
+  /**
    * Create descriptor overrides object from this descriptor.
    * @public
    */
   public createDescriptorOverrides(): DescriptorOverrides {
     const overrides: DescriptorOverrides = {};
-    if (this.displayType)
+    if (this.displayType) {
       overrides.displayType = this.displayType;
-    if (this.contentFlags !== 0)
+    }
+    if (this.contentFlags !== 0) {
       overrides.contentFlags = this.contentFlags;
-    if (this.filterExpression || this.fieldsFilterExpression) // eslint-disable-line deprecation/deprecation
-      overrides.fieldsFilterExpression = this.fieldsFilterExpression ?? this.filterExpression; // eslint-disable-line deprecation/deprecation
-    if (this.instanceFilter)
+    }
+    if (this.fieldsFilterExpression) {
+      overrides.fieldsFilterExpression = this.fieldsFilterExpression;
+    }
+    if (this.instanceFilter) {
       overrides.instanceFilter = this.instanceFilter;
-    if (this.sortingField)
+    }
+    if (this.sortingField) {
       overrides.sorting = { field: this.sortingField.getFieldDescriptor(), direction: this.sortDirection ?? SortDirection.Ascending };
+    }
     return overrides;
   }
 }

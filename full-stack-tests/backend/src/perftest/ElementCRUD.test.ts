@@ -7,12 +7,19 @@ import * as path from "path";
 import { DbResult, Id64, Id64String } from "@itwin/core-bentley";
 import { Arc3d, IModelJson as GeomJson, Point3d } from "@itwin/core-geometry";
 import {
-  BriefcaseIdValue, Code, ColorDef, GeometricElementProps, GeometryStreamProps, IModel, SubCategoryAppearance,
+  BriefcaseIdValue, Code, ColorDef, ElementProps, GeometricElementProps, GeometryStreamProps, IModel, SubCategoryAppearance,
 } from "@itwin/core-common";
 import { Reporter } from "@itwin/perf-tools";
-import { DrawingCategory, ECSqlStatement, Element, IModelDb, IModelJsFs, SnapshotDb, SpatialCategory } from "@itwin/core-backend";
+import { _nativeDb, DrawingCategory, ECSqlStatement, Element, IModelDb, IModelHost, IModelJsFs, SnapshotDb, SpatialCategory } from "@itwin/core-backend";
 import { IModelTestUtils, KnownTestLocations } from "@itwin/core-backend/lib/cjs/test/index";
 import { PerfTestUtility } from "./PerfTestUtils";
+
+// @ts-expect-error package.json will resolve from the lib/{cjs,esm} dir without copying it into the build output we deliver
+// eslint-disable-next-line @itwin/import-within-package
+import { version } from "../../../../../core/backend/package.json";
+/** @public */
+const ITWINJS_CORE_VERSION = version as string;
+const CORE_MAJ_MIN = `${ITWINJS_CORE_VERSION.split(".")[0]}.${ITWINJS_CORE_VERSION.split(".")[1]}.x`;
 
 /* eslint-disable @typescript-eslint/naming-convention */
 
@@ -118,7 +125,7 @@ function getCount(imodel: IModelDb, className: string) {
 
 describe("PerformanceElementsTests", () => {
   const reporter = new Reporter();
-  const crudConfig = require(path.join(__dirname, "CRUDConfig.json")).test3d; // eslint-disable-line @typescript-eslint/no-var-requires
+  const crudConfig = require(path.join(__dirname, "CRUDConfig.json")).test3d; // eslint-disable-line @typescript-eslint/no-require-imports
 
   before(async () => {
     // Create all of the seed iModels
@@ -130,10 +137,12 @@ describe("PerformanceElementsTests", () => {
         if (IModelJsFs.existsSync(pathname))
           return;
 
+        await IModelHost.startup();
+
         const seedIModel = SnapshotDb.createEmpty(IModelTestUtils.prepareOutputFile("ElementCRUDPerformance", fileName), { rootSubject: { name: "PerfTest" } });
         const testSchemaName = path.join(KnownTestLocations.assetsDir, "PerfTestDomain.ecschema.xml");
         await seedIModel.importSchemas([testSchemaName]);
-        seedIModel.nativeDb.resetBriefcaseId(BriefcaseIdValue.Unassigned);
+        seedIModel[_nativeDb].resetBriefcaseId(BriefcaseIdValue.Unassigned);
         assert.isDefined(seedIModel.getMetaData(`PerfTestDomain:${name}`), `${name}is present in iModel.`);
         const [, newModelId] = IModelTestUtils.createAndInsertPhysicalPartitionAndModel(seedIModel, Code.createEmpty(), true);
         let spatialCategoryId = SpatialCategory.queryCategoryIdByName(seedIModel, IModel.dictionaryId, "MySpatialCategory");
@@ -153,9 +162,10 @@ describe("PerformanceElementsTests", () => {
       }
     }
   });
-  after(() => {
+  after(async () => {
     const csvPath = path.join(KnownTestLocations.outputDir, "PerformanceResults.csv");
     reporter.exportCSV(csvPath);
+    await IModelHost.shutdown();
   });
 
   it("ElementsInsert", async () => {
@@ -185,7 +195,7 @@ describe("PerformanceElementsTests", () => {
             totalTime = totalTime + elapsedTime;
           }
 
-          reporter.addEntry("PerformanceElementsTests", "ElementsInsert", "Execution time(s)", totalTime, { ElementClassName: name, InitialCount: size, opCount });
+          reporter.addEntry("PerformanceElementsTests", "ElementsInsert", "Execution time(s)", totalTime, { ElementClassName: name, InitialCount: size, opCount, CoreVersion: CORE_MAJ_MIN });
           assert.equal(getCount(perfimodel, `PerfTestDomain:${name}`), size + opCount);
           perfimodel.close();
         }
@@ -211,13 +221,13 @@ describe("PerformanceElementsTests", () => {
             try {
               const elId = minId + elementIdIncrement * i;
               perfimodel.elements.deleteElement(Id64.fromLocalAndBriefcaseIds(elId, 0));
-            } catch (err) {
+            } catch {
               assert.isTrue(false);
             }
           }
           const endTime = new Date().getTime();
           const elapsedTime = (endTime - startTime) / 1000.0;
-          reporter.addEntry("PerformanceElementsTests", "ElementsDelete", "Execution time(s)", elapsedTime, { ElementClassName: name, InitialCount: size, opCount });
+          reporter.addEntry("PerformanceElementsTests", "ElementsDelete", "Execution time(s)", elapsedTime, { ElementClassName: name, InitialCount: size, opCount, CoreVersion: CORE_MAJ_MIN });
           assert.equal(getCount(perfimodel, `PerfTestDomain:${name}`), size - opCount);
           perfimodel.close();
         }
@@ -254,7 +264,7 @@ describe("PerformanceElementsTests", () => {
           }
 
           const elapsedTime = (endTime - startTime) / 1000.0;
-          reporter.addEntry("PerformanceElementsTests", "ElementsRead", "Execution time(s)", elapsedTime, { ElementClassName: name, InitialCount: size, opCount });
+          reporter.addEntry("PerformanceElementsTests", "ElementsRead", "Execution time(s)", elapsedTime, { ElementClassName: name, InitialCount: size, opCount, CoreVersion: CORE_MAJ_MIN });
           perfimodel.close();
         }
       }
@@ -296,7 +306,7 @@ describe("PerformanceElementsTests", () => {
             editElem.setUserProperties("geom", geometryStream);
             try {
               perfimodel.elements.updateElement(editElem.toJSON());
-            } catch (_err) {
+            } catch {
               assert.fail("Element.update failed");
             }
           }
@@ -309,7 +319,7 @@ describe("PerformanceElementsTests", () => {
             assert.equal((elemFound as any).baseStr, "PerfElement - UpdatedValue");
           }
           const elapsedTime = (endTime - startTime) / 1000.0;
-          reporter.addEntry("PerformanceElementsTests", "ElementsUpdate", "Execution time(s)", elapsedTime, { ElementClassName: name, InitialCount: size, opCount });
+          reporter.addEntry("PerformanceElementsTests", "ElementsUpdate", "Execution time(s)", elapsedTime, { ElementClassName: name, InitialCount: size, opCount, CoreVersion: CORE_MAJ_MIN });
           perfimodel.close();
         }
       }
@@ -320,7 +330,7 @@ describe("PerformanceElementsTests", () => {
 describe("PerformanceElementsTests2d", () => {
   const outDir: string = path.join(KnownTestLocations.outputDir, "ElementCRUDPerformance2d");
   const reporter = new Reporter();
-  const crudConfig = require(path.join(__dirname, "CRUDConfig.json")).test2d; // eslint-disable-line @typescript-eslint/no-var-requires
+  const crudConfig = require(path.join(__dirname, "CRUDConfig.json")).test2d; // eslint-disable-line @typescript-eslint/no-require-imports
 
   before(async () => {
     if (!IModelJsFs.existsSync(KnownTestLocations.outputDir))
@@ -337,10 +347,12 @@ describe("PerformanceElementsTests2d", () => {
         if (IModelJsFs.existsSync(pathname))
           return;
 
+        await IModelHost.startup();
+
         const seedIModel = SnapshotDb.createEmpty(IModelTestUtils.prepareOutputFile("ElementCRUDPerformance2d", fileName), { rootSubject: { name: "PerfTest" } });
         const testSchemaName = path.join(KnownTestLocations.assetsDir, "PerfTestDomain.ecschema.xml");
         await seedIModel.importSchemas([testSchemaName]);
-        seedIModel.nativeDb.resetBriefcaseId(BriefcaseIdValue.Unassigned);
+        seedIModel[_nativeDb].resetBriefcaseId(BriefcaseIdValue.Unassigned);
         assert.isDefined(seedIModel.getMetaData(`PerfTestDomain:${name}`), `${name}is present in iModel.`);
 
         const codeProps = Code.createEmpty();
@@ -363,9 +375,11 @@ describe("PerformanceElementsTests2d", () => {
       }
     }
   });
-  after(() => {
+  after(async () => {
     const csvPath = path.join(KnownTestLocations.outputDir, "PerformanceResults.csv");
     reporter.exportCSV(csvPath);
+
+    await IModelHost.shutdown();
   });
 
   it("ElementsInsert2d", async () => {
@@ -397,7 +411,7 @@ describe("PerformanceElementsTests2d", () => {
             totalTime = totalTime + elapsedTime;
           }
 
-          reporter.addEntry("PerformanceElementsTests2d", "ElementsInsert2d", "Execution time(s)", totalTime, { ElementClassName: name, InitialCount: size, opCount });
+          reporter.addEntry("PerformanceElementsTests2d", "ElementsInsert2d", "Execution time(s)", totalTime, { ElementClassName: name, InitialCount: size, opCount, CoreVersion: CORE_MAJ_MIN });
           assert.equal(getCount(perfimodel, `PerfTestDomain:${name}`), size + opCount);
           perfimodel.close();
         }
@@ -423,13 +437,13 @@ describe("PerformanceElementsTests2d", () => {
             try {
               const elId = minId + elementIdIncrement * i;
               perfimodel.elements.deleteElement(Id64.fromLocalAndBriefcaseIds(elId, 0));
-            } catch (err) {
+            } catch {
               assert.isTrue(false);
             }
           }
           const endTime = new Date().getTime();
           const elapsedTime = (endTime - startTime) / 1000.0;
-          reporter.addEntry("PerformanceElementsTests2d", "ElementsDelete2d", "Execution time(s)", elapsedTime, { ElementClassName: name, InitialCount: size, opCount });
+          reporter.addEntry("PerformanceElementsTests2d", "ElementsDelete2d", "Execution time(s)", elapsedTime, { ElementClassName: name, InitialCount: size, opCount, CoreVersion: CORE_MAJ_MIN });
           assert.equal(getCount(perfimodel, `PerfTestDomain:${name}`), size - opCount);
           perfimodel.close();
         }
@@ -466,7 +480,7 @@ describe("PerformanceElementsTests2d", () => {
           }
 
           const elapsedTime = (endTime - startTime) / 1000.0;
-          reporter.addEntry("PerformanceElementsTests2d", "ElementsRead2d", "Execution time(s)", elapsedTime, { ElementClassName: name, InitialCount: size, opCount });
+          reporter.addEntry("PerformanceElementsTests2d", "ElementsRead2d", "Execution time(s)", elapsedTime, { ElementClassName: name, InitialCount: size, opCount, CoreVersion: CORE_MAJ_MIN });
           perfimodel.close();
         }
       }
@@ -507,7 +521,7 @@ describe("PerformanceElementsTests2d", () => {
             editElem.setUserProperties("geom", geometryStream);
             try {
               perfimodel.elements.updateElement(editElem.toJSON());
-            } catch (_err) {
+            } catch {
               assert.fail("Element.update failed");
             }
           }
@@ -520,10 +534,183 @@ describe("PerformanceElementsTests2d", () => {
             assert.equal((elemFound as any).baseStr, "PerfElement - UpdatedValue");
           }
           const elapsedTime = (endTime - startTime) / 1000.0;
-          reporter.addEntry("PerformanceElementsTests2d", "ElementsUpdate2d", "Execution time(s)", elapsedTime, { ElementClassName: name, InitialCount: size, opCount });
+          reporter.addEntry("PerformanceElementsTests2d", "ElementsUpdate2d", "Execution time(s)", elapsedTime, { ElementClassName: name, InitialCount: size, opCount, CoreVersion: CORE_MAJ_MIN });
           perfimodel.close();
         }
       }
     }
+  });
+});
+
+describe("PerformanceElementGetMetadata", () => {
+  let imodel: SnapshotDb;
+  const idSet: string[] = [];
+  const reporter = new Reporter();
+  const classNamesList: string[] = [];
+  const crudConfig = require(path.join(__dirname, "CRUDConfig.json")).metaDataPerf; // eslint-disable-line @typescript-eslint/no-require-imports
+
+  before(async () => {
+    await IModelHost.startup();
+
+    const testFileName = IModelTestUtils.prepareOutputFile("PerformanceElementGetMetadata", "PerformanceElementGetMetadata.bim");
+
+    if (IModelJsFs.existsSync(testFileName))
+      IModelJsFs.removeSync(testFileName);
+
+    imodel = IModelTestUtils.createSnapshotFromSeed(testFileName, IModelTestUtils.resolveAssetFile("test.bim"));
+    assert.exists(imodel);
+  });
+
+  after(async () => {
+    const csvPath = path.join(KnownTestLocations.outputDir, "PerformanceResultsGetMetadata.csv");
+    // eslint-disable-next-line no-console
+    console.log(`Performance results are stored in ${csvPath}`);
+    reporter.exportCSV(csvPath);
+
+    imodel.abandonChanges();
+    imodel.close();
+
+    await IModelHost.shutdown();
+  });
+
+  function generateClasses(numClasses: number, currentClass: number = 1): string {
+    if (currentClass > numClasses)
+      return "";
+
+    const className = `PerfTestElementClass${currentClass}`;
+    classNamesList.push(className);
+
+    const classDefinition = `
+      <ECEntityClass typeName="${className}">
+        <BaseClass>bis:PhysicalElement</BaseClass>
+        <ECProperty propertyName="StrProp${currentClass}" typeName="string"/>
+        <ECProperty propertyName="LongProp${currentClass}" typeName="long"/>
+        <ECProperty propertyName="DoubleProp${currentClass}" typeName="double"/>
+      </ECEntityClass>`;
+
+    return classDefinition + generateClasses(numClasses, currentClass + 1);
+  }
+
+  async function setupElementsForTests() {
+    // Data Setup
+    const perfSchemaTemplate = `<?xml version="1.0" encoding="UTF-8"?>
+    <ECSchema schemaName="PerfTestElementMetaData" alias="ts" version="01.00.00" xmlns="http://www.bentley.com/schemas/Bentley.ECXML.3.1">
+        <ECSchemaReference name="BisCore" version="01.00.00" alias="bis"/>
+        <ECEntityClass typeName="PerfTestElementBaseClass">
+          <BaseClass>bis:PhysicalElement</BaseClass>
+          <ECProperty propertyName="BaseStr" typeName="string"/>
+          <ECProperty propertyName="BaseLong" typeName="long"/>
+          <ECProperty propertyName="BaseDouble" typeName="double"/>
+        </ECEntityClass>
+        %s
+    </ECSchema>`;
+    try {
+      await imodel.importSchemaStrings([perfSchemaTemplate.replace("%s", generateClasses(crudConfig.numberOfClasses))]);
+    } catch (error: any) {
+      assert.fail(`Error importing schema for PerformanceElementGetMetadata: ${error.message}`);
+    }
+
+    const [, newModelId] = IModelTestUtils.createAndInsertPhysicalPartitionAndModel(imodel, Code.createEmpty(), true);
+    let spatialCategoryId = SpatialCategory.queryCategoryIdByName(imodel, IModel.dictionaryId, "TestCategory");
+    if (undefined === spatialCategoryId)
+      spatialCategoryId = SpatialCategory.insert(imodel, IModel.dictionaryId, "TestCategory", new SubCategoryAppearance());
+
+    const propsTemplate = {
+      model: newModelId,
+      code: Code.createEmpty(),
+      category: spatialCategoryId,
+    };
+
+    for (const className of classNamesList) {
+      const element = imodel.elements.createElement({
+          classFullName: `PerfTestElementMetaData:${className}`,
+          userLabel: `PerfTestElementMetaData:${className}`,
+          ...propsTemplate,
+        } as ElementProps);
+      const id = imodel.elements.insertElement(element.toJSON());
+      assert.isTrue(Id64.isValidId64(id), "insert successful");
+      idSet.push(id);
+    }
+  }
+
+  async function testGetMetadataPerformance(elementIds: string[], className: string, testRepeatCallsWithSingleElement: boolean = false) {
+    const perfMeasure: number[] = [];
+    const repeats: number = testRepeatCallsWithSingleElement ? crudConfig.repeats : 1;
+
+    for (const elementId of elementIds) {
+      const element = imodel.elements.getElement(elementId);
+      assert.exists(element);
+
+      for (let i = 0; i < repeats; i++) {
+        const start = performance.now();
+        const metaData = await element.getMetaData()
+        const end = performance.now() - start;
+        assert.exists(metaData);
+        perfMeasure.push(parseFloat(end.toFixed(5)));
+      }
+      if (testRepeatCallsWithSingleElement)
+        break;
+    }
+
+    reportGetMetadataPerformance(perfMeasure, elementIds, className, testRepeatCallsWithSingleElement);
+  }
+
+  function reportGetMetadataPerformance(perfMeasure: number[], elementIds: string[], className: string, testRepeatCallsWithSingleElement: boolean) {
+    /*eslint-disable no-console*/
+    const averageTime = (perfMeasure.slice(1).reduce((acc, val) => acc + val, 0)) / (perfMeasure.length - 1);
+
+    assert.isTrue(averageTime < perfMeasure[0], "Average time for subsequent calls should always be less than the first call");
+
+    if (testRepeatCallsWithSingleElement) {
+      console.log(`Performance Test: Executing getMetaData ${crudConfig.repeats} times for ${className} element with Id ${elementIds[0]}`);
+      reporter.addEntry("PerformanceElementGetMetadata", `test repeated ${className} metadata retrieval performance`, "Execution time(s) for first call", perfMeasure[0]);
+      reporter.addEntry("PerformanceElementGetMetadata", `test repeated ${className} metadata retrieval performance`, "Average Execution time(s) for subsequent calls", averageTime);
+    } else {
+      console.log(`Performance Test: Executing getMetaData for ${elementIds.length} elements from different classes.`);
+      reporter.addEntry("PerformanceElementGetMetadata", `test metadata retrieval performance for different classes`, "Execution time(s) for first call", perfMeasure[0]);
+      reporter.addEntry("PerformanceElementGetMetadata", `test metadata retrieval performance for different classes`, "Average Execution time(s) for subsequent calls", averageTime);
+    }
+
+    console.log(`First call took: ${perfMeasure[0]} milliseconds`); // The first call is expected to be slower as the schema needs to be loaded
+    console.log(`Average time for subsequent calls: ${averageTime} milliseconds`); // The subsequent calls should be faster as the schema is already loaded
+    /*eslint-enable no-console*/
+  }
+
+  it("test EntityClass metadata retrieval performance", async () => {
+    await setupElementsForTests();
+
+    const sqltemplate = `select min(e.ECInstanceId), max(e.ECInstanceId) from bis.Element e join meta.ECClassDef c on e.ECClassId = c.ECInstanceId join meta.ECSchemaDef s on c.Schema.Id = s.ECInstanceId where s.Name=`;
+
+    const bisCoreElements: string[] = [];
+    imodel.withPreparedStatement(`${sqltemplate}'BisCore'`, (stmt: ECSqlStatement) => {
+      assert.equal(DbResult.BE_SQLITE_ROW, stmt.step());
+      bisCoreElements.push(stmt.getValue(0).getId());
+      bisCoreElements.push(stmt.getValue(1).getId());
+    });
+
+    const genericElements: string[] = [];
+    imodel.withPreparedStatement(`${sqltemplate}'Generic'`, (stmt: ECSqlStatement) => {
+      assert.equal(DbResult.BE_SQLITE_ROW, stmt.step());
+      genericElements.push(stmt.getValue(0).getId());
+      genericElements.push(stmt.getValue(1).getId());
+    });
+
+    const idSetForRepeatCalls = [...idSet];
+
+    // Check the performance in milliseconds for elements from all different classes of PerfTestElementMetaData schema
+    await testGetMetadataPerformance(idSet, "");
+
+    // Check the performance in milliseconds for different elements of the same BisCore schema
+    await testGetMetadataPerformance(bisCoreElements, "BisCore");
+
+    // Check the performance in milliseconds for different elements of the same Generic schema
+    await testGetMetadataPerformance(genericElements, "Generic");
+
+    // Test the performance of repeated calls to the same element already cached
+    await testGetMetadataPerformance([idSetForRepeatCalls[0]], "PerfElement", true);
+
+    await testGetMetadataPerformance([bisCoreElements[0]], "BisCore", true);
+
+    await testGetMetadataPerformance([genericElements[0]], "Generic", true);
   });
 });

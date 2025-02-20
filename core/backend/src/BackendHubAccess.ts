@@ -9,12 +9,29 @@
 import { AccessToken, GuidString, Id64String, IModelHubStatus } from "@itwin/core-bentley";
 import {
   BriefcaseId, ChangesetFileProps, ChangesetIdWithIndex, ChangesetIndex, ChangesetIndexAndId, ChangesetIndexOrId, ChangesetProps, ChangesetRange,
-  IModelError, IModelVersion, LocalDirName, LocalFileName,
+  LockState as CommonLockState, IModelError, IModelVersion,
+  LocalDirName, LocalFileName,
 } from "@itwin/core-common";
 import { CheckpointProps, DownloadRequest, ProgressFunction } from "./CheckpointManager";
-import { TokenArg } from "./IModelDb";
+import type { TokenArg } from "./IModelDb";
 
-/** The state of a lock.
+/** Exception thrown if lock cannot be acquired.
+ * @beta
+*/
+export class LockConflict extends IModelError {
+  public constructor(
+    /** Id of Briefcase holding lock */
+    public readonly briefcaseId: BriefcaseId,
+    /** Alias of Briefcase holding lock */
+    public readonly briefcaseAlias: string,
+    msg: "shared lock is held" | "exclusive lock is already held",
+  ) {
+    super(IModelHubStatus.LockOwnedByAnotherBriefcase, msg);
+  }
+}
+
+/** The state of a lock. See [Acquiring locks on elements.]($docs/learning/backend/ConcurrencyControl.md#acquiring-locks-on-elements).
+ * @deprecated in 4.7 Use [LockState]($common)
  * @public
  */
 export enum LockState {
@@ -28,24 +45,9 @@ export enum LockState {
   Exclusive = 2,
 }
 
-/** Exception thrown if lock cannot be acquired.
- * @beta
-*/
-export class LockConflict extends IModelError {
-  public constructor(
-    /** Id of Briefcase holding lock */
-    public readonly briefcaseId: BriefcaseId,
-    /** Alias of Briefcase holding lock */
-    public readonly briefcaseAlias: string,
-    msg: "shared lock is held" | "exclusive lock is already held"
-  ) {
-    super(IModelHubStatus.LockOwnedByAnotherBriefcase, msg);
-  }
-}
-
 /**
  * The properties to access a V2 checkpoint through a daemon.
- * @internal
+ * @public
  */
 export interface V2CheckpointAccessProps {
   /** blob store account name. */
@@ -60,23 +62,26 @@ export interface V2CheckpointAccessProps {
   readonly storageType: string;
 }
 
-/** @internal */
-export type LockMap = Map<Id64String, LockState>;
+/**
+ * Maps element Ids to their corresponding [LockState]($common)s.
+ * @public
+ */
+export type LockMap = Map<Id64String, CommonLockState>;
 
 /**
  * The properties of a lock that may be obtained from a lock server.
- * @beta
+ * @public
  */
 export interface LockProps {
   /** The elementId for the lock */
   readonly id: Id64String;
   /** the lock state */
-  readonly state: LockState;
+  readonly state: CommonLockState;
 }
 
 /**
  * Argument for cancelling and tracking download progress.
- * @beta
+ * @public
  */
 export interface DownloadProgressArg {
   /** Called to show progress during a download. If this function returns non-zero, the download is aborted. */
@@ -137,7 +142,7 @@ export interface ChangesetArg extends IModelIdArg {
 }
 
 /** Argument for downloading a changeset.
- * @beta
+ * @public
  */
 export interface DownloadChangesetArg extends ChangesetArg, DownloadProgressArg {
   /** Directory where the changeset should be downloaded. */
@@ -158,7 +163,7 @@ export interface ChangesetRangeArg extends IModelIdArg {
 }
 
 /** Argument for downloading a changeset range.
- * @beta
+ * @public
  */
 export interface DownloadChangesetRangeArg extends ChangesetRangeArg, DownloadProgressArg {
   /** Directory where the changesets should be downloaded. */
@@ -184,9 +189,7 @@ export interface CreateNewIModelProps extends IModelNameArg {
 /**
  * Methods for accessing services of IModelHub from an iTwin.js backend.
  * Generally direct access to these methods should not be required, since higher-level apis are provided.
- * @note This interface is implemented in another repository. Any changes made to this interface must be validated against
- * the implementation found here: https://github.com/iTwin/imodels-clients/blob/main/itwin-platform-access/imodels-access-backend/src/BackendIModelsAccess.ts
- * @internal
+ * @public
  */
 export interface BackendHubAccess {
   /** Download all the changesets in the specified range. */
@@ -221,30 +224,21 @@ export interface BackendHubAccess {
    * @deprecated in 3.x. V1 checkpoints are deprecated. Download V2 checkpoint using [[V2CheckpointManager.downloadCheckpoint]].
    * @internal
    */
-  downloadV1Checkpoint: (arg: CheckpointArg) => Promise<ChangesetIndexAndId>; // eslint-disable-line deprecation/deprecation
+  downloadV1Checkpoint: (arg: CheckpointArg) => Promise<ChangesetIndexAndId>; // eslint-disable-line @typescript-eslint/no-deprecated
 
-  /**
-   * Get the access props for a V2 checkpoint. Returns undefined if no V2 checkpoint exists.
-   * @internal
-   */
+  /** Get the access props for a V2 checkpoint. Returns undefined if no V2 checkpoint exists. */
   queryV2Checkpoint: (arg: CheckpointProps) => Promise<V2CheckpointAccessProps | undefined>;
 
   /**
    * acquire one or more locks. Throws if unsuccessful. If *any* lock cannot be obtained, no locks are acquired
-   * @internal
+   * @throws ConflictingLocksError if one or more requested locks are held by other briefcases.
    */
   acquireLocks: (arg: BriefcaseDbArg, locks: LockMap) => Promise<void>;
 
-  /**
-   * Get the list of all held locks for a briefcase. This can be very expensive and is currently used only for tests.
-   * @internal
-   */
+  /** Get the list of all held locks for a briefcase. This can be very expensive and is currently used only for tests. */
   queryAllLocks: (arg: BriefcaseDbArg) => Promise<LockProps[]>;
 
-  /**
-   * Release all currently held locks
-   * @internal
-   */
+  /** Release all currently held locks */
   releaseAllLocks: (arg: BriefcaseDbArg) => Promise<void>;
 
   /** Get the iModelId of an iModel by name. Undefined if no iModel with that name exists.  */

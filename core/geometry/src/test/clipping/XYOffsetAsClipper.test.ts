@@ -2,38 +2,37 @@
 * Copyright (c) Bentley Systems, Incorporated. All rights reserved.
 * See LICENSE.md in the project root for license terms and full copyright notice.
 *--------------------------------------------------------------------------------------------*/
-import { expect } from "chai";
+import { describe, expect, it } from "vitest";
 import * as fs from "fs";
-
-import { Checker } from "../Checker";
-import { GeometryQuery } from "../../curve/GeometryQuery";
-import { Range3d } from "../../geometry3d/Range";
-import { Point3d, Vector3d } from "../../geometry3d/Point3dVector3d";
-import { GeometryCoreTestIO } from "../GeometryCoreTestIO";
-import { LineString3d } from "../../curve/LineString3d";
-import { UnionOfConvexClipPlaneSets } from "../../clipping/UnionOfConvexClipPlaneSets";
 import { ClipUtilities } from "../../clipping/ClipUtils";
-import { GrowableXYZArray } from "../../geometry3d/GrowableXYZArray";
-import { IModelJson } from "../../serialization/IModelJsonSchema";
-import { CurveChain, CurveCollection } from "../../curve/CurveCollection";
-import { PolyfaceQuery } from "../../polyface/PolyfaceQuery";
-import { IndexedPolyface } from "../../polyface/Polyface";
-import { Angle } from "../../geometry3d/Angle";
-import { OffsetHelpers } from "../../curve/internalContexts/MultiChainCollector";
-import { RegionBinaryOpType, RegionOps } from "../../curve/RegionOps";
-import { Path } from "../../curve/Path";
-import { ClippedPolyfaceBuilders, PolyfaceClip } from "../../polyface/PolyfaceClip";
-import { JointOptions } from "../../curve/internalContexts/PolygonOffsetContext";
-import { CurveFactory } from "../../curve/CurveFactory";
-import { LineSegment3d } from "../../curve/LineSegment3d";
+import { UnionOfConvexClipPlaneSets } from "../../clipping/UnionOfConvexClipPlaneSets";
 import { Arc3d } from "../../curve/Arc3d";
-import { Sample } from "../../serialization/GeometrySamples";
-import { SweepContour } from "../../solid/SweepContour";
-import { Transform } from "../../geometry3d/Transform";
-import { Matrix3d } from "../../geometry3d/Matrix3d";
-import { Point3dArray } from "../../geometry3d/PointHelpers";
+import { CurveChain, CurveCollection } from "../../curve/CurveCollection";
+import { CurveFactory } from "../../curve/CurveFactory";
+import { CurveOps } from "../../curve/CurveOps";
+import { GeometryQuery } from "../../curve/GeometryQuery";
+import { LineSegment3d } from "../../curve/LineSegment3d";
+import { LineString3d } from "../../curve/LineString3d";
 import { Loop } from "../../curve/Loop";
+import { JointOptions } from "../../curve/OffsetOptions";
+import { Path } from "../../curve/Path";
+import { RegionBinaryOpType, RegionOps } from "../../curve/RegionOps";
+import { Angle } from "../../geometry3d/Angle";
+import { GrowableXYZArray } from "../../geometry3d/GrowableXYZArray";
+import { Matrix3d } from "../../geometry3d/Matrix3d";
+import { Point3d, Vector3d } from "../../geometry3d/Point3dVector3d";
+import { Point3dArray } from "../../geometry3d/PointHelpers";
+import { Range3d } from "../../geometry3d/Range";
+import { Transform } from "../../geometry3d/Transform";
+import { IndexedPolyface } from "../../polyface/Polyface";
+import { ClippedPolyfaceBuilders, PolyfaceClip } from "../../polyface/PolyfaceClip";
+import { PolyfaceQuery } from "../../polyface/PolyfaceQuery";
+import { Sample } from "../../serialization/GeometrySamples";
+import { IModelJson } from "../../serialization/IModelJsonSchema";
+import { SweepContour } from "../../solid/SweepContour";
 import { HalfEdgeGraphMerge, VertexNeighborhoodSortData } from "../../topology/Merging";
+import { Checker } from "../Checker";
+import { GeometryCoreTestIO } from "../GeometryCoreTestIO";
 
 function captureClippedPolygon(allGeometry: GeometryQuery[], points: Point3d[], clipper: UnionOfConvexClipPlaneSets,
   x0: number,
@@ -95,7 +94,7 @@ describe("OffsetByClip", () => {
       }
       y00 += 60.0;
     }
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
     GeometryCoreTestIO.saveGeometry(allGeometry, "OffsetByClip", "LongLineString");
   });
 
@@ -149,7 +148,7 @@ describe("OffsetByClip", () => {
     const zClipper = ClipUtilities.createXYOffsetClipFromLineString([], 1, 1, -1, -1);
     ck.testExactNumber(1, zClipper.convexSets.length);
 
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
     GeometryCoreTestIO.saveGeometry(allGeometry, "OffsetByClip", "LongLineStringB");
   });
 
@@ -160,11 +159,11 @@ describe("OffsetByClip", () => {
     const ck = new Checker();
     const allGeometry: GeometryQuery[] = [];
     const shape1 = IModelJson.Reader.parse(JSON.parse(fs.readFileSync(
-      "./src/test/testInputs/clipping/DiegoTrickyBuilding/case1.imjs", "utf8"))) as CurveCollection;
+      "./src/test/data/clipping/DiegoTrickyBuilding/case1.imjs", "utf8"))) as CurveCollection;
     const shape2 = IModelJson.Reader.parse(JSON.parse(fs.readFileSync(
-      "./src/test/testInputs/clipping/DiegoTrickyBuilding/case2.imjs", "utf8"))) as CurveCollection;
+      "./src/test/data/clipping/DiegoTrickyBuilding/case2.imjs", "utf8"))) as CurveCollection;
     //    const shape3 = IModelJson.Reader.parse(JSON.parse(fs.readFileSync(
-    //       "./src/test/testInputs/clipping/DiegoTrickyBuilding/case3.imjs", "utf8"))) as CurveCollection;
+    //       "./src/test/data/clipping/DiegoTrickyBuilding/case3.imjs", "utf8"))) as CurveCollection;
     let x00 = 0;
     const y00 = 0;
     const z00 = 0;
@@ -192,7 +191,7 @@ describe("OffsetByClip", () => {
         x00 += range.xLength() * 2;
       }
     }
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
     GeometryCoreTestIO.saveGeometry(allGeometry, "OffsetByClip", "DiegoProblemCases");
   });
   // cspell:word arnoldas
@@ -200,9 +199,9 @@ describe("OffsetByClip", () => {
     const ck = new Checker();
     const allGeometry: GeometryQuery[] = [];
     const fullRoadMesh = IModelJson.Reader.parse(JSON.parse(fs.readFileSync(
-      "./src/test/testInputs/clipping/arnoldasLaneClipper/fullRoadMesh.imjs", "utf8")));
+      "./src/test/data/clipping/arnoldasLaneClipper/fullRoadMesh.imjs", "utf8")));
     // const largeClipRegion = IModelJson.Reader.parse(JSON.parse(fs.readFileSync(
-    //   "./src/test/testInputs/clipping/arnoldasLaneClipper/largeClipRegion.imjs", "utf8")));
+    //   "./src/test/data/clipping/arnoldasLaneClipper/largeClipRegion.imjs", "utf8")));
     if (fullRoadMesh instanceof IndexedPolyface) {
       const meshRangeA = fullRoadMesh.range();
       fullRoadMesh.tryTranslateInPlace(-meshRangeA.low.x, -meshRangeA.low.y, -meshRangeA.low.z);
@@ -218,7 +217,7 @@ describe("OffsetByClip", () => {
       if (boundary) {
         GeometryCoreTestIO.captureCloneGeometry(allGeometry, fullRoadMesh, x0, y0);
         GeometryCoreTestIO.captureCloneGeometry(allGeometry, boundary, x0, y0);
-        const chainsA = OffsetHelpers.collectChains([boundary], 1.0e-6);
+        const chainsA = CurveOps.collectChains([boundary], 1.0e-6);
         GeometryCoreTestIO.captureCloneGeometry(allGeometry, chainsA, x0 + dx, y0);
         // ugh .. we know it's a closed Loop.   collectChains is fuzzy in its return type ..
         if (chainsA instanceof Path) {
@@ -250,8 +249,7 @@ describe("OffsetByClip", () => {
                 GeometryCoreTestIO.captureCloneGeometry(allGeometry, rangeRectangle, x0, y0 + dy);
               }
               const num0 = fullRoadMesh.facetCount;
-              if (ck.testDefined(clipA) && clipA
-                && ck.testDefined(clipB) && clipB) {
+              if (ck.testDefined(clipA) && ck.testDefined(clipB)) {
                 // hard to say what the output "should" be ... be test that counts are similar . .
                 // (The motivation for this problem was that there were many, many unnecessary interior edges)
                 const numA = clipA.facetCount;
@@ -277,7 +275,7 @@ describe("OffsetByClip", () => {
       }
     }
 
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
     GeometryCoreTestIO.saveGeometry(allGeometry, "OffsetByClip", "ArnoldasLaneClip");
   });
   it("ExcessEdgesAroundAnnulus", () => {
@@ -346,7 +344,7 @@ describe("OffsetByClip", () => {
         x0 += 30;
       }
     }
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
     GeometryCoreTestIO.saveGeometry(allGeometry, "OffsetByClip", "ExcessEdgesAroundAnnulus");
   });
 
@@ -391,7 +389,7 @@ describe("OffsetByClip", () => {
       }
       x0 += 10;
     }
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
     GeometryCoreTestIO.saveGeometry(allGeometry, "OffsetByClip", "NonXYClip");
   });
 
@@ -440,7 +438,7 @@ describe("OffsetByClip", () => {
         x0 += 25.0;
       }
     }
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
     GeometryCoreTestIO.saveGeometry(allGeometry, "OffsetByClip", "InwardCornerClip");
   });
   it("IncompletePaste", () => {
@@ -499,7 +497,7 @@ describe("OffsetByClip", () => {
       x0 += 1;
     }
     GeometryCoreTestIO.saveGeometry(allGeometry, "OffsetByClip", "IncompletePaste");
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
   it("IncompletePasteWithDoublePoint", () => {
     const ck = new Checker();
@@ -566,7 +564,7 @@ describe("OffsetByClip", () => {
     }
 
     GeometryCoreTestIO.saveGeometry(allGeometry, "OffsetByClip", "IncompletePasteWithDoublePoint");
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
 
 });

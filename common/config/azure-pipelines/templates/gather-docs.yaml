@@ -23,27 +23,27 @@ parameters:
   - name: useCurrentAuthClientsDocsArtifact
     type: boolean
     default: false
+  - name: useCurrentConnectorFrameworkDocsArtifact
+    type: boolean
+    default: false
 
 steps:
-  # build script exists outside of any project so manually install fs-extra
-  - script: npm install fs-extra
-    displayName: Install fs-extra
-    workingDirectory: ${{ parameters.workingDir }}
   # Call the copying script
   - script: node common/scripts/copyReferenceFilesToStaging.js ${{ parameters.stagingDir }}
     displayName: Copy Reference files to Staging
     workingDirectory: ${{ parameters.workingDir }}
 
-  # Download AppUI Docs artifact
+  # AppUI
   - template: ./copy-docs-artifact.yaml
     parameters:
       workingDir: ${{ parameters.workingDir }}
       stagingDir: ${{ parameters.stagingDir }}
       pipelineId: 8594 # iTwin AppUI/AppUI Docs CI
       artifactName: AppUI Docs
+      buildTag: hasDocs
       useCurrentDocsArtifact: ${{ parameters.useCurrentAppUIDocsArtifact }}
 
-  # Download BIS Docs artifact
+  # BIS
   - template: ./copy-docs-artifact.yaml
     parameters:
       workingDir: ${{ parameters.workingDir }}
@@ -58,31 +58,32 @@ steps:
             SourceFolder: $(Pipeline.Workspace)/Bis Docs
             TargetFolder: ${{ parameters.stagingDir }}/bis/domains/
 
-  # Download Presentation Docs artifact
+  # Presentation
   - template: ./copy-docs-artifact.yaml
     parameters:
       workingDir: ${{ parameters.workingDir }}
       stagingDir: ${{ parameters.stagingDir }}
       pipelineId: 8602 # iTwin Presentation/iTwin Presentation Docs
       artifactName: Presentation Docs
+      buildTag: hasDocs
       useCurrentDocsArtifact: ${{ parameters.useCurrentPresentationDocsArtifact }}
 
-  # Download Transformer Docs artifact
+  # Transformer
   - template: ./copy-docs-artifact.yaml
     parameters:
       workingDir: ${{ parameters.workingDir }}
       stagingDir: ${{ parameters.stagingDir }}
       pipelineId: 9056 # iTwin Transformer/Transformer Generate Docs
       artifactName: Transformer Docs
-      defaultBranch: refs/heads/main
+      buildTag: hasDocs
       useCurrentDocsArtifact: ${{ parameters.useCurrentTransformerDocsArtifact }}
 
-  # Download Auth Clients artifact
+  # Auth Clients
   - template: ./copy-docs-artifact.yaml
     parameters:
       workingDir: ${{ parameters.workingDir }}
       stagingDir: ${{ parameters.stagingDir }}
-      pipelineId: 6189 # iTwin.js/clients/iTwin.auth-clients.publish build
+      pipelineId: 9108 # iTwin.js/clients/iTwin.auth-clients.docs build
       artifactName: iTwin-Auth-Clients Docs
       buildTag: hasDocs
       useCurrentDocsArtifact: ${{ parameters.useCurrentAuthClientsDocsArtifact }}
@@ -92,6 +93,16 @@ steps:
           inputs:
             SourceFolder: $(Pipeline.Workspace)/iTwin-Auth-Clients Docs
             TargetFolder: ${{ parameters.stagingDir }}/reference/
+
+  # Connector Frameworks
+  - template: ./copy-docs-artifact.yaml
+    parameters:
+      workingDir: ${{ parameters.workingDir }}
+      stagingDir: ${{ parameters.stagingDir }}
+      pipelineId: 5669 # iTwin.js/iTwin Connector Frameworks/iTwin.connector-framework
+      artifactName: Connector-Framework Docs
+      buildTag: hasDocs
+      useCurrentDocsArtifact: ${{ parameters.useCurrentConnectorFrameworkDocsArtifact }}
 
   # The .updated.json is cached to track when the docs were last updated
   - task: DownloadPipelineArtifact@2

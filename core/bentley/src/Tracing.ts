@@ -7,12 +7,13 @@
  */
 
 import type { ContextAPI, SpanAttributes, SpanAttributeValue, SpanContext, SpanOptions, TraceAPI, Tracer } from "@opentelemetry/api";
-import { LogFunction, Logger } from "./Logger";
+import { LogFunction, Logger, LogLevel } from "./Logger";
 
 // re-export so that consumers can construct full SpanOptions object without external dependencies
 /**
  * Mirrors the SpanKind enum from [@opentelemetry/api](https://open-telemetry.github.io/opentelemetry-js/enums/_opentelemetry_api.SpanKind.html)
  * @public
+ * @deprecated in 4.4 - OpenTelemetry Tracing helpers will become internal in a future release. Apps should use `@opentelemetry/api` directly.
  */
 export enum SpanKind {
   INTERNAL = 0,
@@ -79,9 +80,12 @@ function flattenObject(obj: object): SpanAttributes {
   return Object.fromEntries(getFlatEntries(obj));
 }
 
+/* eslint-disable @typescript-eslint/no-deprecated -- lots of self-references here... */
+
 /**
  * Enables OpenTelemetry tracing in addition to traditional logging.
  * @public
+ * @deprecated in 4.4 - OpenTelemetry Tracing helpers will become internal in a future release. Apps should use `@opentelemetry/api` directly.
  */
 export class Tracing {
   private static _tracer?: Tracer;
@@ -107,7 +111,7 @@ export class Tracing {
     return Tracing._openTelemetry.context.with(
       Tracing._openTelemetry.trace.setSpan(
         parent,
-        Tracing._tracer.startSpan(name, options, Tracing._openTelemetry.context.active())
+        Tracing._tracer.startSpan(name, options, Tracing._openTelemetry.context.active()),
       ),
       async () => {
         try {
@@ -124,6 +128,14 @@ export class Tracing {
   }
 
   /**
+   * Adds a span event describing a runtime exception, as advised in OpenTelemetry documentation
+   * @param e error (exception) object
+   */
+  public static recordException(e: Error) {
+    Tracing._openTelemetry?.trace.getSpan(Tracing._openTelemetry.context.active())?.recordException(e);
+  }
+
+  /**
    * Enable logging to OpenTelemetry. [[Tracing.withSpan]] will be enabled, all log entries will be attached to active span as span events.
    * [IModelHost.startup]($backend) will call this automatically if the `enableOpenTelemetry` option is enabled and it succeeds in requiring `@opentelemetry/api`.
    * @note Node.js OpenTelemetry SDK should be initialized by the user.
@@ -131,18 +143,40 @@ export class Tracing {
   public static enableOpenTelemetry(tracer: Tracer, api: typeof Tracing._openTelemetry) {
     Tracing._tracer = tracer;
     Tracing._openTelemetry = api;
-    Logger.logTrace = Tracing.withOpenTelemetry(Logger.logTrace);
-    Logger.logInfo = Tracing.withOpenTelemetry(Logger.logInfo);
-    Logger.logWarning = Tracing.withOpenTelemetry(Logger.logWarning);
-    Logger.logError = Tracing.withOpenTelemetry(Logger.logError);
+    Logger.logTrace = Tracing.withOpenTelemetry(LogLevel.Trace, Logger.logTrace.bind(Logger)).bind(Logger);
+    Logger.logInfo = Tracing.withOpenTelemetry(LogLevel.Info, Logger.logInfo.bind(Logger)).bind(Logger);
+    Logger.logWarning = Tracing.withOpenTelemetry(LogLevel.Warning, Logger.logWarning.bind(Logger)).bind(Logger);
+    Logger.logError = Tracing.withOpenTelemetry(LogLevel.Error, Logger.logError.bind(Logger)).bind(Logger);
   }
 
-  private static withOpenTelemetry(base: LogFunction, isError: boolean = false): LogFunction {
+  private static withOpenTelemetry(level: LogLevel, base: LogFunction, isError: boolean = false): LogFunction {
     return (category, message, metaData) => {
-      try {
-        Tracing._openTelemetry?.trace.getSpan(Tracing._openTelemetry.context.active())?.addEvent(message, { ...flattenObject(Logger.getMetaData(metaData)), error: isError });
-      } catch (_e) { } // avoid throwing random errors (with stack trace mangled by async hooks) when openTelemetry collector doesn't work
-      base(category, message, metaData);
+      const oTelContext = Tracing._openTelemetry?.context.active();
+      if(Tracing._openTelemetry === undefined || oTelContext === undefined)
+        return base(category, message, metaData);
+
+      const serializedMetadata = Logger.getMetaData(metaData);
+      if(Logger.isEnabled(category, level)) {
+        try {
+          Tracing._openTelemetry?.trace
+            .getSpan(Tracing._openTelemetry.context.active())
+            ?.addEvent(message, {
+              ...flattenObject(serializedMetadata),
+              error: isError,
+              loggerCategory: category,
+            });
+        } catch { } // avoid throwing random errors (with stack trace mangled by async hooks) when openTelemetry collector doesn't work
+
+        const spanContext = Tracing._openTelemetry.trace.getSpan(oTelContext)?.spanContext();
+        base(category, message, {
+          ...serializedMetadata,
+          /* eslint-disable @typescript-eslint/naming-convention */
+          trace_id: spanContext?.traceId,
+          span_id: spanContext?.spanId,
+          trace_flags: spanContext?.traceFlags,
+          /* eslint-enable @typescript-eslint/naming-convention */
+        });
+      }
     };
   }
 
@@ -153,3 +187,5 @@ export class Tracing {
     Tracing._openTelemetry?.trace.getSpan(Tracing._openTelemetry.context.active())?.setAttributes(attributes);
   }
 }
+
+/* eslint-enable @typescript-eslint/no-deprecated */
