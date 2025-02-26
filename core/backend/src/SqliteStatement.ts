@@ -6,10 +6,10 @@
  * @module SQLite
  */
 
-import { assert, BentleyError, DbResult, GuidString, Id64String, IDisposable, LRUMap } from "@itwin/core-bentley";
+import { assert, BentleyError, DbResult, GuidString, Id64String, LRUMap } from "@itwin/core-bentley";
 import { ECJsNames, IModelError } from "@itwin/core-common";
 import { IModelJsNative } from "@bentley/imodeljs-native";
-import { IModelHost } from "./IModelHost";
+import { IModelNative } from "./internal/NativePlatform";
 
 // spell:ignore julianday
 
@@ -56,7 +56,7 @@ function checkBind(stat: DbResult) {
  * > The key to making this strategy work is to phrase a statement in a general way and use placeholders to represent parameters that will vary on each use.
  * @public
  */
-export class SqliteStatement implements IterableIterator<any>, IDisposable {
+export class SqliteStatement implements IterableIterator<any>, Disposable {
   private _stmt: IModelJsNative.SqliteStatement | undefined;
   private _db: IModelJsNative.AnyDb | undefined;
 
@@ -78,7 +78,7 @@ export class SqliteStatement implements IterableIterator<any>, IDisposable {
     if (this.isPrepared)
       throw new Error("SqliteStatement is already prepared");
     this._db = db;
-    this._stmt = new IModelHost.platform.SqliteStatement();
+    this._stmt = new IModelNative.platform.SqliteStatement();
     this._stmt.prepare(db, this._sql, logErrors);
   }
 
@@ -96,12 +96,17 @@ export class SqliteStatement implements IterableIterator<any>, IDisposable {
   }
 
   /** Call this function when finished with this statement. This releases the native resources held by the statement. */
-  public dispose(): void {
+  public [Symbol.dispose](): void {
     if (this._stmt) {
       this._stmt.dispose(); // free native statement
       this._stmt = undefined;
       this._db = undefined;
     }
+  }
+
+  /** @deprecated in 5.0 Use [Symbol.dispose] instead. */
+  public dispose() {
+    this[Symbol.dispose]();
   }
 
   /**
@@ -119,7 +124,21 @@ export class SqliteStatement implements IterableIterator<any>, IDisposable {
         return false;
     }
 
-    throw new BentleyError(rc, this._db!.getLastError());
+    this.throwSqlError(rc);
+    return false; // unreachable
+  }
+
+  public throwSqlError(rc: DbResult) {
+    throw new SqliteStatement.DbError(
+      rc === DbResult.BE_SQLITE_CONSTRAINT_FOREIGNKEY ? "ValueIsInUse" :
+        rc === DbResult.BE_SQLITE_CONSTRAINT_UNIQUE ? "DuplicateValue" :
+          "SqlLogicError", rc, `SQL error: ${this._db!.getLastError()}`);
+  }
+
+  public stepForWrite(): void {
+    const rc = this.step();
+    if (rc !== DbResult.BE_SQLITE_DONE)
+      this.throwSqlError(rc);
   }
 
   /** Binds a value to the specified SQL parameter.
@@ -642,4 +661,23 @@ export class StatementCache<Stmt extends Statement> {
     this._cache.forEach((stmt) => stmt.dispose());
     this._cache.clear();
   }
+}
+
+/** @public */
+export namespace SqliteStatement {
+  export class DbError extends BentleyError {
+    /** A string that indicates the type of problem that caused the exception. */
+    public readonly errorId: ErrorId;
+
+    /** @internal */
+    constructor(errorId: ErrorId, errNum: number, message: string) {
+      super(errNum, message);
+      this.errorId = errorId;
+    }
+  }
+
+  export type ErrorId =
+    "DuplicateValue" |
+    "SqlLogicError" |
+    "ValueIsInUse";
 }

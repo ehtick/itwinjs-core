@@ -6,7 +6,7 @@
  * @module Tiles
  */
 
-import { ByteStream, Id64String } from "@itwin/core-bentley";
+import { ByteStream, Id64Set, Id64String } from "@itwin/core-bentley";
 import { Point3d, Transform } from "@itwin/core-geometry";
 import {
   BatchType, decodeTileContentDescription, TileReadError, TileReadStatus,
@@ -15,13 +15,11 @@ import { IModelApp } from "../IModelApp";
 import { IModelConnection } from "../IModelConnection";
 import { GraphicBranch } from "../render/GraphicBranch";
 import { RenderGraphic } from "../render/RenderGraphic";
-import { BatchOptions } from "../render/GraphicBuilder";
 import { RenderSystem } from "../render/RenderSystem";
-import { convertFeatureTable, ImdlTimeline, parseImdlDocument } from "../imdl/ImdlParser";
-import { decodeImdlGraphics } from "../imdl/ImdlGraphicsCreator";
-import { IModelTileContent } from "./internal";
-
-/* eslint-disable no-restricted-syntax */
+import { ImdlModel } from "../common/imdl/ImdlModel";
+import { convertFeatureTable, ImdlParseError, ImdlParserOptions, ImdlTimeline, parseImdlDocument } from "../common/imdl/ParseImdlDocument";
+import { decodeImdlGraphics, IModelTileContent } from "./internal";
+import { BatchOptions } from "../common/render/BatchOptions";
 
 /** @internal */
 export interface ImdlReaderResult extends IModelTileContent {
@@ -67,9 +65,12 @@ export interface ImdlReaderCreateArgs {
   containsTransformNodes?: boolean; // default false
   /** Supplied if the graphics in the tile are to be split up based on the nodes in the timeline. */
   timeline?: ImdlTimeline;
+  modelGroups?: Id64Set[];
 }
 
-async function readImdlContent(args: ImdlReaderCreateArgs): Promise<ImdlReaderResult> {
+/** @internal */
+export async function readImdlContent(args: ImdlReaderCreateArgs & { parseDocument?: (parseOpts: ImdlParserOptions) => Promise<ImdlModel.Document | ImdlParseError> }): Promise<ImdlReaderResult> {
+  const isCanceled = args.isCanceled ?? (() => false);
   let content;
   try {
     content = decodeTileContentDescription({
@@ -88,17 +89,20 @@ async function readImdlContent(args: ImdlReaderCreateArgs): Promise<ImdlReaderRe
   }
 
   args.stream.reset();
-  const document = parseImdlDocument({
-    stream: args.stream,
+  const parseOpts: ImdlParserOptions = {
+    data: args.stream.readBytes(0, args.stream.length),
     batchModelId: args.modelId,
     is3d: args.is3d,
     maxVertexTableSize: IModelApp.renderSystem.maxTextureSize,
     omitEdges: false === args.loadEdges,
-    timeline: args.timeline,
     createUntransformedRootNode: args.containsTransformNodes,
-  });
+    modelGroups: args.modelGroups,
+  };
 
-  if (typeof document === "number")
+  const document = args.parseDocument ? (await args.parseDocument(parseOpts)) : await parseImdlDocument({ ...parseOpts, timeline: args.timeline });
+  if (isCanceled())
+    return { isLeaf: true, readStatus: TileReadStatus.Canceled };
+  else if (typeof document === "number")
     return { isLeaf: true, readStatus: document };
 
   let graphic = await decodeImdlGraphics({
@@ -108,7 +112,7 @@ async function readImdlContent(args: ImdlReaderCreateArgs): Promise<ImdlReaderRe
     isCanceled: args.isCanceled,
   });
 
-  if (args.isCanceled && args.isCanceled())
+  if (isCanceled())
     return { isLeaf: true, readStatus: TileReadStatus.Canceled };
 
   if (graphic && false !== args.options) {

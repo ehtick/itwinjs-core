@@ -3,7 +3,7 @@
 * See LICENSE.md in the project root for license terms and full copyright notice.
 *--------------------------------------------------------------------------------------------*/
 /** @packageDocumentation
- * @module Categories
+ * @module iModels
  */
 
 import { Id64, Id64String, JsonUtils } from "@itwin/core-bentley";
@@ -18,21 +18,18 @@ import { CategoryOwnsSubCategories } from "./NavigationRelationship";
  * @public
  */
 export class SubCategory extends DefinitionElement {
-  /** @internal */
   public static override get className(): string { return "SubCategory"; }
   /** The Appearance parameters for this SubCategory */
   public appearance: SubCategoryAppearance;
   /** Optional description of this SubCategory. */
   public description?: string;
 
-  /** @internal */
-  public constructor(props: SubCategoryProps, iModel: IModelDb) {
+  protected constructor(props: SubCategoryProps, iModel: IModelDb) {
     super(props, iModel);
     this.appearance = new SubCategoryAppearance(props.appearance);
     this.description = JsonUtils.asString(props.description);
   }
 
-  /** @internal */
   public override toJSON(): SubCategoryProps {
     const val = super.toJSON() as SubCategoryProps;
     val.appearance = this.appearance.toJSON();
@@ -101,19 +98,16 @@ export class SubCategory extends DefinitionElement {
  * @public
  */
 export class Category extends DefinitionElement {
-  /** @internal */
   public static override get className(): string { return "Category"; }
   public rank: Rank = Rank.User;
   public description?: string;
 
-  /** @internal */
-  public constructor(props: CategoryProps, iModel: IModelDb) {
+  protected constructor(props: CategoryProps, iModel: IModelDb) {
     super(props, iModel);
     this.rank = JsonUtils.asInt(props.rank);
     this.description = JsonUtils.asString(props.description);
   }
 
-  /** @internal */
   public override toJSON(): CategoryProps {
     const val = super.toJSON() as CategoryProps;
     val.rank = this.rank;
@@ -140,15 +134,9 @@ export class Category extends DefinitionElement {
  * @public
  */
 export class DrawingCategory extends Category {
-  /** @internal */
   public static override get className(): string { return "DrawingCategory"; }
 
-  /** Construct a DrawingCategory
-   * @param opts  The properties of the new DrawingCategory
-   * @param iModel The IModelDb where the DrawingCategory may be inserted.
-   * @internal
-   */
-  public constructor(opts: ElementProps, iModel: IModelDb) { super(opts, iModel); }
+  protected constructor(opts: ElementProps, iModel: IModelDb) { super(opts, iModel); }
 
   /** Get the name of the CodeSpec that is used by DrawingCategory objects. */
   public static getCodeSpecName(): string { return BisCodeSpec.drawingCategory; }
@@ -208,14 +196,8 @@ export class DrawingCategory extends Category {
  * @public
  */
 export class SpatialCategory extends Category {
-  /** @internal */
   public static override get className(): string { return "SpatialCategory"; }
-  /** Construct a SpatialCategory
-   * @param opts  The properties of the new SpatialCategory
-   * @param iModel The IModelDb where the SpatialCategory may be inserted.
-   * @internal
-   */
-  public constructor(opts: ElementProps, iModel: IModelDb) { super(opts, iModel); }
+  protected constructor(opts: ElementProps, iModel: IModelDb) { super(opts, iModel); }
 
   /** Get the name of the CodeSpec that is used by SpatialCategory objects. */
   public static getCodeSpecName(): string { return BisCodeSpec.spatialCategory; }

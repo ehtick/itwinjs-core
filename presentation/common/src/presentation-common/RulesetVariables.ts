@@ -1,7 +1,7 @@
 /*---------------------------------------------------------------------------------------------
-* Copyright (c) Bentley Systems, Incorporated. All rights reserved.
-* See LICENSE.md in the project root for license terms and full copyright notice.
-*--------------------------------------------------------------------------------------------*/
+ * Copyright (c) Bentley Systems, Incorporated. All rights reserved.
+ * See LICENSE.md in the project root for license terms and full copyright notice.
+ *--------------------------------------------------------------------------------------------*/
 /** @packageDocumentation
  * @module Core
  */
@@ -105,7 +105,13 @@ export interface Id64sRulesetVariable extends RulesetVariableBase {
  * Data structure for representing ruleset variables.
  * @public
  */
-export type RulesetVariable = BooleanRulesetVariable | StringRulesetVariable | IntRulesetVariable | IntsRulesetVariable | Id64RulesetVariable | Id64sRulesetVariable;
+export type RulesetVariable =
+  | BooleanRulesetVariable
+  | StringRulesetVariable
+  | IntRulesetVariable
+  | IntsRulesetVariable
+  | Id64RulesetVariable
+  | Id64sRulesetVariable;
 
 /**
  * JSON representation of [[RulesetVariableBase]].
@@ -115,51 +121,6 @@ export interface RulesetVariableBaseJSON {
   id: string;
   type: VariableValueTypes;
   value: VariableValueJSON;
-}
-/**
- * JSON representation of [[BooleanRulesetVariable]].
- * @public
- * @deprecated in 3.x. Use [[BooleanRulesetVariable]]
- */
-export interface BooleanRulesetVariableJSON extends RulesetVariableBaseJSON {
-  type: VariableValueTypes.Bool;
-  value: boolean;
-}
-/**
- * JSON representation of [[StringRulesetVariable]].
- * @public
- * @deprecated in 3.x. Use [[StringRulesetVariable]]
- */
-export interface StringRulesetVariableJSON extends RulesetVariableBaseJSON {
-  type: VariableValueTypes.String;
-  value: string;
-}
-/**
- * JSON representation of [[IntRulesetVariable]].
- * @public
- * @deprecated in 3.x. Use [[IntRulesetVariable]]
- */
-export interface IntRulesetVariableJSON extends RulesetVariableBaseJSON {
-  type: VariableValueTypes.Int;
-  value: number;
-}
-/**
- * JSON representation of [[IntsRulesetVariable]].
- * @public
- * @deprecated in 3.x. Use [[IntsRulesetVariable]]
- */
-export interface IntsRulesetVariableJSON extends RulesetVariableBaseJSON {
-  type: VariableValueTypes.IntArray;
-  value: number[];
-}
-/**
- * JSON representation of [[Id64RulesetVariable]].
- * @public
- * @deprecated in 3.x. Use [[Id64RulesetVariable]]
- */
-export interface Id64RulesetVariableJSON extends RulesetVariableBaseJSON {
-  type: VariableValueTypes.Id64;
-  value: Id64String;
 }
 /**
  * JSON representation of [[Id64sRulesetVariable]].
@@ -173,8 +134,14 @@ export interface Id64sRulesetVariableJSON extends RulesetVariableBaseJSON {
  * JSON representation of [[RulesetVariable]].
  * @public
  */
-// eslint-disable-next-line deprecation/deprecation
-export type RulesetVariableJSON = BooleanRulesetVariableJSON | StringRulesetVariableJSON | IntRulesetVariableJSON | IntsRulesetVariableJSON | Id64RulesetVariableJSON | Id64sRulesetVariableJSON;
+
+export type RulesetVariableJSON =
+  | BooleanRulesetVariable
+  | StringRulesetVariable
+  | IntRulesetVariable
+  | IntsRulesetVariable
+  | Id64RulesetVariable
+  | Id64sRulesetVariableJSON;
 
 /** @public */
 // eslint-disable-next-line @typescript-eslint/no-redeclare
@@ -184,16 +151,18 @@ export namespace RulesetVariable {
    * Note: In case of [[Id64sRulesetVariable]], this method expects IDs are sorted. See [[OrderedId64Iterable.sortArray]].
    */
   export function toJSON(variable: RulesetVariable): RulesetVariableJSON {
-    if (variable.type === VariableValueTypes.Id64Array)
+    if (variable.type === VariableValueTypes.Id64Array) {
       return { ...variable, value: CompressedId64Set.compressArray(variable.value) };
+    }
     return variable;
   }
 
   /** Deserialize [[RulesetVariable]] from JSON. */
   export function fromJSON(json: RulesetVariableJSON): RulesetVariable {
     if (json.type === VariableValueTypes.Id64Array) {
-      if (typeof json.value === "string")
+      if (typeof json.value === "string") {
         return { ...json, value: CompressedId64Set.decompressArray(json.value) };
+      }
       return json as any; // for some reason TS doesn't understand that `json.value` is always an array here
     }
     return json;

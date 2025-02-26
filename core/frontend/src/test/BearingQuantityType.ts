@@ -116,8 +116,7 @@ class BearingParserSpec extends ParserSpec {
 
     const isCCW = this.format.customProps?.angleDirection === "counter-clockwise";
 
-    // const parsedRadians = Parser.parseToQuantityValue(inString, this.format, this.unitConversions);
-    const parsedRadians = Parser.parseToQuantityValue(adjustedString, this.format, this.unitConversions);
+    const parsedRadians = Parser.parseQuantityString(adjustedString, this);
     if (Parser.isParsedQuantity(parsedRadians)) {
       if (prefix === "N" && suffix === "E") {
         if (isCCW)
@@ -233,14 +232,14 @@ export class BearingQuantityType implements CustomQuantityTypeDefinition {
           { value: "counter-clockwise", label: "counter-clockwise" },
         ],
         label: "Angle Direction",
-        getString: BearingQuantityType.bearingAngleDirectionGetter,
-        setString: BearingQuantityType.bearingAngleDirectionSetter,
+        getString: (props) => BearingQuantityType.bearingAngleDirectionGetter(props),
+        setString: (props, _value) => BearingQuantityType.bearingAngleDirectionSetter(props, _value),
       } as TextSelectFormatPropEditorSpec,
       {
         editorType: "text",
         label: "Test Text",
-        getString: BearingQuantityType.bearingTextGetter,
-        setString: BearingQuantityType.bearingTextSetter,
+        getString: (props) => BearingQuantityType.bearingTextGetter(props),
+        setString: (props, _value) => BearingQuantityType.bearingTextSetter(props, _value),
       } as TextInputFormatPropEditorSpec,
     ];
   }
@@ -250,8 +249,8 @@ export class BearingQuantityType implements CustomQuantityTypeDefinition {
       {
         editorType: "checkbox",
         label: "bearingGap",
-        getBool: BearingQuantityType.bearingGapPropGetter,
-        setBool: BearingQuantityType.bearingGapPropSetter,
+        getBool: (props) => BearingQuantityType.bearingGapPropGetter(props),
+        setBool: (props, isChecked) => BearingQuantityType.bearingGapPropSetter(props, isChecked),
       } as CheckboxFormatPropEditorSpec,
     ];
   }

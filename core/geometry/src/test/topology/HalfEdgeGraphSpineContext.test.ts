@@ -3,27 +3,27 @@
 * See LICENSE.md in the project root for license terms and full copyright notice.
 *--------------------------------------------------------------------------------------------*/
 
-import { expect } from "chai";
+import { describe, expect, it } from "vitest";
 import * as fs from "fs";
-import { Checker } from "../Checker";
-import { HalfEdgeGraphSpineContext } from "../../topology/HalfEdgeGraphSpineContext";
-import { Point3d } from "../../geometry3d/Point3dVector3d";
-import { GeometryCoreTestIO } from "../GeometryCoreTestIO";
-import { PolyfaceBuilder } from "../../polyface/PolyfaceBuilder";
 import { GeometryQuery } from "../../curve/GeometryQuery";
-import { Sample } from "../../serialization/GeometrySamples";
-import { Transform } from "../../geometry3d/Transform";
-import { Matrix3d } from "../../geometry3d/Matrix3d";
-import { Angle } from "../../geometry3d/Angle";
-import { IModelJson } from "../../serialization/IModelJsonSchema";
-import { GrowableXYZArray } from "../../geometry3d/GrowableXYZArray";
+import { LineSegment3d } from "../../curve/LineSegment3d";
 import { Loop } from "../../curve/Loop";
 import { ParityRegion } from "../../curve/ParityRegion";
 import { RegionBinaryOpType, RegionOps } from "../../curve/RegionOps";
-import { MultiLineStringDataVariant } from "../../topology/Triangulation";
-import { RegularizationContext } from "../../topology/RegularizeFace";
+import { Angle } from "../../geometry3d/Angle";
+import { GrowableXYZArray } from "../../geometry3d/GrowableXYZArray";
+import { MultiLineStringDataVariant } from "../../geometry3d/IndexedXYZCollection";
+import { Matrix3d } from "../../geometry3d/Matrix3d";
+import { Point3d } from "../../geometry3d/Point3dVector3d";
+import { Transform } from "../../geometry3d/Transform";
+import { PolyfaceBuilder } from "../../polyface/PolyfaceBuilder";
+import { Sample } from "../../serialization/GeometrySamples";
+import { IModelJson } from "../../serialization/IModelJsonSchema";
 import { HalfEdge, HalfEdgeGraph } from "../../topology/Graph";
-import { LineSegment3d } from "../../curve/LineSegment3d";
+import { HalfEdgeGraphSpineContext } from "../../topology/HalfEdgeGraphSpineContext";
+import { RegularizationContext } from "../../topology/RegularizeFace";
+import { Checker } from "../Checker";
+import { GeometryCoreTestIO } from "../GeometryCoreTestIO";
 
 function loadSpineGraph(context: HalfEdgeGraphSpineContext, data: any) {
   if (Array.isArray(data) && data[0] instanceof Point3d) {
@@ -110,7 +110,7 @@ describe("HalfEdgeGraphSpineContext", () => {
         x0 += xStep;
       }
     }
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
     GeometryCoreTestIO.saveGeometry(allGeometry, "HalfEdgeGraphSpineContext", "SmallGraph");
   });
   it("XYBoundaryFiles", () => {
@@ -119,17 +119,17 @@ describe("HalfEdgeGraphSpineContext", () => {
     let x0 = 0.0;
     const allGeometry: GeometryQuery[] = [];
     const inner = IModelJson.Reader.parse(JSON.parse(fs.readFileSync(
-      "./src/test/testInputs/intersections/MBContainmentBoolean/inner.imjs", "utf8")));
+      "./src/test/data/intersections/MBContainmentBoolean/inner.imjs", "utf8")));
     const innerA = IModelJson.Reader.parse(JSON.parse(fs.readFileSync(
-      "./src/test/testInputs/intersections/MBContainmentBoolean/innerSimplifiedA.imjs", "utf8")));
+      "./src/test/data/intersections/MBContainmentBoolean/innerSimplifiedA.imjs", "utf8")));
     const innerB = IModelJson.Reader.parse(JSON.parse(fs.readFileSync(
-      "./src/test/testInputs/intersections/MBContainmentBoolean/innerSimplifiedB.imjs", "utf8")));
+      "./src/test/data/intersections/MBContainmentBoolean/innerSimplifiedB.imjs", "utf8")));
     const innerC = IModelJson.Reader.parse(JSON.parse(fs.readFileSync(
-      "./src/test/testInputs/intersections/MBContainmentBoolean/innerSimplifiedC.imjs", "utf8")));
+      "./src/test/data/intersections/MBContainmentBoolean/innerSimplifiedC.imjs", "utf8")));
     const innerD = IModelJson.Reader.parse(JSON.parse(fs.readFileSync(
-      "./src/test/testInputs/intersections/MBContainmentBoolean/innerSimplifiedD.imjs", "utf8")));
+      "./src/test/data/intersections/MBContainmentBoolean/innerSimplifiedD.imjs", "utf8")));
     const outer = IModelJson.Reader.parse(JSON.parse(fs.readFileSync(
-      "./src/test/testInputs/intersections/MBContainmentBoolean/outer.imjs", "utf8")));
+      "./src/test/data/intersections/MBContainmentBoolean/outer.imjs", "utf8")));
     for (const data of [innerD, innerC, innerB, inner, outer, innerA, innerB]) {
       // testSpineLoop(allGeometry, data, x0, 0);
       const flatData = flattenRegions(data as any[]);

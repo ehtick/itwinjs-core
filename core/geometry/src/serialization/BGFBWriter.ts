@@ -6,40 +6,42 @@
  * @module Serialization
  */
 import { flatbuffers } from "flatbuffers";
-import { BGFBAccessors } from "./BGFBAccessors";
-import { CurvePrimitive } from "../curve/CurvePrimitive";
-import { LineSegment3d } from "../curve/LineSegment3d";
-import { Arc3d } from "../curve/Arc3d";
-import { LineString3d } from "../curve/LineString3d";
-import { GrowableXYZArray } from "../geometry3d/GrowableXYZArray";
-import { IndexedPolyface } from "../polyface/Polyface";
-import { CurveCollection } from "../curve/CurveCollection";
-import { ParityRegion } from "../curve/ParityRegion";
-import { Loop } from "../curve/Loop";
-import { UnionRegion } from "../curve/UnionRegion";
-import { Path } from "../curve/Path";
+import { AkimaCurve3d } from "../bspline/AkimaCurve3d";
 import { BSplineCurve3d } from "../bspline/BSplineCurve";
 import { BSplineCurve3dH } from "../bspline/BSplineCurve3dH";
-import { SolidPrimitive } from "../solid/SolidPrimitive";
+import { BSplineSurface3d, BSplineSurface3dH, UVSelect } from "../bspline/BSplineSurface";
+import { InterpolationCurve3d } from "../bspline/InterpolationCurve3d";
+import { BSplineWrapMode } from "../bspline/KnotVector";
+import { Arc3d } from "../curve/Arc3d";
+import { CurveCollection } from "../curve/CurveCollection";
+import { CurvePrimitive } from "../curve/CurvePrimitive";
+import { GeometryQuery } from "../curve/GeometryQuery";
+import { LineSegment3d } from "../curve/LineSegment3d";
+import { LineString3d } from "../curve/LineString3d";
+import { Loop } from "../curve/Loop";
+import { ParityRegion } from "../curve/ParityRegion";
+import { Path } from "../curve/Path";
+import { PointString3d } from "../curve/PointString3d";
+import { DirectSpiral3d } from "../curve/spiral/DirectSpiral3d";
+import { IntegratedSpiral3d } from "../curve/spiral/IntegratedSpiral3d";
+import { TransitionSpiral3d } from "../curve/spiral/TransitionSpiral3d";
+import { UnionRegion } from "../curve/UnionRegion";
+import { GrowableXYZArray } from "../geometry3d/GrowableXYZArray";
+import { Point3d, XYZ } from "../geometry3d/Point3dVector3d";
+import { AuxChannel, AuxChannelData, PolyfaceAuxData } from "../polyface/AuxData";
+import { IndexedPolyface } from "../polyface/Polyface";
+import { TaggedNumericData } from "../polyface/TaggedNumericData";
 import { Box } from "../solid/Box";
-import { Sphere } from "../solid/Sphere";
+import { Cone } from "../solid/Cone";
 import { LinearSweep } from "../solid/LinearSweep";
 import { RotationalSweep } from "../solid/RotationalSweep";
 import { RuledSweep } from "../solid/RuledSweep";
+import { SolidPrimitive } from "../solid/SolidPrimitive";
+import { Sphere } from "../solid/Sphere";
 import { TorusPipe } from "../solid/TorusPipe";
-import { Cone } from "../solid/Cone";
-import { GeometryQuery } from "../curve/GeometryQuery";
-import { BSplineSurface3d, BSplineSurface3dH, UVSelect } from "../bspline/BSplineSurface";
-import { PointString3d } from "../curve/PointString3d";
-import { Point3d, XYZ } from "../geometry3d/Point3dVector3d";
-import { AuxChannel, AuxChannelData, PolyfaceAuxData } from "../polyface/AuxData";
-import { TransitionSpiral3d } from "../curve/spiral/TransitionSpiral3d";
-import { IntegratedSpiral3d } from "../curve/spiral/IntegratedSpiral3d";
+import { BGFBAccessors } from "./BGFBAccessors";
 import { DgnSpiralTypeQueries } from "./BGFBReader";
-import { DirectSpiral3d } from "../curve/spiral/DirectSpiral3d";
-import { TaggedNumericData } from "../polyface/TaggedNumericData";
-import { InterpolationCurve3d } from "../bspline/InterpolationCurve3d";
-import { AkimaCurve3d } from "../bspline/AkimaCurve3d";
+import { SerializationHelpers } from "./SerializationHelpers";
 
 /**
  * Context to write to a flatbuffer blob.
@@ -113,7 +115,7 @@ export class BGFBWriter {
 
   public writeCurveCollectionAsFBCurveVector(cv: CurveCollection): number | undefined {
     const childrenOffsets: flatbuffers.Offset[] = [];
-    for (const child of cv.children!) {
+    for (const child of cv.children) {
       if (child instanceof CurvePrimitive) {
         const childOffset = this.writeCurvePrimitiveAsFBVariantGeometry(child);
         if (childOffset)
@@ -148,8 +150,7 @@ export class BGFBWriter {
     const fitPointsOffset = this.writeDoubleArray(curve.copyFitPointsFloat64Array());
     const knotOffset = props.knots ? this.writeDoubleArray(props.knots) : 0;
 
-      // REMARK: some native or flatbuffer quirk made startTangent a point and endTangent a vector.
-  BGFBAccessors.InterpolationCurve.startInterpolationCurve(this.builder);
+    BGFBAccessors.InterpolationCurve.startInterpolationCurve(this.builder);
     BGFBAccessors.InterpolationCurve.addFitPoints(this.builder, fitPointsOffset);
     if (props.order)
       BGFBAccessors.InterpolationCurve.addOrder(this.builder, props.order);
@@ -163,21 +164,22 @@ export class BGFBWriter {
       BGFBAccessors.InterpolationCurve.addIsChordLenKnots(this.builder, props.isChordLenKnots);
     if (props.isNaturalTangents)
       BGFBAccessors.InterpolationCurve.addIsNaturalTangents(this.builder, props.isNaturalTangents);
+    // REMARK: some native or flatbuffer quirk made startTangent a point and endTangent a vector.
     if (props.startTangent !== undefined) {
       const startTangentOffset = BGFBAccessors.DPoint3d.createDPoint3d(this.builder,
-          XYZ.x(props.startTangent), XYZ.y(props.startTangent), XYZ.z(props.startTangent));
-          BGFBAccessors.InterpolationCurve.addStartTangent(this.builder, startTangentOffset);
+        XYZ.x(props.startTangent), XYZ.y(props.startTangent), XYZ.z(props.startTangent));
+        BGFBAccessors.InterpolationCurve.addStartTangent(this.builder, startTangentOffset);
     }
     if (props.endTangent !== undefined) {
-      const endTangentOffset = BGFBAccessors.DPoint3d.createDPoint3d(this.builder,
-          XYZ.x(props.endTangent), XYZ.y(props.endTangent), XYZ.z(props.endTangent));
-          BGFBAccessors.InterpolationCurve.addEndTangent(this.builder, endTangentOffset);
-          }
+      const endTangentOffset = BGFBAccessors.DVector3d.createDVector3d(this.builder,
+        XYZ.x(props.endTangent), XYZ.y(props.endTangent), XYZ.z(props.endTangent));
+        BGFBAccessors.InterpolationCurve.addEndTangent(this.builder, endTangentOffset);
+    }
     if (knotOffset !== 0)
       BGFBAccessors.InterpolationCurve.addKnots(this.builder, knotOffset);
     const headerOffset = BGFBAccessors.InterpolationCurve.endInterpolationCurve(this.builder);
     return BGFBAccessors.VariantGeometry.createVariantGeometry(this.builder, BGFBAccessors.VariantGeometryUnion.tagInterpolationCurve, headerOffset, 0);
-    }
+  }
 
   public writeAkimaCurve3dAsFBVariantGeometry(curve: AkimaCurve3d): number | undefined {
     const fitPointsOffset = this.writeDoubleArray(curve.copyFitPointsFloat64Array());
@@ -185,54 +187,89 @@ export class BGFBWriter {
     BGFBAccessors.AkimaCurve.addPoints(this.builder, fitPointsOffset);
     const headerOffset = BGFBAccessors.AkimaCurve.endAkimaCurve(this.builder);
     return BGFBAccessors.VariantGeometry.createVariantGeometry(this.builder, BGFBAccessors.VariantGeometryUnion.tagAkimaCurve, headerOffset, 0);
-    }
+  }
 
   public writeBsplineCurve3dAsFBVariantGeometry(bcurve: BSplineCurve3d): number | undefined {
-    const order = bcurve.order;
-    const closed = false;   // typescript bcurves are not closed.  There is API to impose wrapping . . .
-    const weightsOffset = 0;
-    const polesOffset = this.writeDoubleArray(bcurve.copyPointsFloat64Array());
-    if (polesOffset === undefined)
+    const data = SerializationHelpers.createBSplineCurveData(bcurve.polesRef, bcurve.poleDimension, bcurve.knotsRef, bcurve.numPoles, bcurve.order);
+    const wrapMode = bcurve.getWrappable();
+    if (BSplineWrapMode.None !== wrapMode)
+      data.params.wrapMode = wrapMode;
+
+    if (!SerializationHelpers.Export.prepareBSplineCurveData(data, {jsonPoles: false}))
       return undefined;
-    const knotsOffset = this.writeDoubleArray(bcurve.copyKnots(true));
-    const headerOffset = BGFBAccessors.BsplineCurve.createBsplineCurve(this.builder,
-      order, closed, polesOffset, weightsOffset, knotsOffset);
+
+    const closed = !!data.params.closed;
+    const polesOffset = this.writeDoubleArray(data.poles as Float64Array);
+    const weightsOffset = 0;
+    const knotsOffset = this.writeDoubleArray(data.params.knots);
+    const headerOffset = BGFBAccessors.BsplineCurve.createBsplineCurve(this.builder, data.params.order, closed, polesOffset, weightsOffset, knotsOffset);
     return BGFBAccessors.VariantGeometry.createVariantGeometry(this.builder, BGFBAccessors.VariantGeometryUnion.tagBsplineCurve, headerOffset, 0);
   }
 
   public writeBSplineSurfaceAsFBVariantGeometry(bsurf: BSplineSurface3d | BSplineSurface3dH): number | undefined {
-    const orderU = bsurf.orderUV(UVSelect.uDirection);
-    const orderV = bsurf.orderUV(UVSelect.VDirection);
-    const numPolesU = bsurf.numPolesUV(UVSelect.uDirection);
-    const numPolesV = bsurf.numPolesUV(UVSelect.VDirection);
-    const closedU = false;
-    const closedV = false;
+    let poles: Float64Array = bsurf.coffs;
+    let weights: Float64Array | undefined;
+    let dim = bsurf.poleDimension;
+    if (bsurf instanceof BSplineSurface3dH) {
+      poles = bsurf.copyXYZToFloat64Array(false);
+      weights = bsurf.copyWeightsToFloat64Array();
+      dim = 3;
+    }
+
+    const data = SerializationHelpers.createBSplineSurfaceData(poles, dim,
+      bsurf.knots[UVSelect.uDirection].knots, bsurf.numPolesUV(UVSelect.uDirection), bsurf.orderUV(UVSelect.uDirection),
+      bsurf.knots[UVSelect.vDirection].knots, bsurf.numPolesUV(UVSelect.vDirection), bsurf.orderUV(UVSelect.vDirection));
+
+    if (weights)
+      data.weights = weights;
+    const wrapModeU = bsurf.getWrappable(UVSelect.uDirection);
+    const wrapModeV = bsurf.getWrappable(UVSelect.vDirection);
+    if (BSplineWrapMode.None !== wrapModeU)
+      data.uParams.wrapMode = wrapModeU;
+    if (BSplineWrapMode.None !== wrapModeV)
+      data.vParams.wrapMode = wrapModeV;
+
+    if (!SerializationHelpers.Export.prepareBSplineSurfaceData(data, {jsonPoles: false}))
+      return undefined;
+
+    // TypeScript B-spline surfaces do not support trim curves or isoline counts
     const holeOrigin = 0;
     const boundariesOffset = 0;
-    let polesOffset = 0;
-    let weightsOffset = 0;
-    if (bsurf instanceof BSplineSurface3d) {
-      polesOffset = this.writeDoubleArray(bsurf.copyPointsFloat64Array());
-    } else if (bsurf instanceof BSplineSurface3dH) {
-      polesOffset = this.writeDoubleArray(bsurf.copyXYZToFloat64Array(false));
-      weightsOffset = this.writeDoubleArray(bsurf.copyWeightsToFloat64Array());
-    }
-    const uKnotsOffset = this.writeDoubleArray(bsurf.knots[0].copyKnots(true));
-    const vKnotsOffset = this.writeDoubleArray(bsurf.knots[1].copyKnots(true));
+    const numRulesU = 0;
+    const numRulesV = 0;
 
-    const headerOffset = BGFBAccessors.BsplineSurface.createBsplineSurface(this.builder, polesOffset, weightsOffset, uKnotsOffset, vKnotsOffset,
-      numPolesU, numPolesV, orderU, orderV, 0, 0, holeOrigin, boundariesOffset, closedU, closedV);
+    const closedU = !!data.uParams.closed;
+    const closedV = !!data.vParams.closed;
+    const polesOffset = this.writeDoubleArray(data.poles as Float64Array);
+    const weightsOffset = data.weights ? this.writeDoubleArray(data.weights as Float64Array) : 0;
+    const uKnotsOffset = this.writeDoubleArray(data.uParams.knots);
+    const vKnotsOffset = this.writeDoubleArray(data.vParams.knots);
+    const headerOffset = BGFBAccessors.BsplineSurface.createBsplineSurface(this.builder, polesOffset, weightsOffset,
+      uKnotsOffset, vKnotsOffset, data.uParams.numPoles, data.vParams.numPoles, data.uParams.order, data.vParams.order,
+      numRulesU, numRulesV, holeOrigin, boundariesOffset, closedU, closedV);
+
     return BGFBAccessors.VariantGeometry.createVariantGeometry(this.builder, BGFBAccessors.VariantGeometryUnion.tagBsplineSurface, headerOffset, 0);
   }
 
-  public writeBsplineCurve3dAHsFBVariantGeometry(bcurve: BSplineCurve3dH): number | undefined {
-    const order = bcurve.order;
-    const closed = false;   // typescript bcurves are not closed.  There is API to impose wrapping . . .
-    const polesOffset = this.writeDoubleArray(bcurve.copyXYZFloat64Array(false));
-    const weightsOffset = this.writeDoubleArray(bcurve.copyWeightsFloat64Array());
-    const knotsOffset = this.writeDoubleArray(bcurve.copyKnots(true));
-    const headerOffset = BGFBAccessors.BsplineCurve.createBsplineCurve(this.builder,
-      order, closed, polesOffset, weightsOffset, knotsOffset);
+  public writeBsplineCurve3dHAsFBVariantGeometry(bcurve: BSplineCurve3dH): number | undefined {
+    const poles = bcurve.copyXYZFloat64Array(false);
+    const weights = bcurve.copyWeightsFloat64Array();
+    const dim = 3;
+
+    const data = SerializationHelpers.createBSplineCurveData(poles, dim, bcurve.knotsRef, bcurve.numPoles, bcurve.order);
+    data.weights = weights;
+    const wrapMode = bcurve.getWrappable();
+    if (BSplineWrapMode.None !== wrapMode)
+      data.params.wrapMode = wrapMode;
+
+    if (!SerializationHelpers.Export.prepareBSplineCurveData(data, {jsonPoles: false}))
+      return undefined;
+
+    const closed = !!data.params.closed;
+    const polesOffset = this.writeDoubleArray(data.poles as Float64Array);
+    const weightsOffset = this.writeDoubleArray(data.weights);
+    const knotsOffset = this.writeDoubleArray(data.params.knots);
+    const headerOffset = BGFBAccessors.BsplineCurve.createBsplineCurve(this.builder, data.params.order, closed, polesOffset, weightsOffset, knotsOffset);
     return BGFBAccessors.VariantGeometry.createVariantGeometry(this.builder, BGFBAccessors.VariantGeometryUnion.tagBsplineCurve, headerOffset, 0);
   }
 
@@ -265,7 +302,7 @@ export class BGFBWriter {
     } else if (curvePrimitive instanceof BSplineCurve3d) {
       return this.writeBsplineCurve3dAsFBVariantGeometry(curvePrimitive);
     } else if (curvePrimitive instanceof BSplineCurve3dH) {
-      return this.writeBsplineCurve3dAHsFBVariantGeometry(curvePrimitive);
+      return this.writeBsplineCurve3dHAsFBVariantGeometry(curvePrimitive);
     } else if (curvePrimitive instanceof InterpolationCurve3d) {
       return this.writeInterpolationCurve3dAsFBVariantGeometry(curvePrimitive);
     } else if (curvePrimitive instanceof AkimaCurve3d) {
@@ -439,7 +476,7 @@ export class BGFBWriter {
       const valuesOffset = BGFBAccessors.PolyfaceAuxChannelData.createValuesVector(this.builder, channelData.values);
       return BGFBAccessors.PolyfaceAuxChannelData.createPolyfaceAuxChannelData(this.builder,
         channelData.input,
-        valuesOffset
+        valuesOffset,
       );
     }
     return undefined;
@@ -457,24 +494,24 @@ export class BGFBWriter {
       return BGFBAccessors.PolyfaceAuxChannel.createPolyfaceAuxChannel(this.builder,
         channel.dataType,
         nameOffset,
-        inputNameOffset, valuesOffset
+        inputNameOffset, valuesOffset,
       );
     }
     return undefined;
   }
 
-  public writePolyfaceAuxDataAsFBVariantGeometry(data: PolyfaceAuxData): number | undefined {
+  public writePolyfaceAuxDataAsFBVariantGeometry(mesh: IndexedPolyface, data: PolyfaceAuxData): number | undefined {
     if (data instanceof PolyfaceAuxData) {
       const channelOffsets: number[] = [];
-      for (const channel of data.channels) {
+      for (const channel of data.channels)
         channelOffsets.push(this.writePolyfaceAuxChannelAsFBVariantGeometry(channel)!);
-      }
       const channelOffsetsOffset = BGFBAccessors.PolyfaceAuxChannel.createDataVector(this.builder, channelOffsets);
-      const indicesOffset = BGFBAccessors.PolyfaceAuxData.createIndicesVector(this.builder, data.indices);
-      return BGFBAccessors.PolyfaceAuxData.createPolyfaceAuxData(this.builder,
-        indicesOffset,
-        channelOffsetsOffset
-      );
+
+      const indexArray: number[] = [];
+      this.fillOneBasedIndexArray(mesh, data.indices, undefined, 0, indexArray);
+      const indicesOffset = BGFBAccessors.PolyfaceAuxData.createIndicesVector(this.builder, indexArray);
+
+      return BGFBAccessors.PolyfaceAuxData.createPolyfaceAuxData(this.builder, indicesOffset, channelOffsetsOffset);
     }
     return undefined;
   }
@@ -504,8 +541,8 @@ export class BGFBWriter {
       let paramOffset = 0;
       let auxDataOffset = 0;
       let taggedNumericDataOffset = 0;
-      const meshStyle = 1;  // That is  . . . MESH_ELM_STYLE_INDEXED_FACE_LOOPS (and specifically, variable size with with 0 terminators)
-      const numPerFace = 0;
+      const meshStyle = 1;  // That is  . . . MESH_ELM_STYLE_INDEXED_FACE_LOOPS
+      const numPerFace = 0; // specifically, variable size with 0 terminators
       this.fillOneBasedIndexArray(mesh, mesh.data.pointIndex, mesh.data.edgeVisible, 0, indexArray);
 
       const twoSided = mesh.twoSided;
@@ -529,12 +566,6 @@ export class BGFBWriter {
         intColorOffset = BGFBAccessors.Polyface.createIntColorVector(this.builder, mesh.data.color);
       }
 
-      /*
-            if (mesh.data.face !== undefined && mesh.data.face.length > 0) {
-              this.writeOneBasedIndexArray(mesh, mesh.data.face, undefined, 0, indexArray);
-              BGFBAccessors.Polyface.createFaceDataVector(this.builder, indexArray);
-            }
-        */
       if (mesh.data.normal) {
         copyToPackedNumberArray(numberArray, mesh.data.normal.float64Data(), mesh.data.normal.float64Length);
         normalOffset = BGFBAccessors.Polyface.createNormalVector(this.builder, numberArray);
@@ -545,17 +576,22 @@ export class BGFBWriter {
         paramOffset = BGFBAccessors.Polyface.createPointVector(this.builder, numberArray);
       }
 
-      if (mesh.data.auxData) {
-        auxDataOffset = this.writePolyfaceAuxDataAsFBVariantGeometry(mesh.data.auxData)!;
-      }
+      if (mesh.data.auxData)
+        auxDataOffset = this.writePolyfaceAuxDataAsFBVariantGeometry(mesh, mesh.data.auxData)!;
 
       if (mesh.data.taggedNumericData)
         taggedNumericDataOffset = this.writeTaggedNumericDataArray(mesh.data.taggedNumericData);
+
       const expectedClosure = mesh.expectedClosure;
-      const polyfaceOffset = BGFBAccessors.Polyface.createPolyface(this.builder, pointOffset, paramOffset, normalOffset, 0, intColorOffset,
-        pointIndexOffset, paramIndexOffset, normalIndexOffset, colorIndexOffset, 0,
-        0, 0, meshStyle, twoSided,
-        numPerFace, 0, auxDataOffset, expectedClosure, taggedNumericDataOffset);
+
+      // NOTE: mesh.data.face is not persistent
+
+      const polyfaceOffset = BGFBAccessors.Polyface.createPolyface(
+        this.builder, pointOffset, paramOffset, normalOffset, 0, intColorOffset, pointIndexOffset, paramIndexOffset,
+        normalIndexOffset, colorIndexOffset, 0, 0, 0, meshStyle, twoSided, numPerFace, 0, auxDataOffset,
+        expectedClosure, taggedNumericDataOffset,
+      );
+
       return BGFBAccessors.VariantGeometry.createVariantGeometry(this.builder, BGFBAccessors.VariantGeometryUnion.tagPolyface, polyfaceOffset, 0);
 
     }

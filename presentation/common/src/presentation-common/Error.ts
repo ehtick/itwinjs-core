@@ -1,7 +1,7 @@
 /*---------------------------------------------------------------------------------------------
-* Copyright (c) Bentley Systems, Incorporated. All rights reserved.
-* See LICENSE.md in the project root for license terms and full copyright notice.
-*--------------------------------------------------------------------------------------------*/
+ * Copyright (c) Bentley Systems, Incorporated. All rights reserved.
+ * See LICENSE.md in the project root for license terms and full copyright notice.
+ *--------------------------------------------------------------------------------------------*/
 /** @packageDocumentation
  * @module Core
  */
@@ -34,6 +34,8 @@ export enum PresentationStatus {
   /**
    * Timeout for the request was reached which prevented it from being fulfilled. Frontend may
    * repeat the request.
+   *
+   * @deprecated in 5.x. Presentation RPC now relies on `RpcPendingResponse` to handle timeouts.
    */
   BackendTimeout = Error + 7,
 }
@@ -43,7 +45,6 @@ export enum PresentationStatus {
  * @public
  */
 export class PresentationError extends BentleyError {
-
   /**
    * Creates an instance of Error.
    * @param errorNumber Error code
@@ -60,11 +61,11 @@ export class PresentationError extends BentleyError {
    * Returns the name of each error status. The name is used by the `Error.prototype.toString()`
    * method to create a string representation of the error.
    */
-  // eslint-disable-next-line @typescript-eslint/naming-convention
   protected override _initName(): string {
     let value = PresentationStatus[this.errorNumber];
-    if (!value)
+    if (!value) {
       value = `Unknown Error (${this.errorNumber})`;
+    }
     return value;
   }
 }

@@ -7,6 +7,7 @@
  * @module Solid
  */
 
+import { AnyCurve } from "../curve/CurveTypes";
 import { CurveCollection } from "../curve/CurveCollection";
 import { GeometryQuery } from "../curve/GeometryQuery";
 import { LineString3d } from "../curve/LineString3d";
@@ -42,11 +43,11 @@ export class LinearSweep extends SolidPrimitive {
   }
   /**
    * Create a sweep of a starting contour.
-   * @param contour contour to be swept
+   * @param contour contour to be swept, CAPTURED
    * @param direction sweep vector.  The contour is swept the full length of the vector.
    * @param capped true to include end caps
    */
-  public static create(contour: CurveCollection, direction: Vector3d, capped: boolean): LinearSweep | undefined {
+  public static create(contour: AnyCurve, direction: Vector3d, capped: boolean): LinearSweep | undefined {
     const sweepable = SweepContour.createForLinearSweep(contour, direction);
     if (!sweepable)
       return undefined;
@@ -86,7 +87,10 @@ export class LinearSweep extends SolidPrimitive {
   public clone(): LinearSweep {
     return new LinearSweep(this._contour.clone(), this._direction.clone(), this.capped);
   }
-  /** apply a transform to the curves and sweep vector */
+  /**
+   * Apply a transform to the curves and sweep vector
+   * * This fails if the transformation is singular.
+   */
   public tryTransformInPlace(transform: Transform): boolean {
     if (transform.matrix.isSingular())
       return false;
@@ -105,11 +109,13 @@ export class LinearSweep extends SolidPrimitive {
   public getConstructiveFrame(): Transform | undefined {
     return this._contour.localToWorld.cloneRigid();
   }
-  /** Return a transformed clone */
-  public cloneTransformed(transform: Transform): LinearSweep {
+  /**
+   * Return a transformed clone.
+   * * This fails if the transformation is singular.
+   */
+  public cloneTransformed(transform: Transform): LinearSweep | undefined {
     const result = this.clone();
-    result.tryTransformInPlace(transform);
-    return result;
+    return result.tryTransformInPlace(transform) ? result : undefined;
   }
   /** Test for near-equality of coordinates in `other` */
   public override isAlmostEqual(other: GeometryQuery): boolean {

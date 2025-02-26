@@ -7,8 +7,8 @@
  */
 
 import { GuidString } from "@itwin/core-bentley";
-import { ChangesetIdWithIndex, LocalFileName } from "./ChangesetProps";
-import { IModelEncryptionProps, OpenDbKey } from "./IModel";
+import { ChangesetIdWithIndex, ChangesetIndexOrId, LocalFileName } from "./ChangesetProps";
+import { OpenDbKey } from "./IModel";
 import { IModelVersionProps } from "./IModelVersion";
 
 /** The Id assigned to a briefcase by iModelHub, or [[BriefcaseIdValue.Unassigned]] .
@@ -86,11 +86,24 @@ export interface BriefcaseProps {
 /** Properties for opening a local briefcase file via [BriefcaseDb.open]($backend)
  * @public
  */
-export interface OpenBriefcaseProps extends IModelEncryptionProps, OpenDbKey { // eslint-disable-line deprecation/deprecation
+export interface OpenBriefcaseProps extends OpenDbKey {
   /** the full path to the briefcase file  */
   readonly fileName: LocalFileName;
-  /** If true, open the briefcase readonly */
+  /**
+   * If true, open the briefcase readonly.
+   * @note Readonly connections always hold a read transaction against the briefcase. That can cause the WAL file size to grow
+   * unbounded if changes happen while they're open (see [Checkpoint starvation](https://www.sqlite.org/wal.html#avoiding_excessively_large_wal_files))
+   * It is a good idea to close the readonly connection *before* closing the writeable connection so the WAL file will be deleted.
+   */
   readonly readonly?: boolean;
+  /** If true, open the briefcase readonly and monitor it for changes originating from another connection.
+   * When such changes are detected, the default txn will be restarted.
+   * The restart occurs only after the next iteration of the backend event loop, and will generate events that reflect the changes from the other connection.
+   * This can be useful in contexts where the read-only connection is displaying a view of the contents of the briefcase while another, non-interactive program
+   * is adding txns to the briefcase. It may not be reliable if the writable connection is undoing or redoing txns.
+   * @note This cannot be used with cloud-based briefcases.
+   */
+  readonly watchForChanges?: boolean;
 }
 
 /** Properties of a local briefcase file, returned by [BriefcaseManager.getCachedBriefcases]($backend) and [BriefcaseManager.downloadBriefcase]($backend)
@@ -148,6 +161,20 @@ export interface RequestNewBriefcaseProps {
 
   /** Id of the change set of the new briefcase. If undefined, use latest. */
   asOf?: IModelVersionProps;
+}
+
+/**
+ * Arguments to open a Checkpoint directly from its cloud container
+ * @beta
+ */
+export interface OpenCheckpointArgs {
+  readonly iTwinId: GuidString;
+
+  /** Id of the iModel */
+  readonly iModelId: GuidString;
+
+  /** changeset for the checkpoint. If undefined, attempt to open the checkpoint for the latest changeset. */
+  readonly changeset?: ChangesetIndexOrId;
 }
 
 /**
@@ -213,7 +240,7 @@ export interface UpgradeOptions {
 /**
  * The state of the schemas in the Db compared with what the current version of the software expects
  * Note: The state may vary depending on whether the Db is to be opened ReadOnly or ReadWrite.
- * @beta
+ * @public
  */
 export enum SchemaState {
   /** The schemas in the Db are up-to-date, and do not need to be upgraded before opening it with the current version of the software */

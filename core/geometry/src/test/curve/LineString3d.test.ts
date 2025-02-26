@@ -3,14 +3,22 @@
 * See LICENSE.md in the project root for license terms and full copyright notice.
 *--------------------------------------------------------------------------------------------*/
 
-import { expect } from "chai";
+import { describe, expect, it } from "vitest";
 import { ClipPlane } from "../../clipping/ClipPlane";
+import { Arc3d } from "../../curve/Arc3d";
 import { CurveLocationDetail } from "../../curve/CurveLocationDetail";
+import { CurveOps } from "../../curve/CurveOps";
 import { CurvePrimitive } from "../../curve/CurvePrimitive";
+import { AnyCurve } from "../../curve/CurveTypes";
 import { GeometryQuery } from "../../curve/GeometryQuery";
 import { LineSegment3d } from "../../curve/LineSegment3d";
 import { LineString3d } from "../../curve/LineString3d";
+import { Loop } from "../../curve/Loop";
+import { Path } from "../../curve/Path";
 import { StrokeOptions } from "../../curve/StrokeOptions";
+import { Geometry } from "../../Geometry";
+import { Angle } from "../../geometry3d/Angle";
+import { AngleSweep } from "../../geometry3d/AngleSweep";
 import { GrowableXYZArray } from "../../geometry3d/GrowableXYZArray";
 import { Matrix3d } from "../../geometry3d/Matrix3d";
 import { Plane3dByOriginAndUnitNormal } from "../../geometry3d/Plane3dByOriginAndUnitNormal";
@@ -97,7 +105,7 @@ function exerciseLineString3d(ck: Checker, lsA: LineString3d) {
     Matrix3d.createScale(a, a, a));
   const lsB = lsA.clone();
   lsB.reverseInPlace();
-  const lsC = lsA.clone()!;
+  const lsC = lsA.clone();
   ck.testTrue(lsC.tryTransformInPlace(scaleTransform));
   // exercise evaluation logic within each segment.
   // force evaluations in zero segment linestring
@@ -149,7 +157,7 @@ describe("LineString3d", () => {
     if (ck.testPointer(normalA, "quickUnitNormal") && normalA)
       ck.testCoordinate(1.0, normalA.magnitude(), "unit normal magnitude");
     ck.checkpoint("LineString3d.HelloWorld");
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
 
   it("createXY", () => {
@@ -179,7 +187,7 @@ describe("LineString3d", () => {
     ck.testTrue(ls0.isAlmostEqual(lsArrayXYZ));
 
     ck.testExactNumber(4, ls10.numPoints());
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
 
   it("clonePartial", () => {
@@ -189,7 +197,7 @@ describe("LineString3d", () => {
     const lsA = LineString3d.create([Point3d.create(1, 0, 0), Point3d.create(4, 2, 0), Point3d.create(4, 5, 0), Point3d.create(1, 5, 0)]);
     exerciseClonePartialLineString3d(ck, allGeometry, lsA, delta);
     GeometryCoreTestIO.saveGeometry(allGeometry, "LineString3d", "ClonePartial");
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
 
   it("ClonePartialFromExtendedClosestPointDetailFraction", () => {
@@ -222,7 +230,7 @@ describe("LineString3d", () => {
     ck.testPoint3d(detail1.point, ls.fractionToPoint(detail1.fraction), "Point projected off curve end equals fractionToPoint at projection fraction > 1");
 
     GeometryCoreTestIO.saveGeometry(allGeometry, "LineString3d", "ClonePartialFromExtendedClosestPointDetailFraction");
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
 
   it("addResolvedPoint", () => {
@@ -244,7 +252,7 @@ describe("LineString3d", () => {
     ls0.addPointXYZ(1, 2, 3);
     ls0Z.addResolvedPoint(0, 0, dest);
     ck.testExactNumber(n0 + 1, dest.length, "confirm access to singleton");
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
 
   it("addAuxData", () => {
@@ -265,7 +273,7 @@ describe("LineString3d", () => {
     if (ck.testPointer(n, ls.packedDerivatives))
       ck.testExactNumber(n, ls.packedDerivatives!.length);
     ck.testExactNumber(n, ls.numPoints());
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
 
   it("RegularPolygon", () => {
@@ -289,7 +297,7 @@ describe("LineString3d", () => {
     const data64 = new Float64Array([1, 2, 3, 4, 5, 6, 7, 8, 9]);
     const polyF64 = LineString3d.createFloat64Array(data64);
     ck.testExactNumber(3 * polyF64.numPoints(), data64.length);
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
   it("AnnounceClipIntervals", () => {
     const ck = new Checker();
@@ -302,10 +310,73 @@ describe("LineString3d", () => {
         numAnnounce++;
       });
     ck.testExactNumber(numAnnounce, 2);
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
+  it("FrenetFrame", () => {
+    const ck = new Checker();
+    const allGeometry: GeometryQuery[] = [];
+    const ls = LineString3d.createPoints([
+      Point3d.create(0, 0, 1),
+      Point3d.create(10, 0, 1),
+      Point3d.create(0, -10, 1),
+      Point3d.create(10, -10, 1),
+    ]);
+    const rotation = Matrix3d.createRotationAroundVector(Vector3d.create(1, 1, 1), Angle.createDegrees(31));
+    const transform = Transform.createOriginAndMatrix(ls.startPoint(), rotation);
+    ls.tryTransformInPlace(transform);  // make things interesting
+    GeometryCoreTestIO.captureCloneGeometry(allGeometry, ls);
 
+    // With a change in concavity before and after the segment AND fraction 0.5, we used to return identity incorrectly
+    const fraction = 0.5;
+    const frame = ls.fractionToFrenetFrame(fraction);
+    GeometryCoreTestIO.captureTransformAsFrame(allGeometry, frame, 0.01);
+
+    ck.testVector3d(frame.matrix.columnX(), ls.fractionToPointAndUnitTangent(fraction).direction, "frame x-axis matches tangent");
+    ck.testVector3d(frame.matrix.columnZ(), ls.quickUnitNormal()!, "frame z-axis matches normal");
+    ck.testPoint3d(frame.getOrigin(), ls.fractionToPoint(fraction), "frame origin matches point");
+
+    GeometryCoreTestIO.saveGeometry(allGeometry, "LineString3d", "FrenetFrame");
+    expect(ck.getNumErrors()).toBe(0);
+  });
+  it("FractionMap", () => {
+    const ck = new Checker();
+    const allGeometry: GeometryQuery[] = [];
+    const ls = LineString3d.createPoints([
+      Point3d.create(0, 0, 0),
+      Point3d.create(10, 0, 1),
+      Point3d.create(0, -10, 0),
+      Point3d.create(10, -10, -1),
+    ]);
+    GeometryCoreTestIO.captureCloneGeometry(allGeometry, ls);
+    const numSegments = ls.numEdges();
+    const eps = Geometry.smallFraction;
+    for (const globalFraction of [-1, -0.5, -eps, 0, eps, 0.25, 0.5, 2 / 3, 1 - eps, 1, 1 + eps, 4 / 3, 2]) {
+      const local = ls.globalFractionToSegmentIndexAndLocalFraction(globalFraction);
+      const globalFractionRoundTrip = ls.segmentIndexAndLocalFractionToGlobalFraction(local.index, local.fraction);
+      ck.testExactNumber(globalFraction, globalFractionRoundTrip, "global fraction roundtrips thru local");
+      const localPt = ls.getIndexedSegment(local.index)!.fractionToPoint(local.fraction);
+      const globalPt = ls.fractionToPoint(globalFraction);
+      ck.testPoint3d(localPt, globalPt, "same point resolved by local and global params");
+      GeometryCoreTestIO.createAndCaptureXYCircle(allGeometry, globalPt, 0.05);
+      if (globalFraction <= 0) {
+        ck.testExactNumber(local.index, 0, "nonpositive global fraction maps to first segment");
+        ck.testLE(local.fraction, 0, "nonpositive global fraction maps to nonpositive local fraction");
+      } else if (globalFraction >= 1) {
+        ck.testExactNumber(local.index, numSegments - 1, "global fraction greater than 1 maps to last segment");
+        ck.testLE(1, local.fraction, "global fraction >= 1 maps to local fraction >= 1");
+      }
+      ck.testLE(0, local.index, "local index is nonnegative");
+      ck.testLE(local.index, numSegments - 1, "local index is not too large");
+      if (Geometry.isIn01(globalFraction)) {
+        ck.testLE(0, local.fraction, "global fraction in [0,1] results in nonnegative local fraction");
+        ck.testLE(local.fraction, 1, "global fraction in [0,1] results in local fraction that's not too large");
+      }
+    }
+    GeometryCoreTestIO.saveGeometry(allGeometry, "LineString3d", "FractionMap");
+    expect(ck.getNumErrors()).toBe(0);
+  });
 });
+
 /**
  * Class to act as an iterator over points in a linestring.
  * * Internal data is:
@@ -374,7 +445,7 @@ describe("LineStringIterator", () => {
       i++;
       // GeometryCoreTestIO.consoleLog("for..of ", p.toJSON());
     }
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
 
 });
@@ -406,7 +477,7 @@ describe("LineStringAnnotation", () => {
     ck.testPointer(frame);
     ck.testPointer(frameA);
     ck.testPointer(frame4Bad);
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
   it("FractionArray", () => {
     const ck = new Checker();
@@ -438,7 +509,7 @@ describe("LineStringAnnotation", () => {
     ls0.clear();
     ck.testExactNumber(0, ls0.numPoints());
     ck.testExactNumber(0, ls0.fractions!.length);
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
 
   it("AppendInterpolated", () => {
@@ -457,7 +528,7 @@ describe("LineStringAnnotation", () => {
         ls0.ensureEmptyFractions();
     }
     ls0.fractionToFrenetFrame(1.1);
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
 
   it("StrokeCountWithMaxEdgeLength", () => {
@@ -470,7 +541,7 @@ describe("LineStringAnnotation", () => {
     options.maxEdgeLength = 1.0;
     const n = ls0.computeStrokeCountForOptions(options);
     ck.testExactNumber(7, n);
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
 
   it("CreateAnnotations", () => {
@@ -533,7 +604,7 @@ describe("LineStringAnnotation", () => {
     ck.testPointer(paramsA);
     ck.testPointer(surfaceNormalsA);
 
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
   it("RangeAndLengthBetweenFractions", () => {
     const ck = new Checker();
@@ -567,7 +638,53 @@ describe("LineStringAnnotation", () => {
         }
       }
     }
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
+});
 
+describe("LineString3dOps", () => {
+  it("CollectChainsAsLineString3d", () => {
+    const ck = new Checker();
+    const allGeometry: GeometryQuery[] = [];
+
+    const createFragments = (perturbClosure: boolean, includeDangler: boolean): AnyCurve[] => {
+      const fragments: AnyCurve[] = [];
+      if (includeDangler)
+        fragments.push(LineSegment3d.create(Point3d.create(4, 4, 0), Point3d.create(3, 2, 0)));
+      fragments.push(Arc3d.create(Point3d.create(1, 0, 0), Vector3d.create(1, 0, 0), Vector3d.create(0, 1, 0), AngleSweep.createStartEndDegrees(0, 180)));
+      fragments.push(LineString3d.create(Point3d.createZero(), Point3d.create(0, 2, 0), Point3d.create(3, 2, 0)));
+      fragments.push(LineSegment3d.create(Point3d.create(2, 0, 0), Point3d.create(3, 0, 0)));
+      fragments.push(LineSegment3d.create(Point3d.create(3, 2, 0), Point3d.create(3, 0, 0)));
+      fragments.push(LineString3d.create(Point3d.create(1, 0, 0), Point3d.create(0, 1, 0), Point3d.create(-1, 0, 0), Point3d.create(0, -1, 0)));
+      fragments.push(LineSegment3d.create(Point3d.create(0, -1, 0), Point3d.create(1, perturbClosure ? -2 * Geometry.smallMetricDistance : 0, 0)));
+      return fragments;
+    };
+
+    let deltaY = 0;
+    for (const select of [true, false]) {
+      const frags = createFragments(select, select);
+      const loops: Loop[] = [];
+      const paths: Path[] = [];
+      CurveOps.collectChainsAsLineString3d(frags, (pts: LineString3d) => {
+        if (pts.isPhysicallyClosed)
+          loops.push(Loop.create(pts));
+        else
+          paths.push(Path.create(pts));
+      });
+      if (select) {
+        ck.testExactNumber(loops.length, 0, "CurveOps.collectChainsAsLineString3d forms no loops as expected");
+        ck.testExactNumber(paths.length, 2, "CurveOps.collectChainsAsLineString3d forms 2 paths as expected");
+      } else {
+        ck.testExactNumber(loops.length, 2, "CurveOps.collectChainsAsLineString3d forms 2 loops as expected");
+        ck.testExactNumber(paths.length, 0, "CurveOps.collectChainsAsLineString3d forms no paths as expected");
+      }
+      GeometryCoreTestIO.captureCloneGeometry(allGeometry, frags, 0, deltaY);
+      GeometryCoreTestIO.captureCloneGeometry(allGeometry, loops, 5, deltaY);
+      GeometryCoreTestIO.captureCloneGeometry(allGeometry, paths, 10, deltaY);
+      deltaY += 5;
+    }
+
+    GeometryCoreTestIO.saveGeometry(allGeometry, "LineString3dOps", "CollectChainsAsLineString3d");
+    expect(ck.getNumErrors()).toBe(0);
+  });
 });

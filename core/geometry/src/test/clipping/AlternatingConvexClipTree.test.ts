@@ -3,7 +3,7 @@
 * See LICENSE.md in the project root for license terms and full copyright notice.
 *--------------------------------------------------------------------------------------------*/
 
-import { expect } from "chai";
+import { describe, expect, it } from "vitest";
 import { BSplineCurve3d } from "../../bspline/BSplineCurve";
 import { AlternatingCCTreeNode } from "../../clipping/AlternatingConvexClipTree";
 import { Arc3d } from "../../curve/Arc3d";
@@ -121,8 +121,8 @@ function testClipper(points: Point3d[], root: AlternatingCCTreeNode, outputLevel
   const numTest = fractions.length * fractions.length;
   if (Checker.noisy.clipTree === true) {
     GeometryCoreTestIO.consoleLog(`ClipperTest  (polygonPoints: ${points.length}) (TestPoint: ${numTest})`);
-    GeometryCoreTestIO.consoleLog(`IN: ${inSum.count} avg: ${inSum.mean} max ${inSum.minMax}`);
-    GeometryCoreTestIO.consoleLog(`OUT: ${outSum.count} avg: ${outSum.mean}  max: ${outSum.minMax}`);
+    GeometryCoreTestIO.consoleLog(`IN: ${inSum.count} avg: ${inSum.mean} max ${JSON.stringify(inSum.minMax)}`);
+    GeometryCoreTestIO.consoleLog(`OUT: ${outSum.count} avg: ${outSum.mean}  max: ${JSON.stringify(outSum.minMax)}`);
   }
 }
 
@@ -163,17 +163,17 @@ describe("RecursiveClipSets", () => {
 
     Checker.clearGeometry("RecursiveClipSets.test1", outDir);
 
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
 
   it("Test2", () => {
     const ck = new Checker();
     for (const perpendicularFactor of [-1.0, 1.0]) {
       for (const generatorFunction of [
-        Sample.createFractalDiamondConvexPattern,
-        Sample.createFractalSquareReversingPattern,
-        Sample.createFractalLReversingPattern,
-        Sample.createFractalLMildConcavePatter]) {
+        (numRecursion: number, _perpendicularFactor: number) => Sample.createFractalDiamondConvexPattern(numRecursion, _perpendicularFactor),
+        (numRecursion: number, _perpendicularFactor: number) => Sample.createFractalSquareReversingPattern(numRecursion, _perpendicularFactor),
+        (numRecursion: number, _perpendicularFactor: number) => Sample.createFractalLReversingPattern(numRecursion, _perpendicularFactor),
+        (numRecursion: number, _perpendicularFactor: number) => Sample.createFractalLMildConcavePatter(numRecursion, _perpendicularFactor)]) {
         const shifterA = new SaveAndRestoreCheckTransform(0, 20, 0);
         for (let numRecursion = 0; numRecursion < 4; numRecursion++) {
           const shifterB = new SaveAndRestoreCheckTransform(10, 0, 0);
@@ -191,7 +191,7 @@ describe("RecursiveClipSets", () => {
 
     Checker.clearGeometry("RecursiveClipSets.test2", outDir);
 
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
 
   it("Test3", () => {
@@ -229,7 +229,7 @@ describe("RecursiveClipSets", () => {
     testClipper(points, rootClone);
     Checker.clearGeometry("RecursiveClipSets.test3", outDir);
 
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
 
   it("HullAndInlets", () => {
@@ -273,7 +273,7 @@ describe("RecursiveClipSets", () => {
     x0 += 100;
 
     Checker.clearGeometry("HullAndInlets", outDir);
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
 
   it("LineClip0", () => {
@@ -282,12 +282,12 @@ describe("RecursiveClipSets", () => {
     const baseShift = Vector3d.create(-0.1, -0.1, 0);
     for (const perpendicularFactor of [-1.0, 1.0]) {
       for (const generatorFunction of [
-        Sample.createFractalSquareReversingPattern,
-        Sample.nonConvexQuadSimpleFractal,
-        Sample.createFractalDiamondConvexPattern,
-        Sample.createFractalSquareReversingPattern,
-        Sample.createFractalLReversingPattern,
-        Sample.createFractalLMildConcavePatter]) {
+        (numRecursion: number, _perpendicularFactor: number) => Sample.createFractalSquareReversingPattern(numRecursion, _perpendicularFactor),
+        (numRecursion: number, _perpendicularFactor: number) => Sample.nonConvexQuadSimpleFractal(numRecursion, _perpendicularFactor),
+        (numRecursion: number, _perpendicularFactor: number) => Sample.createFractalDiamondConvexPattern(numRecursion, _perpendicularFactor),
+        (numRecursion: number, _perpendicularFactor: number) => Sample.createFractalSquareReversingPattern(numRecursion, _perpendicularFactor),
+        (numRecursion: number, _perpendicularFactor: number) => Sample.createFractalLReversingPattern(numRecursion, _perpendicularFactor),
+        (numRecursion: number, _perpendicularFactor: number) => Sample.createFractalLMildConcavePatter(numRecursion, _perpendicularFactor)]) {
         const shifterA = new SaveAndRestoreCheckTransform(50, 0, 0);
         for (const depth of [0, 1, 2]) {
           const shifterB = new SaveAndRestoreCheckTransform(5, 0, 0);
@@ -390,7 +390,7 @@ describe("RecursiveClipSets", () => {
     }
 
     Checker.clearGeometry("RecursiveClipSets.LineClip0", outDir);
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
 
   it("PolygonClipA", () => {
@@ -420,7 +420,7 @@ describe("RecursiveClipSets", () => {
       x0 += dx;
     }
     GeometryCoreTestIO.saveGeometry(allGeometry, outDir, "PolygonClipA");
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
   it("PolygonClipB", () => {
     const ck = new Checker();
@@ -438,12 +438,12 @@ describe("RecursiveClipSets", () => {
       for (const perpendicularFactor of [-1.0, 1.0]) {
         const y0 = 0;
         for (const generatorFunction of [
-          Sample.createFractalSquareReversingPattern,
-          Sample.nonConvexQuadSimpleFractal,
-          Sample.createFractalDiamondConvexPattern,
-          Sample.createFractalSquareReversingPattern,
-          Sample.createFractalLReversingPattern,
-          Sample.createFractalLMildConcavePatter]) {
+          (numRecursion: number, _perpendicularFactor: number) => Sample.createFractalSquareReversingPattern(numRecursion, _perpendicularFactor),
+          (numRecursion: number, _perpendicularFactor: number) => Sample.nonConvexQuadSimpleFractal(numRecursion, _perpendicularFactor),
+          (numRecursion: number, _perpendicularFactor: number) => Sample.createFractalDiamondConvexPattern(numRecursion, _perpendicularFactor),
+          (numRecursion: number, _perpendicularFactor: number) => Sample.createFractalSquareReversingPattern(numRecursion, _perpendicularFactor),
+          (numRecursion: number, _perpendicularFactor: number) => Sample.createFractalLReversingPattern(numRecursion, _perpendicularFactor),
+          (numRecursion: number, _perpendicularFactor: number) => Sample.createFractalLMildConcavePatter(numRecursion, _perpendicularFactor)]) {
           for (const depth of [0, 1, 2]) {
             const polygon = generatorFunction(depth, perpendicularFactor);
             const range = Range3d.createArray(polygon);
@@ -473,7 +473,7 @@ describe("RecursiveClipSets", () => {
       }
     }
     GeometryCoreTestIO.saveGeometry(allGeometry, outDir, "PolygonClipB");
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
 });
 

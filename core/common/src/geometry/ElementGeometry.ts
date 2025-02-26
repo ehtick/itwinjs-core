@@ -6,11 +6,11 @@
  * @module Geometry
  */
 import { flatbuffers } from "flatbuffers";
-import { Id64, Id64String } from "@itwin/core-bentley";
-import { Angle, AngleSweep, Arc3d, BentleyGeometryFlatBuffer, CurveCollection, FrameBuilder, GeometryQuery, LineString3d, Loop, Matrix3d, Plane3dByOriginAndUnitNormal, Point2d, Point3d, Point3dArray, PointString3d, Polyface, PolyfaceQuery, Range3d, SolidPrimitive, Transform, Vector3d, YawPitchRollAngles } from "@itwin/core-geometry";
+import { BentleyStatus, Id64, Id64String } from "@itwin/core-bentley";
+import { Angle, AngleSweep, Arc3d, BentleyGeometryFlatBuffer, CurveCollection, FrameBuilder, GeometryQuery, LineSegment3d, LineString3d, Loop, Matrix3d, Plane3dByOriginAndUnitNormal, Point2d, Point3d, Point3dArray, PointString3d, Polyface, PolyfaceQuery, Range2d, Range3d, SolidPrimitive, Transform, Vector3d, YawPitchRollAngles } from "@itwin/core-geometry";
 import { EGFBAccessors } from "./ElementGeometryFB";
 import { Base64EncodedString } from "../Base64EncodedString";
-import { TextString, TextStringProps } from "./TextString";
+import { TextString, TextStringGlyphData, TextStringProps } from "./TextString";
 import { ColorDef } from "../ColorDef";
 import { BackgroundFill, FillDisplay, GeometryClass, GeometryParams } from "../GeometryParams";
 import { Gradient } from "../Gradient";
@@ -21,6 +21,7 @@ import { ImageGraphic, ImageGraphicCorners, ImageGraphicProps } from "./ImageGra
 import { LineStyle } from "./LineStyle";
 import { ElementAlignedBox3d, Placement2d, Placement3d } from "./Placement";
 import { isPlacement2dProps, PlacementProps } from "../ElementProps";
+import { TextBlockGeometryProps } from "../annotation/TextBlockGeometryProps";
 
 /** Specifies the type of an entry in a geometry stream.
  * @see [[ElementGeometryDataEntry.opcode]].
@@ -64,7 +65,7 @@ export enum ElementGeometryOpcode {
   TextString = 22,
   /** Specifies line style overrides as a [[LineStyle.Modifier]] */
   LineStyleModifiers = 23,
-  /** Boundary represention solid, sheet, or wire body as a [[BRepEntity.DataProps]] */
+  /** Boundary representation solid, sheet, or wire body as a [[BRepEntity.DataProps]] */
   BRep = 25,
   /** Small single-tile raster image as an [[ImageGraphic]] */
   Image = 28,
@@ -83,7 +84,7 @@ export interface ElementGeometryDataEntry {
 }
 
 /** Information provided to [[ElementGeometryFunction]].
- * @alpha
+ * @beta
  */
 export interface ElementGeometryInfo {
   /** ID for the [Category]($core-backend), undefined for geometry parts */
@@ -102,12 +103,12 @@ export interface ElementGeometryInfo {
 
 /** A callback function that receives geometry stream data.
  * @see [IModelDb.elementGeometryRequest]($core-backend)
- * @alpha
+ * @beta
  */
 export type ElementGeometryFunction = (info: ElementGeometryInfo) => void;
 
 /** Parameters for [IModelDb.elementGeometryRequest]($core-backend)
- * @alpha
+ * @beta
  */
 export interface ElementGeometryRequest {
   /** The source element for the geometry stream */
@@ -128,25 +129,69 @@ export interface ElementGeometryRequest {
   minBRepFeatureSize?: number;
 }
 
-/** Parameters for building the geometry stream of a [[GeometricElement]] using ElementGeometry.Builder
- * Note: The geometry stream is always in local coordinates, that is, relative to the element's [[Placement]].
- * @alpha
+/** Parameters for building the geometry stream of a [GeometricElement]($backend) using [[ElementGeometry.Builder]].
+ * You can assign an object of this type to [[GeometricElementProps.elementGeometryBuilderParams]] when inserting or updating a geometric element.
+ * @note The geometry stream is always in local coordinates - that is, relative to the element's [[Placement]].
+ * @public
  */
 export interface ElementGeometryBuilderParams {
-  /** The geometry stream data */
+  /** The geometry stream data. Calling update element with a zero length array will clear the geometry stream and invalidate the placement. */
   entryArray: ElementGeometryDataEntry[];
-  /** If true, create geometry that displays oriented to face the camera */
+  /** If true, create geometry that always displays oriented to face the camera */
   viewIndependent?: boolean;
 }
 
-/** Parameters for building the geometry stream of a [[GeometryPart]] using ElementGeometry.Builder.
- * @alpha
+/** Parameters for building the geometry stream of a [GeometryPart]($backend) using [[ElementGeometry.Builder]].
+ * You can assign an object of this type to [[GeometryPartProps.elementGeometryBuilderParams]] when inserting or updating a part.
+ * @public
  */
 export interface ElementGeometryBuilderParamsForPart {
   /** The geometry stream data */
   entryArray: ElementGeometryDataEntry[];
   /** If true, create geometry part with 2d geometry */
   is2dPart?: boolean;
+}
+
+/** Request parameters for [IModelDb.updateElementGeometryCache]($core-backend)
+ * @beta
+ */
+export interface ElementGeometryCacheRequestProps {
+  /** Geometric element to populate geometry cache for. Clear cache for all elements when undefined. */
+  id?: Id64String;
+}
+
+/** Response parameters for [IModelDb.updateElementGeometryCache]($core-backend)
+ * @beta
+ */
+export interface ElementGeometryCacheResponseProps {
+  /** Cache creation status */
+  status: BentleyStatus;
+  /** Count of displayable entries in element's geometry stream */
+  numGeom?: number;
+  /** Count of part references in element's geometry stream */
+  numPart?: number;
+  /** Count of solid/volumetric geometry in element's geometry stream */
+  numSolid?: number;
+  /** Count of surface/region geometry in element's geometry stream */
+  numSurface?: number;
+  /** Count of curve/path geometry in element's geometry stream */
+  numCurve?: number;
+  /** Count of text/image/non-geometric displayable entries in element's geometry stream */
+  numOther?: number;
+}
+
+/** Request parameters for [IModelDb.elementGeometryCacheOperation]($core-backend)
+ * @beta
+ */
+export interface ElementGeometryCacheOperationRequestProps {
+  /** Target element id, tool element ids can be supplied by parameters... */
+  id: Id64String;
+  /** Requested operation */
+  op: number;
+  /** Parameters for operation */
+  params?: any;
+  /** Callback for result when element's geometry stream is requested in flatbuffer or graphic formats */
+  onGeometry?: ElementGeometryFunction;
 }
 
 /** Values for [[BRepGeometryCreate.operation]]
@@ -254,7 +299,7 @@ export interface BRepGeometryInfo {
 export type BRepGeometryFunction = (info: BRepGeometryInfo) => void;
 
 /** Provides utility functions for working with [[ElementGeometryDataEntry]].
- * @alpha
+ * @beta
  */
 export namespace ElementGeometry {
   /** [[ElementGeometry.Builder]] is a helper class for populating a [[ElementGeometryDataEntry]] array needed to create a [[GeometricElement]] or [[GeometryPart]]. */
@@ -382,6 +427,32 @@ export namespace ElementGeometry {
       return true;
     }
 
+    /** Append a series of entries representing a [[TextBlock]] to the [[ElementGeometryDataEntry]] array.
+     * @beta
+     */
+    public appendTextBlock(block: TextBlockGeometryProps): boolean {
+      for (const entry of block.entries) {
+        let result: boolean;
+        if (entry.text) {
+          result = this.appendTextString(new TextString(entry.text));
+        } else if (entry.color) {
+          const params = new GeometryParams(Id64.invalid);
+          if (entry.color !== "subcategory") {
+            params.lineColor = ColorDef.fromJSON(entry.color);
+          }
+
+          result = this.appendGeometryParamsChange(params);
+        } else {
+          result = this.appendGeometryQuery(LineSegment3d.fromJSON(entry.separator));
+        }
+
+        if (!result) {
+          return false;
+        }
+      }
+
+      return true;
+    }
     /** Append a [[ImageGraphic]] supplied in either local or world coordinates to the [[ElementGeometryDataEntry]] array */
     public appendImageGraphic(image: ImageGraphic): boolean {
       const entry = ElementGeometry.fromImageGraphic(image.toJSON(), this._worldToLocal);
@@ -1061,8 +1132,30 @@ export namespace ElementGeometry {
     return textString.toJSON();
   }
 
+  /** Returns only the [[TextStringGlyphData]] embedded in the [[TextString]] flatbuffer. This data is only internal to the native display libaries. */
+  export function toTextStringGlyphData(entry: ElementGeometryDataEntry): TextStringGlyphData | undefined {
+    if (ElementGeometryOpcode.TextString !== entry.opcode)
+      return undefined;
+
+    const buffer = new flatbuffers.ByteBuffer(entry.data);
+    const ppfb = EGFBAccessors.TextString.getRootAsTextString(buffer);
+
+    const glyphOriginToPoint2d = (origin: EGFBAccessors.TextStringGlyphOrigin | null): Point2d => {
+      if (!origin)
+        throw new Error("Value cannot be null.");
+      return new Point2d(origin.x(), origin.y());
+    };
+    const textStringRangeToRange2d = (r: EGFBAccessors.TextStringRange | null) => r ? new Range2d(r.lowx(), r.lowy(), r.highx(), r.highy()) : null;
+    const range = textStringRangeToRange2d(ppfb.range());
+    const glyphIds = Array.from({ length: ppfb.glyphIdsLength() }, (_, i) => ppfb.glyphIds(i) ?? 0);
+    const glyphOrigins = Array.from({ length: ppfb.glyphOriginsLength() }, (_, i) => glyphOriginToPoint2d(ppfb.glyphOrigins(i)));
+    if (!range || range.isNull || glyphIds.length === 0 || glyphOrigins.length === 0)
+      return undefined;
+    return { glyphIds, glyphOrigins, range };
+  }
+
   /** Create entry from a [[TextString]] */
-  export function fromTextString(text: TextStringProps, worldToLocal?: Transform): ElementGeometryDataEntry | undefined {
+  export function fromTextString(text: TextStringProps, worldToLocal?: Transform, glyphs?: TextStringGlyphData): ElementGeometryDataEntry | undefined {
     if (undefined !== worldToLocal) {
       const localText = new TextString(text);
       if (!localText.transformInPlace(worldToLocal))
@@ -1075,6 +1168,17 @@ export namespace ElementGeometry {
 
     const textOffset = fbb.createString(text.text);
     const styleOffset = EGFBAccessors.TextStringStyle.createTextStringStyle(fbb, 1, 0, text.font, undefined === text.bold ? false : text.bold, undefined === text.italic ? false : text.italic, undefined === text.underline ? false : text.underline, text.height, undefined === text.widthFactor ? 1.0 : text.widthFactor);
+    const fbbGlyphs = (() => {
+      if (!glyphs || glyphs.range.isNull)
+        return undefined;
+      const glyphIdsOffset = builder.createGlyphIdsVector(fbb, glyphs.glyphIds);
+      builder.startGlyphOriginsVector(fbb, glyphs.glyphOrigins.length);
+      for (const origin of [...glyphs.glyphOrigins].reverse()) {
+        EGFBAccessors.TextStringGlyphOrigin.createTextStringGlyphOrigin(fbb, origin.x, origin.y);
+      }
+      const glyphOriginsOffset = fbb.endVector();
+      return { glyphIdsOffset, glyphOriginsOffset, range: glyphs.range };
+    })();
 
     builder.startTextString(fbb);
 
@@ -1091,6 +1195,12 @@ export namespace ElementGeometry {
       const coffs = matrix.coffs;
       const transformOffset = EGFBAccessors.TextStringTransform.createTextStringTransform(fbb, coffs[0], coffs[1], coffs[2], origin.x, coffs[3], coffs[4], coffs[5], origin.y, coffs[6], coffs[7], coffs[8], origin.z);
       builder.addTransform(fbb, transformOffset);
+    }
+
+    if (fbbGlyphs) {
+      builder.addRange(fbb, EGFBAccessors.TextStringRange.createTextStringRange(fbb, fbbGlyphs.range.low.x, fbbGlyphs.range.low.y, fbbGlyphs.range.high.x, fbbGlyphs.range.high.y));
+      builder.addGlyphIds(fbb, fbbGlyphs.glyphIdsOffset);
+      builder.addGlyphOrigins(fbb, fbbGlyphs.glyphOriginsOffset);
     }
 
     const mLoc = builder.endTextString(fbb);
@@ -1197,7 +1307,7 @@ export namespace ElementGeometry {
 
     if (undefined !== localToWorld) {
       if (undefined !== transform)
-        transform.multiplyTransformTransform(localToWorld, transform);
+        localToWorld.multiplyTransformTransform(transform, transform);
       else
         transform = localToWorld;
     }
@@ -1233,7 +1343,7 @@ export namespace ElementGeometry {
   export function fromBRep(brep: BRepEntity.DataProps, worldToLocal?: Transform): ElementGeometryDataEntry | undefined {
     if (undefined !== worldToLocal) {
       const entityTrans = Transform.fromJSON(brep.transform);
-      const localTrans = entityTrans.multiplyTransformTransform(worldToLocal);
+      const localTrans = worldToLocal.multiplyTransformTransform(entityTrans);
       brep = {
         data: brep.data,
         type: brep.type,
@@ -1337,7 +1447,7 @@ export namespace ElementGeometry {
       transform = Transform.createRowValues(entityTransform.x00(), entityTransform.x01(), entityTransform.x02(), entityTransform.tx(), entityTransform.x10(), entityTransform.x11(), entityTransform.x12(), entityTransform.ty(), entityTransform.x20(), entityTransform.x21(), entityTransform.x22(), entityTransform.tz());
 
     if (undefined !== transform)
-      transform.multiplyTransformTransform(inputTransform, transform);
+      inputTransform.multiplyTransformTransform(transform, transform);
     else
       transform = inputTransform;
 
@@ -1635,7 +1745,7 @@ export namespace ElementGeometry {
           const angles = YawPitchRollAngles.createFromMatrix3d(Matrix3d.createRowValues(
             rotation.x00(), rotation.x01(), rotation.x02(),
             rotation.x10(), rotation.x11(), rotation.x12(),
-            rotation.x20(), rotation.x21(), rotation.x22())
+            rotation.x20(), rotation.x21(), rotation.x22()),
           );
           if (undefined !== angles && !angles.isIdentity())
             props.rotation = angles;
@@ -2147,18 +2257,21 @@ export namespace ElementGeometry {
     builder.addGeomPartId(fbb, flatbuffers.Long.create(idPair.lower, idPair.upper));
 
     if (undefined !== partToElement && !partToElement.isIdentity) {
+      const result = partToElement.matrix.factorRigidWithSignedScale();
+      if (undefined === result)
+        return undefined;
+
       const originOffset = EGFBAccessors.DPoint3d.createDPoint3d(fbb, partToElement.origin.x, partToElement.origin.y, partToElement.origin.z);
       builder.addOrigin(fbb, originOffset);
 
-      const angles = YawPitchRollAngles.createFromMatrix3d(partToElement.matrix);
+      const angles = YawPitchRollAngles.createFromMatrix3d(result.rigidAxes);
       if (undefined !== angles) {
         builder.addYaw(fbb, angles.yaw.degrees);
         builder.addPitch(fbb, angles.pitch.degrees);
         builder.addRoll(fbb, angles.roll.degrees);
       }
 
-      const result = partToElement.matrix.factorRigidWithSignedScale();
-      if (undefined !== result && result.scale > 0.0)
+      if (result.scale > 0.0)
         builder.addScale(fbb, result.scale);
     }
 
@@ -2217,7 +2330,7 @@ export namespace ElementGeometry {
     return Transform.createRowValues(
       sourceToWorld[0], sourceToWorld[1], sourceToWorld[2], sourceToWorld[3],
       sourceToWorld[4], sourceToWorld[5], sourceToWorld[6], sourceToWorld[7],
-      sourceToWorld[8], sourceToWorld[9], sourceToWorld[10], sourceToWorld[11]
+      sourceToWorld[8], sourceToWorld[9], sourceToWorld[10], sourceToWorld[11],
     );
   }
 

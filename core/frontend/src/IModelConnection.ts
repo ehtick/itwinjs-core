@@ -7,22 +7,23 @@
  */
 
 import {
-  assert, BeEvent, CompressedId64Set, GeoServiceStatus, GuidString, Id64, Id64Arg, Id64Set, Id64String, Logger, OneAtATimeAction, OpenMode, TransientIdSequence,
+  assert, BeEvent, CompressedId64Set, GeoServiceStatus, GuidString, Id64, Id64Arg, Id64Set, Id64String, IModelStatus, Logger, OneAtATimeAction, OpenMode,
+  PickAsyncMethods, TransientIdSequence,
 } from "@itwin/core-bentley";
 import {
-  AxisAlignedBox3d, Cartographic, CodeProps, CodeSpec, DbQueryRequest, DbResult, EcefLocation, EcefLocationProps, ECSqlReader, ElementLoadOptions, ElementMeshRequestProps,
-  ElementProps, EntityQueryParams, FontMap, GeoCoordStatus, GeometryContainmentRequestProps, GeometryContainmentResponseProps,
-  GeometrySummaryRequestProps, ImageSourceFormat, IModel, IModelConnectionProps, IModelError, IModelReadRpcInterface, IModelStatus,
-  mapToGeoServiceStatus, MassPropertiesPerCandidateRequestProps, MassPropertiesPerCandidateResponseProps, MassPropertiesRequestProps, MassPropertiesResponseProps,
-  ModelExtentsProps, ModelProps, ModelQueryParams, NoContentError, Placement, Placement2d, Placement3d, QueryBinder, QueryOptions, QueryOptionsBuilder, QueryRowFormat,
-  RpcManager, SnapRequestProps, SnapResponseProps, SnapshotIModelRpcInterface, SubCategoryAppearance, SubCategoryResultRow,
-  TextureData, TextureLoadProps, ThumbnailProps, ViewDefinitionProps, ViewQueryParams, ViewStateLoadProps, ViewStateProps,
+  Cartographic, CodeProps, CodeSpec, DbQueryRequest, EcefLocation, EcefLocationProps, ECSqlReader, ElementLoadOptions, ElementMeshRequestProps,
+  ElementProps, EntityQueryParams, FontMap, GeoCoordStatus, GeographicCRSProps, GeometryContainmentRequestProps, GeometryContainmentResponseProps, GeometrySummaryRequestProps, IModel, IModelConnectionProps, IModelError,
+  IModelReadRpcInterface, mapToGeoServiceStatus, MassPropertiesPerCandidateRequestProps, MassPropertiesPerCandidateResponseProps,
+  MassPropertiesRequestProps, MassPropertiesResponseProps, ModelExtentsProps, ModelProps, ModelQueryParams, Placement, Placement2d,
+  Placement3d, QueryBinder, QueryOptions, QueryRowFormat, RpcManager, SnapRequestProps, SnapResponseProps,
+  SnapshotIModelRpcInterface, SubCategoryAppearance, SubCategoryResultRow, TextureData, TextureLoadProps, ViewDefinitionProps,
+  ViewIdString, ViewQueryParams, ViewStateLoadProps, ViewStateProps, ViewStoreRpc,
 } from "@itwin/core-common";
-import { Point3d, Range3d, Range3dProps, Transform, XYAndZ, XYZProps } from "@itwin/core-geometry";
+import { Point3d, Range3dProps, Transform, XYAndZ, XYZProps } from "@itwin/core-geometry";
 import { BriefcaseConnection } from "./BriefcaseConnection";
 import { CheckpointConnection } from "./CheckpointConnection";
+import { FrontendLoggerCategory } from "./common/FrontendLoggerCategory";
 import { EntityState } from "./EntityState";
-import { FrontendLoggerCategory } from "./FrontendLoggerCategory";
 import { GeoServices } from "./GeoServices";
 import { IModelApp } from "./IModelApp";
 import { IModelRoutingContext } from "./IModelRoutingContext";
@@ -32,6 +33,8 @@ import { SubCategoriesCache } from "./SubCategoriesCache";
 import { BingElevationProvider } from "./tile/internal";
 import { Tiles } from "./Tiles";
 import { ViewState } from "./ViewState";
+import { _requestSnap } from "./common/internal/Symbols";
+import { IpcApp } from "./IpcApp";
 
 const loggerCategory: string = FrontendLoggerCategory.IModelConnection;
 
@@ -86,14 +89,7 @@ export abstract class IModelConnection extends IModel {
   public get noGcsDefined(): boolean { return this._gcsDisabled || undefined === this.geographicCoordinateSystem; }
   /** @internal */
   public disableGCS(disable: boolean): void { this._gcsDisabled = disable; }
-  /** The displayed extents of this iModel, initialized to [IModel.projectExtents]($common). The displayed extents can be made larger via
-   * [[expandDisplayedExtents]], but never smaller, to accommodate data sources like reality models that may exceed the project extents.
-   * @note Do not modify these extents directly - use [[expandDisplayedExtents]] only.
-   * @deprecated in 3.6. These extents are still computed, but no longer used to determine the viewed extents of a [[SpatialViewState]]. It is not useful to
-   * perpetually expand the iModel's extents.
-   */
-  public readonly displayedExtents: AxisAlignedBox3d;
-  private readonly _extentsExpansion = Range3d.createNull();
+
   /** The maximum time (in milliseconds) to wait before timing out the request to open a connection to a new iModel */
   public static connectionTimeout: number = 10 * 60 * 1000;
 
@@ -140,9 +136,9 @@ export abstract class IModelConnection extends IModel {
    */
   public abstract get isClosed(): boolean;
 
-  /** Event called immediately before *any* IModelConnection is closed.
-   * @note This static event is called when *any* IModelConnection is closed, and the specific IModelConnection is passed as its argument. To
-   * monitor closing a specific IModelConnection, use the `onClose` instance event.
+  /** Event raised immediately before *any* IModelConnection is [[close]]d.
+   * @note This static event is raised when *any* IModelConnection is closed, and the specific IModelConnection is passed as its argument. To
+   * monitor closing a specific IModelConnection, listen for the `onClose` instance event instead.
    * @note Be careful not to perform any asynchronous operations on the IModelConnection because it will close before they are processed.
    */
   public static readonly onClose = new BeEvent<(_imodel: IModelConnection) => void>();
@@ -150,28 +146,30 @@ export abstract class IModelConnection extends IModel {
   /** Event called immediately after *any* IModelConnection is opened. */
   public static readonly onOpen = new BeEvent<(_imodel: IModelConnection) => void>();
 
-  /** Event called immediately before *this* IModelConnection is closed.
-   * @note This event is called only for this IModelConnection. To monitor *all* IModelConnections,use the static event.
+  /** Event raised immediately before this IModelConnection is [[close]]d.
+   * @note This event is raised only for this specific IModelConnection. To monitor *all* IModelConnections, listen for the static `onClose` event instead.
    * @note Be careful not to perform any asynchronous operations on the IModelConnection because it will close before they are processed.
-   * @beta
    */
   public readonly onClose = new BeEvent<(_imodel: IModelConnection) => void>();
 
-  /** The font map for this IModelConnection. Only valid after calling #loadFontMap and waiting for the returned promise to be fulfilled. */
-  public fontMap?: FontMap;
+  /** The font map for this IModelConnection. Only valid after calling #loadFontMap and waiting for the returned promise to be fulfilled.
+   * @deprecated in 5.0.0. If you need font Ids on the front-end for some reason, write an Ipc method that queries [IModelDb.fonts]($backend).
+   */
+  public fontMap?: FontMap; // eslint-disable-line @typescript-eslint/no-deprecated
 
   /** Load the FontMap for this IModelConnection.
    * @returns Returns a Promise<FontMap> that is fulfilled when the FontMap member of this IModelConnection is valid.
+   * @deprecated in 5.0.0. If you need font Ids on the front-end for some reason, write an Ipc method that queries [IModelDb.fonts]($backend).
    */
-  public async loadFontMap(): Promise<FontMap> {
-    if (undefined === this.fontMap) {
-      this.fontMap = new FontMap();
+  public async loadFontMap(): Promise<FontMap> { // eslint-disable-line @typescript-eslint/no-deprecated
+    if (undefined === this.fontMap) { // eslint-disable-line @typescript-eslint/no-deprecated
+      this.fontMap = new FontMap(); // eslint-disable-line @typescript-eslint/no-deprecated
       if (this.isOpen) {
         const fontProps = await IModelReadRpcInterface.getClientForRouting(this.routingContext.token).readFontJson(this.getRpcProps());
-        this.fontMap.addFonts(fontProps.fonts);
+        this.fontMap.addFonts(fontProps.fonts); // eslint-disable-line @typescript-eslint/no-deprecated
       }
     }
-    return this.fontMap;
+    return this.fontMap; // eslint-disable-line @typescript-eslint/no-deprecated
   }
 
   /** Find the first registered base class of the given EntityState className. This class will "handle" the State for the supplied className.
@@ -224,15 +222,7 @@ export abstract class IModelConnection extends IModel {
     this.hilited = new HiliteSet(this);
 
     this.tiles = new Tiles(this);
-    this.geoServices = new GeoServices(this);
-    /* eslint-disable-next-line deprecation/deprecation */
-    this.displayedExtents = Range3d.fromJSON(this.projectExtents);
-
-    this.onProjectExtentsChanged.addListener(() => {
-      // Compute new displayed extents as the union of the ranges we previously expanded by with the new project extents.
-      /* eslint-disable-next-line deprecation/deprecation */
-      this.expandDisplayedExtents(this._extentsExpansion);
-    });
+    this.geoServices = GeoServices.createForIModel(this);
 
     this.hilited.onModelSubCategoryModeChanged.addListener(() => {
       IModelApp.viewManager.onSelectionSetChanged(this);
@@ -245,7 +235,7 @@ export abstract class IModelConnection extends IModel {
   protected beforeClose(): void {
     this.onClose.raiseEvent(this); // event for this connection
     IModelConnection.onClose.raiseEvent(this); // event for all connections
-    this.tiles.dispose();
+    this.tiles[Symbol.dispose]();
     this.subcategories.onIModelConnectionClose();
   }
 
@@ -253,10 +243,16 @@ export abstract class IModelConnection extends IModel {
   public abstract close(): Promise<void>;
 
   /** Allow to execute query and read results along with meta data. The result are streamed.
+   *
+   * See also:
+   * - [ECSQL Overview]($docs/learning/frontend/ExecutingECSQL)
+   * - [Code Examples]($docs/learning/frontend/ECSQLCodeExamples)
+   * - [ECSQL Row Format]($docs/learning/ECSQLRowFormat)
+   *
    * @param params The values to bind to the parameters (if the ECSQL has any).
    * @param config Allow to specify certain flags which control how query is executed.
    * @returns Returns an [ECSqlReader]($common) which helps iterate over the result set and also give access to metadata.
-   * @beta
+   * @public
    * */
   public createQueryReader(ecsql: string, params?: QueryBinder, config?: QueryOptions): ECSqlReader {
     const executor = {
@@ -277,72 +273,15 @@ export abstract class IModelConnection extends IModel {
     return IModelReadRpcInterface.getClientForRouting(this.routingContext.token).querySubCategories(this.getRpcProps(), compressedCategoryIds);
   }
 
-  /** Execute a query and stream its results
-   * The result of the query is async iterator over the rows. The iterator will get next page automatically once rows in current page has been read.
-   * [ECSQL row]($docs/learning/ECSQLRowFormat).
-   *
-   * See also:
-   * - [ECSQL Overview]($docs/learning/backend/ExecutingECSQL)
-   * - [Code Examples]($docs/learning/backend/ECSQLCodeExamples)
-   *
-   * @param ecsql The ECSQL statement to execute
-   * @param params The values to bind to the parameters (if the ECSQL has any).
-   * @param options Allow to specify certain flags which control how query is executed.
-   * @returns Returns the query result as an *AsyncIterableIterator<any>*  which lazy load result as needed. The row format is determined by *rowFormat* parameter.
-   * See [ECSQL row format]($docs/learning/ECSQLRowFormat) for details about the format of the returned rows.
-   * @throws [IModelError]($common) If there was any error while submitting, preparing or stepping into query
-   * @deprecated in 3.7. Use [[createQueryReader]] instead; it accepts the same parameters.
+  /**
+   * queries the BisCore.SubCategory table for entries that are children of used spatial categories and 3D elements.
+   * @returns array of SubCategoryResultRow
+   * @internal
    */
-  public async * query(ecsql: string, params?: QueryBinder, options?: QueryOptions): AsyncIterableIterator<any> {
-    const builder = new QueryOptionsBuilder(options);
-    const reader = this.createQueryReader(ecsql, params, builder.getOptions());
-    while (await reader.step())
-      yield reader.formatCurrentRow();
+  public async queryAllUsedSpatialSubCategories(): Promise<SubCategoryResultRow[]> {
+    return IModelReadRpcInterface.getClientForRouting(this.routingContext.token).queryAllUsedSpatialSubCategories(this.getRpcProps());
   }
 
-  /** Compute number of rows that would be returned by the ECSQL.
-   *
-   * See also:
-   * - [ECSQL Overview]($docs/learning/backend/ExecutingECSQL)
-   * - [Code Examples]($docs/learning/backend/ECSQLCodeExamples)
-   *
-   * @param ecsql The ECSQL statement to execute
-   * @param params The values to bind to the parameters (if the ECSQL has any).
-   * See "[iTwin.js Types used in ECSQL Parameter Bindings]($docs/learning/ECSQLParameterTypes)" for details.
-   * @returns Return row count.
-   * @throws [IModelError]($common) If the statement is invalid
-   * @deprecated in 3.7. Count the number of results using `count(*)` where the original query is a subquery instead. E.g., `SELECT count(*) FROM (<query-whose-rows-to-count>)`.
-   */
-
-  public async queryRowCount(ecsql: string, params?: QueryBinder): Promise<number> {
-    for await (const row of this.createQueryReader(`select count(*) from (${ecsql})`, params)) {
-      return row[0] as number;
-    }
-    throw new IModelError(DbResult.BE_SQLITE_ERROR, "Failed to get row count");
-  }
-  /** Cancel any previous query with same token and run execute the current specified query.
-   * The result of the query is async iterator over the rows. The iterator will get next page automatically once rows in current page has been read.
-   * [ECSQL row]($docs/learning/ECSQLRowFormat).
-   *
-   * See also:
-   * - [ECSQL Overview]($docs/learning/backend/ExecutingECSQL)
-   * - [Code Examples]($docs/learning/backend/ECSQLCodeExamples)
-   *
-   * @param ecsql The ECSQL statement to execute
-   * @param token None empty restart token. The previous query with same token would be cancelled. This would cause
-   * exception which user code must handle.
-   * @param params The values to bind to the parameters (if the ECSQL has any).
-   * @param options Allow to specify certain flags which control how query is executed.
-   * @returns Returns the query result as an *AsyncIterableIterator<any>*  which lazy load result as needed. The row format is determined by *rowFormat* parameter.
-   * See [ECSQL row format]($docs/learning/ECSQLRowFormat) for details about the format of the returned rows.
-   * @throws [IModelError]($common) If there was any error while submitting, preparing or stepping into query
-   * @deprecated in 3.7. Use [[createQueryReader]] instead. Pass in the restart token as part of the `config` argument; e.g., `{ restartToken: myToken }` or `new QueryOptionsBuilder().setRestartToken(myToken).getOptions()`.
-   */
-  public async * restartQuery(token: string, ecsql: string, params?: QueryBinder, options?: QueryOptions): AsyncIterableIterator<any> {
-    for await (const row of this.createQueryReader(ecsql, params, new QueryOptionsBuilder(options).setRestartToken(token).getOptions())) {
-      yield row;
-    }
-  }
   /** Query for a set of element ids that satisfy the supplied query params
    * @param params The query parameters. The `limit` and `offset` members should be used to page results.
    * @throws [IModelError]($common) If the generated statement is invalid or would return too many rows.
@@ -351,13 +290,24 @@ export abstract class IModelConnection extends IModel {
     return new Set(this.isOpen ? await IModelReadRpcInterface.getClientForRouting(this.routingContext.token).queryEntityIds(this.getRpcProps(), params) : undefined);
   }
 
-  private _snapRpc = new OneAtATimeAction<SnapResponseProps>(async (props: SnapRequestProps) => IModelReadRpcInterface.getClientForRouting(this.routingContext.token).requestSnap(this.getRpcProps(), IModelApp.sessionId, props));
+  private _snapRpc = new OneAtATimeAction<SnapResponseProps>(
+    async (props: SnapRequestProps) =>
+      IModelReadRpcInterface.getClientForRouting(this.routingContext.token).requestSnap(this.getRpcProps(), IModelApp.sessionId, props),
+  );
+
   /** Request a snap from the backend.
    * @note callers must gracefully handle Promise rejected with AbandonedError
    * @internal
    */
-  public async requestSnap(props: SnapRequestProps): Promise<SnapResponseProps> {
+  public async [_requestSnap](props: SnapRequestProps): Promise<SnapResponseProps> {
     return this.isOpen ? this._snapRpc.request(props) : { status: 2 };
+  }
+
+  /** @internal
+   * @deprecated in 4.8. Use AccuSnap.doSnapRequest.
+   */
+  public async requestSnap(props: SnapRequestProps): Promise<SnapResponseProps> {
+    return this[_requestSnap](props);
   }
 
   private _toolTipRpc = new OneAtATimeAction<string[]>(async (id: string) => IModelReadRpcInterface.getClientForRouting(this.routingContext.token).getToolTipMessage(this.getRpcProps(), id));
@@ -395,15 +345,15 @@ export abstract class IModelConnection extends IModel {
     return undefined;
   }
 
-  /** Request element mass properties from the backend.
-   * @note For better performance use [[getMassPropertiesPerCandidate]] when called from a loop with identical operations and a single candidate per iteration.
-   */
+  /** Request element mass properties from the backend. */
   public async getMassProperties(requestProps: MassPropertiesRequestProps): Promise<MassPropertiesResponseProps> {
     return IModelReadRpcInterface.getClientForRouting(this.routingContext.token).getMassProperties(this.getRpcProps(), requestProps);
   }
 
-  /** Request mass properties for multiple elements from the backend. */
-  public async getMassPropertiesPerCandidate(requestProps: MassPropertiesPerCandidateRequestProps): Promise<MassPropertiesPerCandidateResponseProps[]> {
+  /** Request mass properties for multiple elements from the backend.
+   * @deprecated in 4.11. Use [[IModelConnection.getMassProperties]].
+   */
+  public async getMassPropertiesPerCandidate(requestProps: MassPropertiesPerCandidateRequestProps): Promise<MassPropertiesPerCandidateResponseProps[]> {  // eslint-disable-line @typescript-eslint/no-deprecated
     return IModelReadRpcInterface.getClientForRouting(this.routingContext.token).getMassPropertiesPerCandidate(this.getRpcProps(), requestProps);
   }
 
@@ -425,8 +375,9 @@ export abstract class IModelConnection extends IModel {
   /** Convert a point in this iModel's Spatial coordinates to a [[Cartographic]] using the Geographic location services for this IModelConnection.
    * @param spatial A point in the iModel's spatial coordinates
    * @param result If defined, use this for output
-   * @returns A Cartographic location
+   * @returns A Cartographic location (Horizontal datum depends on iModel's GCS)
    * @throws IModelError if [[isGeoLocated]] is false or point could not be converted.
+   * @see [[cartographicFromSpatial]] if you have more than one point to convert, or you don't know whether the iModel has a GCS.
    */
   public async spatialToCartographicFromGcs(spatial: XYAndZ, result?: Cartographic): Promise<Cartographic> {
     if (!this.isGeoLocated && this.noGcsDefined)
@@ -450,20 +401,77 @@ export abstract class IModelConnection extends IModel {
   /** Convert a point in this iModel's Spatial coordinates to a [[Cartographic]] using the Geographic location services for this IModelConnection or [[IModel.ecefLocation]].
    * @param spatial A point in the iModel's spatial coordinates
    * @param result If defined, use this for output
-   * @returns A Cartographic location
+   * @returns A Cartographic location (Horizontal datum depends on iModel's GCS)
    * @throws IModelError if [[isGeoLocated]] is false or point could not be converted.
-   * @see [[spatialToCartographicFromGcs]]
-   * @see [[spatialToCartographicFromEcef]]
+   * @see [[cartographicFromSpatial]] to convert multiple points at once.
+   * @see [[spatialToCartographicFromEcef]] to synchronously convert points using the iModel's ECEF transform.
    */
   public async spatialToCartographic(spatial: XYAndZ, result?: Cartographic): Promise<Cartographic> {
     return (this.noGcsDefined ? this.spatialToCartographicFromEcef(spatial, result) : this.spatialToCartographicFromGcs(spatial, result));
   }
 
-  /** Convert a [[Cartographic]] to a point in this iModel's Spatial coordinates using the Geographic location services for this IModelConnection.
+  /** Convert points in this iModel's spatial coordinate system to [Cartographic]($common) coordinates using either a [[GeoConverter]] or the iModel's [EcefLocation]($common).
+   * @param spatial Coordinates to be converted from the iModel's spatial coordinate system
+   * @returns The `spatial` coordinates converted to cartographic coordinates, of the same length and order as the `spatial`.
+   * @throws IModelError if [[isGeoLocated]] is false or any point could not be converted.
+   * @see [[spatialFromCartographic]] to perform the inverse conversion.
+   * @see [[spatialToCartographicFromEcef]] to synchronously convert points using the iModel's ECEF transform.
+   */
+  public async cartographicFromSpatial(spatial: XYAndZ[]): Promise<Cartographic[]> {
+    return this.cartographicFromSpatialWithGcs(spatial);
+  }
+
+  /** Convert points in this iModel's spatial coordinate system to [Cartographic]($common) coordinates using either a [[GeoConverter]] or the iModel's [EcefLocation]($common).
+   * @param spatial Coordinates to be converted from the iModel's spatial coordinate system
+   * @returns The `spatial` coordinates converted to cartographic coordinates (WGS84 horizontal datum), of the same length and order as the `spatial`.
+   * @throws IModelError if [[isGeoLocated]] is false or any point could not be converted.
+   * @see [[cartographicFromSpatial]] to perform conversion using iModel's GCS horizontal datum
+   * @beta
+   */
+  public async wgs84CartographicFromSpatial(spatial: XYAndZ[]): Promise<Cartographic[]> {
+    return this.cartographicFromSpatialWithGcs(spatial, "WGS84");
+  }
+
+  /** @internal */
+  public async cartographicFromSpatialWithGcs(spatial: XYAndZ[], datumOrGCRS?: string | GeographicCRSProps): Promise<Cartographic[]> {
+    if (this.noGcsDefined)
+      return spatial.map((p) => this.spatialToCartographicFromEcef(p));
+
+    if (!this.isGeoLocated)
+      throw new IModelError(GeoServiceStatus.NoGeoLocation, "iModel is not GeoLocated");
+
+    if (!this.isOpen)
+      throw new IModelError(GeoServiceStatus.NoGeoLocation, "iModel is not open");
+
+    if (spatial.length === 0)
+      return [];
+
+    const geoConverter = this.geoServices.getConverter(datumOrGCRS);
+    assert(undefined !== geoConverter);
+
+    const coordResponse = await geoConverter.getGeoCoordinatesFromIModelCoordinates(spatial);
+    if (coordResponse.geoCoords.length !== spatial.length)
+      throw new IModelError(GeoServiceStatus.NoGeoLocation, "iModel is not GeoLocated");
+
+    return coordResponse.geoCoords.map((coord) => {
+      switch (coord.s) {
+        case GeoCoordStatus.NoGCSDefined:
+          throw new IModelError(GeoServiceStatus.NoGeoLocation, "iModel is not GeoLocated");
+        case GeoCoordStatus.Success:
+          const llh = Point3d.fromJSON(coord.p);
+          return Cartographic.fromDegrees({ longitude: llh.x, latitude: llh.y, height: llh.z });
+        default:
+          throw new IModelError(mapToGeoServiceStatus(coord.s), "Error converting spatial to cartographic");
+      }
+    });
+  }
+
+  /** Convert a [Cartographic]($common) to a point in this iModel's spatial coordinate system using a [[GeoConverter]].
    * @param cartographic A cartographic location
    * @param result If defined, use this for output
    * @returns A point in this iModel's spatial coordinates
    * @throws IModelError if [[isGeoLocated]] is false or cartographic location could not be converted.
+   * @see [[spatialFromCartographic]] to convert multiple points at once, or you don't know whether the iModel has a GCS.
    */
   public async cartographicToSpatialFromGcs(cartographic: Cartographic, result?: Point3d): Promise<Point3d> {
     if (!this.isGeoLocated && this.noGcsDefined)
@@ -486,29 +494,67 @@ export abstract class IModelConnection extends IModel {
     return result;
   }
 
-  /** Convert a [[Cartographic]] to a point in this iModel's Spatial coordinates using the Geographic location services for this IModelConnection or [[IModel.ecefLocation]].
+  /** Convert a [Cartographic]($common) to a point in this iModel's Spatial coordinates using a [[GeoConverter]] or[[IModel.ecefLocation]($common).
    * @param cartographic A cartographic location
    * @param result If defined, use this for output
    * @returns A point in this iModel's spatial coordinates
    * @throws IModelError if [[isGeoLocated]] is false or cartographic location could not be converted.
-   * @see [[cartographicToSpatialFromGcs]]
-   * @see [[cartographicToSpatialFromEcef]]
+   * @see [[spatialFromCartographic]] to convert multiple points at once.
+   * @see [[cartographicToSpatialFromEcef]] to synchronously convert points using the iModel's ECEF transform.
    */
   public async cartographicToSpatial(cartographic: Cartographic, result?: Point3d): Promise<Point3d> {
     return (this.noGcsDefined ? this.cartographicToSpatialFromEcef(cartographic, result) : this.cartographicToSpatialFromGcs(cartographic, result));
   }
 
-  /** Expand this iModel's [[displayedExtents]] to include the specified range.
-   * This is done automatically when reality models are added to a spatial view. In some cases a [[TiledGraphicsProvider]] may wish to expand
-   * the extents explicitly to include its geometry.
-   * @deprecated in 3.6. See [[displayedExtents]].
+  /** Convert [Cartographic]($common) coordinates into points in this iModel's spatial coordinate system using a [[GeoConverter]] or the iModel's [EcefLocation]($common).
+   * @param cartographic Coordinates to be converted to the iModel's spatial coordinate system.
+   * @returns The `cartographic` coordinates converted to spatial coordinates, of the same length and order as `cartographic`.
+   * @throws IModelError if [[isGeoLocated]] is false or any point could not be converted.
+   * @see [[cartographicFromSpatial]] to perform the inverse conversion.
    */
-  public expandDisplayedExtents(range: Range3d): void {
-    this._extentsExpansion.extendRange(range);
-    /* eslint-disable-next-line deprecation/deprecation */
-    this.displayedExtents.setFrom(this.projectExtents);
-    /* eslint-disable-next-line deprecation/deprecation */
-    this.displayedExtents.extendRange(this._extentsExpansion);
+  public async spatialFromCartographic(cartographic: Cartographic[]): Promise<Point3d[]> {
+    if (this.noGcsDefined)
+      return cartographic.map((p) => this.cartographicToSpatialFromEcef(p));
+
+    const geoCoords = cartographic.map((p) => Point3d.create(p.longitudeDegrees, p.latitudeDegrees, p.height));
+    return this.toSpatialFromGcs(geoCoords);
+  }
+
+  /** Convert geographic coordinates into points in this iModel's spatial coordinate system using a [[GeoConverter]] or the iModel's [EcefLocation]($common).
+   * @param geoCoords Coordinates to be converted are in the coordinate system described by the `datumOrGCRS` parameter.  Defaults iModel's spatial coordinate system otherwise.
+   * @param datumOrGCRS Datum name or Geographic CRS object definition to use for the conversion.
+   * @returns The `geographics` coordinates converted to spatial coordinates, of the same length and order as `geographics`.
+   * @throws IModelError if [[isGeoLocated]] is false or any point could not be converted.
+   * @beta
+   */
+  public async toSpatialFromGcs(geoCoords: XYAndZ[], datumOrGCRS?: string | GeographicCRSProps): Promise<Point3d[]> {
+
+    if (!this.isGeoLocated)
+      throw new IModelError(GeoServiceStatus.NoGeoLocation, "iModel is not GeoLocated");
+
+    if (!this.isOpen)
+      throw new IModelError(GeoServiceStatus.NoGeoLocation, "iModel is not open");
+
+    if (geoCoords.length === 0)
+      return [];
+
+    const geoConverter = this.geoServices.getConverter(datumOrGCRS);
+    assert(undefined !== geoConverter);
+
+    const coordResponse = await geoConverter.getIModelCoordinatesFromGeoCoordinates(geoCoords);
+    if (coordResponse.iModelCoords.length !== geoCoords.length)
+      throw new IModelError(GeoServiceStatus.NoGeoLocation, "iModel is not GeoLocated");
+
+    return coordResponse.iModelCoords.map((coord) => {
+      switch (coord.s) {
+        case GeoCoordStatus.NoGCSDefined:
+          throw new IModelError(GeoServiceStatus.NoGeoLocation, "iModel is not GeoLocated");
+        case GeoCoordStatus.Success:
+          return Point3d.fromJSON(coord.p);
+        default:
+          throw new IModelError(mapToGeoServiceStatus(coord.s), "Error converting cartographic to spatial");
+      }
+    });
   }
 
   /** @internal */
@@ -593,7 +639,8 @@ export class BlankConnection extends IModelConnection {
    * @param props The properties to use for the new BlankConnection.
    */
   public static create(props: BlankConnectionProps): BlankConnection {
-    return new this({
+    const connection = new BlankConnection({
+      name: props.name,
       rootSubject: { name: props.name },
       projectExtents: props.extents,
       globalOrigin: props.globalOrigin,
@@ -601,6 +648,8 @@ export class BlankConnection extends IModelConnection {
       key: "",
       iTwinId: props.iTwinId,
     });
+    IModelConnection.onOpen.raiseEvent(connection);
+    return connection;
   }
 
   /** There are no connections to the backend to close in the case of a BlankConnection.
@@ -638,28 +687,30 @@ export class SnapshotConnection extends IModelConnection {
   private _isRemote?: boolean;
 
   /** Open an IModelConnection to a read-only snapshot iModel from a file name.
-   * @note This method is intended for desktop or mobile applications and should not be used for web applications.
+   * @note This method is intended for desktop or mobile applications and is not available for web applications.
    */
   public static async openFile(filePath: string): Promise<SnapshotConnection> {
-    const routingContext = IModelRoutingContext.current || IModelRoutingContext.default;
-    RpcManager.setIModel({ iModelId: "undefined", key: filePath });
+    if (!IpcApp.isValid)
+      throw new Error("IPC required to open a snapshot");
 
-    const openResponse = await SnapshotIModelRpcInterface.getClientForRouting(routingContext.token).openFile(filePath);
     Logger.logTrace(loggerCategory, "SnapshotConnection.openFile", () => ({ filePath }));
-    const connection = new SnapshotConnection(openResponse);
-    connection.routingContext = routingContext;
+
+    const connectionProps = await IpcApp.appFunctionIpc.openSnapshot(filePath);
+    const connection = new SnapshotConnection(connectionProps);
     IModelConnection.onOpen.raiseEvent(connection);
+
     return connection;
   }
 
   /** Open an IModelConnection to a remote read-only snapshot iModel from a key that will be resolved by the backend.
    * @note This method is intended for web applications.
+   * @deprecated in 4.10. Use [[CheckpointConnection.openRemote]].
    */
   public static async openRemote(fileKey: string): Promise<SnapshotConnection> {
     const routingContext = IModelRoutingContext.current || IModelRoutingContext.default;
     RpcManager.setIModel({ iModelId: "undefined", key: fileKey });
 
-    const openResponse = await SnapshotIModelRpcInterface.getClientForRouting(routingContext.token).openRemote(fileKey);
+    const openResponse = await SnapshotIModelRpcInterface.getClientForRouting(routingContext.token).openRemote(fileKey); // eslint-disable-line @typescript-eslint/no-deprecated
     Logger.logTrace(loggerCategory, "SnapshotConnection.openRemote", () => ({ fileKey }));
     const connection = new SnapshotConnection(openResponse);
     connection.routingContext = routingContext;
@@ -680,7 +731,7 @@ export class SnapshotConnection extends IModelConnection {
     this.beforeClose();
     try {
       if (!this.isRemote) {
-        await SnapshotIModelRpcInterface.getClientForRouting(this.routingContext.token).close(this.getRpcProps());
+        await IpcApp.appFunctionIpc.closeIModel(this.key);
       }
     } finally {
       this._isClosed = true;
@@ -689,7 +740,7 @@ export class SnapshotConnection extends IModelConnection {
 }
 
 /** @public */
-export namespace IModelConnection { // eslint-disable-line no-redeclare
+export namespace IModelConnection {
 
   /** The id/name/class of a ViewDefinition. Returned by [[IModelConnection.Views.getViewList]] */
   export interface ViewSpec {
@@ -765,7 +816,7 @@ export namespace IModelConnection { // eslint-disable-line no-redeclare
       try {
         const propArray = await this.getProps(notLoaded);
         await this.updateLoadedWithModelProps(propArray);
-      } catch (err) {
+      } catch {
         // ignore error, we had nothing to do.
       }
     }
@@ -780,7 +831,7 @@ export namespace IModelConnection { // eslint-disable-line no-redeclare
             this._loaded.set(modelState.id, modelState); // save it in loaded set
           }
         }
-      } catch (err) {
+      } catch {
         // ignore error, we had nothing to do.
       }
     }
@@ -1055,6 +1106,25 @@ export namespace IModelConnection { // eslint-disable-line no-redeclare
   export class Views {
     /** @internal */
     constructor(private _iModel: IModelConnection) { }
+    private _writeViewStoreProxy?: PickAsyncMethods<ViewStoreRpc.Writer>;
+    private _readViewStoreProxy?: PickAsyncMethods<ViewStoreRpc.Reader>;
+
+    public get viewStoreWriter() {
+      return this._writeViewStoreProxy ??= new Proxy(this, {
+        get(views, methodName: string) {
+          const iModel = views._iModel;
+          return async (...args: any[]) => IModelReadRpcInterface.getClientForRouting(iModel.routingContext.token).callViewStore(iModel.getRpcProps(), ViewStoreRpc.version, true, methodName, ...args);
+        },
+      }) as unknown as PickAsyncMethods<ViewStoreRpc.Writer>;
+    }
+    public get viewsStoreReader() {
+      return this._readViewStoreProxy ??= new Proxy(this, {
+        get(views, methodName: string) {
+          const iModel = views._iModel;
+          return async (...args: any[]) => IModelReadRpcInterface.getClientForRouting(iModel.routingContext.token).callViewStore(iModel.getRpcProps(), ViewStoreRpc.version, false, methodName, ...args);
+        },
+      }) as unknown as PickAsyncMethods<ViewStoreRpc.Reader>;
+    }
 
     /** Query for an array of ViewDefinitionProps
      * @param queryParams Query parameters specifying the views to return. The `limit` and `offset` members should be used to page results.
@@ -1100,9 +1170,12 @@ export namespace IModelConnection { // eslint-disable-line no-redeclare
       return views;
     }
 
-    /** Query the Id of the default view associated with this iModel. Applications can choose to use this as the default view to which to open a viewport upon startup, or the initial selection
-     * within a view selection dialog, or similar purposes.
-     * @returns the ID of the default view, or an invalid ID if no default view is defined.
+    /** Query the Id of the default [ViewDefinition]($backend), if any, stored in this iModel's property table.
+     * The default view is typically chosen by the application (such as a connector) that created the iModel.
+     * There is no guarantee that this view will be suitable for the purposes of any other applications.
+     * Most applications should ignore the default view and instead create a [[ViewState]] that fits their own requirements using APIs like [[ViewCreator3d]].
+     * @returns the Id of the default view as defined in the iModel's property table, or an invalid ID if no default view is defined.
+     * @deprecated in 4.2. Create a ViewState to your own specifications.
      */
     public async queryDefaultViewId(): Promise<Id64String> {
       const iModel = this._iModel;
@@ -1110,10 +1183,7 @@ export namespace IModelConnection { // eslint-disable-line no-redeclare
     }
 
     /** Load a [[ViewState]] object from the specified [[ViewDefinition]] id. */
-    public async load(viewDefinitionId: Id64String): Promise<ViewState> {
-      if (!Id64.isValidId64(viewDefinitionId))
-        throw new IModelError(IModelStatus.InvalidId, `Invalid view definition Id ${viewDefinitionId}`);
-
+    public async load(viewDefinitionId: ViewIdString): Promise<ViewState> {
       const options: ViewStateLoadProps = {
         displayStyle: {
           omitScheduleScriptElementIds: !IModelApp.tileAdmin.enableFrontendScheduleScripts,
@@ -1137,23 +1207,6 @@ export namespace IModelConnection { // eslint-disable-line no-redeclare
       await viewState.load(); // loads models for ModelSelector
 
       return viewState;
-    }
-
-    /** Get a thumbnail for a view.
-     * @param viewId The id of the view of the thumbnail.
-     * @returns A Promise of the ThumbnailProps.
-     * @throws "No content" error if invalid thumbnail.
-     * @deprecated in 3.x with no replacement; thumbnails are rarely added to the iModel.
-     */
-    public async getThumbnail(_viewId: Id64String): Promise<ThumbnailProps> {
-      // eslint-disable-next-line deprecation/deprecation
-      const val = await IModelReadRpcInterface.getClientForRouting(this._iModel.routingContext.token).getViewThumbnail(this._iModel.getRpcProps(), _viewId.toString());
-      const intValues = new Uint32Array(val.buffer, 0, 4);
-
-      if (intValues[1] !== ImageSourceFormat.Jpeg && intValues[1] !== ImageSourceFormat.Png)
-        throw new NoContentError();
-
-      return { format: intValues[1] === ImageSourceFormat.Jpeg ? "jpeg" : "png", width: intValues[2], height: intValues[3], image: new Uint8Array(val.buffer, 16, intValues[0]) };
     }
   }
 

@@ -85,7 +85,7 @@ export class YawPitchRollAngles {
     return new YawPitchRollAngles(
       Angle.createDegrees(yawDegrees),
       Angle.createDegrees(pitchDegrees),
-      Angle.createDegrees(rollDegrees)
+      Angle.createDegrees(rollDegrees),
     );
   }
   /**
@@ -98,7 +98,7 @@ export class YawPitchRollAngles {
     return new YawPitchRollAngles(
       Angle.createRadians(yawRadians),
       Angle.createRadians(pitchRadians),
-      Angle.createRadians(rollRadians)
+      Angle.createRadians(rollRadians),
     );
   }
   /** Construct a `YawPitchRoll` object from an object with 3 named angles */
@@ -107,7 +107,7 @@ export class YawPitchRollAngles {
     return new YawPitchRollAngles(
       Angle.fromJSON(json.yaw),
       Angle.fromJSON(json.pitch),
-      Angle.fromJSON(json.roll)
+      Angle.fromJSON(json.roll),
     );
   }
   /** Populate yaw, pitch and roll fields using `Angle.fromJSON` */
@@ -145,17 +145,17 @@ export class YawPitchRollAngles {
    * * Comparisons are via `isAlmostEqualAllowPeriodShift`.
    * @param other YawPitchRollAngles source
    */
-  public isAlmostEqual(other: YawPitchRollAngles) {
+  public isAlmostEqual(other: YawPitchRollAngles): boolean {
     return this.yaw.isAlmostEqualAllowPeriodShift(other.yaw)
       && this.pitch.isAlmostEqualAllowPeriodShift(other.pitch)
       && this.roll.isAlmostEqualAllowPeriodShift(other.roll);
   }
   /** Make a copy of this YawPitchRollAngles */
-  public clone() {
+  public clone(): YawPitchRollAngles {
     return new YawPitchRollAngles(
       this.yaw.clone(),
       this.pitch.clone(),
-      this.roll.clone()
+      this.roll.clone(),
     );
   }
   /**
@@ -164,7 +164,7 @@ export class YawPitchRollAngles {
    * * The rigid matrix is always a right handed coordinate system.
    * @param result optional pre-allocated `Matrix3d`
    */
-  public toMatrix3d(result?: Matrix3d) {
+  public toMatrix3d(result?: Matrix3d): Matrix3d {
     const cz = Math.cos(this.yaw.radians);
     const sz = Math.sin(this.yaw.radians);
     const cy = Math.cos(this.pitch.radians);
@@ -198,7 +198,7 @@ export class YawPitchRollAngles {
       cz * cy, -(sz * cx + cz * sy * sx), (sz * sx - cz * sy * cx),
       sz * cy, (cz * cx - sz * sy * sx), -(cz * sx + sz * sy * cx),
       sy, cy * sx, cy * cx,
-      result
+      result,
     );
   }
   /**
@@ -229,7 +229,7 @@ export class YawPitchRollAngles {
     return Math.max(
       this.yaw.radians - other.yaw.radians,
       this.pitch.radians - other.pitch.radians,
-      this.roll.radians - other.roll.radians
+      this.roll.radians - other.roll.radians,
     );
   }
   /** Return the largest angle in degrees. */
@@ -245,7 +245,7 @@ export class YawPitchRollAngles {
     return Math.max(
       this.yaw.degrees - other.yaw.degrees,
       this.pitch.degrees - other.pitch.degrees,
-      this.roll.degrees - other.roll.degrees
+      this.roll.degrees - other.roll.degrees,
     );
   }
   /** Return an object from a Transform as an origin and YawPitchRollAngles. */
@@ -259,15 +259,17 @@ export class YawPitchRollAngles {
     };
   }
   /**
-   * Attempts to create a YawPitchRollAngles object from a Matrix3d
-   * * This conversion fails if the matrix is not rigid (unit rows and columns, and transpose is inverse)
-   * * In the failure case the method's return value is `undefined`.
-   * * In the failure case, if the optional result was supplied, that result will nonetheless be filled with
-   * a set of angles.
+   * Attempts to create a YawPitchRollAngles object from a Matrix3d.
+   * @param matrix rigid matrix to process. Caller can test for rigidity with [[Matrix3d.isRigid]] and
+   * ensure rigid input with [[Matrix3d.createRigidFromMatrix3d]] or [[Matrix3d.makeRigid]].
+   * @param result optional pre-allocated object to populate and return.
+   * @returns computed angles, or undefined if `matrix` is not rigid.
+   * * Even when undefined is returned, `result` (if supplied) is populated with angles that may be used with caution:
+   * their usefulness decreases the further `matrix` is from being rigid.
    */
   public static createFromMatrix3d(matrix: Matrix3d, result?: YawPitchRollAngles): YawPitchRollAngles | undefined {
     /**
-     * The rotation matrix for is
+     * The rotation matrix form is
      *
      * Matrix3d.createRowValues(
      *      cz * cy, -(sz * cx + cz * sy * sx), (sz * sx - cz * sy * cx),
@@ -337,6 +339,6 @@ export class YawPitchRollAngles {
     }
     // sanity check
     const matrix1 = angles.toMatrix3d();
-    return matrix.maxDiff(matrix1) < Geometry.smallAngleRadians ? angles : undefined;
+    return matrix.isAlmostEqual(matrix1) ? angles : undefined;
   }
 }

@@ -1,7 +1,28 @@
 sep=;
-Release Tag;API Item
-alpha;ComputeSpatialTilesetBaseUrl = (iModel: IModelConnection) => Promise
-internal;createFallbackSpatialTileTreeReferences: typeof SpatialTileTreeReferences.create
-alpha;FrontendTilesOptions
-internal;getMaxLevelsToSkip(): number
-alpha;initializeFrontendTiles(options: FrontendTilesOptions): void
+Release Tag;API Item Type;API Item Name
+alpha;function;attachGeoscienceTileset
+alpha;type;AttachGeoscienceTilesetArgs
+alpha;interface;BaseGeoscienceArgs
+beta;type;ComputeSpatialTilesetBaseUrl
+internal;function;createGraphicRepresentationsQueryUrl
+beta;interface;DataSource
+beta;interface;FrontendTilesOptions
+internal;const;frontendTilesOptions
+alpha;interface;GetGeoscienceTilesetArgs
+alpha;function;getGeoscienceTilesetUrl
+beta;interface;GraphicRepresentation
+beta;type;GraphicRepresentationFormat
+beta;type;GraphicRepresentationStatus
+beta;function;initializeFrontendTiles
+beta;interface;MeshExport
+internal;interface;MeshExports
+beta;function;obtainGraphicRepresentationUrl
+beta;interface;ObtainGraphicRepresentationUrlArgs
+beta;function;obtainIModelTilesetUrl
+beta;interface;ObtainIModelTilesetUrlArgs
+beta;function;obtainMeshExportTilesetUrl
+beta;type;ObtainMeshExportTilesetUrlArgs
+beta;function;queryGraphicRepresentations
+beta;interface;QueryGraphicRepresentationsArgs
+beta;function;queryMeshExports
+beta;interface;QueryMeshExportsArgs

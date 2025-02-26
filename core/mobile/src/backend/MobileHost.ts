@@ -8,7 +8,7 @@ import { IpcHandler, IpcHost, NativeHost, NativeHostOpts } from "@itwin/core-bac
 import { IpcWebSocketBackend, RpcInterfaceDefinition } from "@itwin/core-common";
 import { CancelRequest, DownloadFailed, UserCancelledError } from "./MobileFileHandler";
 import { ProgressCallback } from "./Request";
-import { mobileAppChannel, mobileAppNotify } from "../common/MobileAppChannel";
+import { mobileAppStrings } from "../common/MobileAppChannel";
 import { BatteryState, DeviceEvents, MobileAppFunctions, MobileNotifications, Orientation } from "../common/MobileAppProps";
 import { MobileRpcManager } from "../common/MobileRpcManager";
 import { MobileAuthorizationBackend } from "./MobileAuthorizationBackend";
@@ -74,7 +74,7 @@ export abstract class MobileDevice {
 }
 
 class MobileAppHandler extends IpcHandler implements MobileAppFunctions {
-  public get channelName() { return mobileAppChannel; }
+  public get channelName() { return mobileAppStrings.mobileAppChannel; }
   public async reconnect(connection: number) {
     MobileHost.reconnect(connection);
   }
@@ -98,16 +98,43 @@ export interface MobileHostOpts extends NativeHostOpts {
 export class MobileHost {
   private static _device?: MobileDevice;
   public static get device() { return this._device!; }
+  /**
+   * Raised when the mobile OS informs a mobile app that it is running low on memory.
+   *
+   * @note iOS and iPadOS send this warning so often as to make it not very useful.
+   */
   public static readonly onMemoryWarning = new BeEvent();
+  /**
+   * Raised when the device orientation changes on a device running a mobile app.
+   */
   public static readonly onOrientationChanged = new BeEvent();
+  /**
+   * Raised after a mobile app returns to the foreground.
+   */
   public static readonly onEnterForeground = new BeEvent();
+  /**
+   * Raised when a mobile app is about to enter the background.
+   */
   public static readonly onEnterBackground = new BeEvent();
+  /**
+   * Raised after a mobile backend connects to the mobile frontend.
+   *
+   * @note this will be raised at startup, and it will also be raised every time the app returns
+   * to the foreground from the background.
+   */
+  public static readonly onConnected = new BeEvent();
+  /**
+   * Raised when a mobile app is about to be terminated by the mobile OS.
+   */
   public static readonly onWillTerminate = new BeEvent();
+  /**
+   * Raised when the native auth client informs the mobile host that the access token has changed.
+   */
   public static readonly onAuthAccessTokenChanged = new BeEvent<(accessToken: string | undefined, expirationDate: string | undefined) => void>();
 
   /** Send a notification to the MobileApp connected to this MobileHost. */
   public static notifyMobileFrontend<T extends keyof MobileNotifications>(methodName: T, ...args: Parameters<MobileNotifications[T]>) {
-    return IpcHost.send(mobileAppNotify, methodName, ...args);
+    return IpcHost.send(mobileAppStrings.mobileAppNotify, methodName, ...args);
   }
 
   /**  @internal */
@@ -120,7 +147,7 @@ export class MobileHost {
     return new Promise<[AccessToken, string]>((resolve, reject) => {
       this.device.authGetAccessToken((tokenString?: AccessToken, expirationDate?: string, error?: string) => {
         if (error) {
-          reject(error);
+          reject(new Error(error));
         } else {
           resolve([tokenString ?? "", expirationDate ?? ""]);
         }
@@ -158,7 +185,6 @@ export class MobileHost {
           resolve();
       }, progressCb);
       if (cancelRequest) {
-        // eslint-disable-next-line @typescript-eslint/unbound-method
         cancelRequest.cancel = () => this.device.cancelDownloadTask(requestId);
       }
     });
@@ -172,12 +198,15 @@ export class MobileHost {
     if (!this.isValid) {
       this._device = opt?.mobileHost?.device ?? new (MobileDevice as any)();
       // set global device interface.
+      // NOTE: __iTwinJsNativeBridge is used by backend native code.
       (global as any).__iTwinJsNativeBridge = this._device;
       this.onMemoryWarning.addListener(() => {
         MobileHost.notifyMobileFrontend("notifyMemoryWarning");
       });
       this.onOrientationChanged.addListener(() => {
-        MobileHost.notifyMobileFrontend("notifyOrientationChanged");
+        try {
+          MobileHost.notifyMobileFrontend("notifyOrientationChanged");
+        } catch { } // Ignore: frontend is not currently connected
       });
       this.onWillTerminate.addListener(() => {
         MobileHost.notifyMobileFrontend("notifyWillTerminate");

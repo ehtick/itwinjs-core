@@ -1,7 +1,7 @@
 /*---------------------------------------------------------------------------------------------
-* Copyright (c) Bentley Systems, Incorporated. All rights reserved.
-* See LICENSE.md in the project root for license terms and full copyright notice.
-*--------------------------------------------------------------------------------------------*/
+ * Copyright (c) Bentley Systems, Incorporated. All rights reserved.
+ * See LICENSE.md in the project root for license terms and full copyright notice.
+ *--------------------------------------------------------------------------------------------*/
 /** @packageDocumentation
  * @module PresentationRules
  */
@@ -61,13 +61,28 @@ export interface IdCategoryIdentifier {
 
   /** ID of the category pointed to by this identifier */
   categoryId: string;
+
+  /** Controls whether a class category should be included under the category pointed to by this identifier */
+  createClassCategory?: boolean;
+}
+
+/**
+ * Identifier of a schema-based  category, referenced by its full name.
+ * @public
+ */
+export interface SchemaCategoryIdentifier {
+  /** Type of the identifier */
+  type: "SchemaCategory";
+
+  /** Full name of the property category, e.g. `MySchema:MyPropertyCategory`. */
+  categoryName: string;
 }
 
 /**
  * Category identifier used to assign properties to a category.
  * @public
  */
-export type CategoryIdentifier = ParentCategoryIdentifier | RootCategoryIdentifier | IdCategoryIdentifier;
+export type CategoryIdentifier = ParentCategoryIdentifier | RootCategoryIdentifier | IdCategoryIdentifier | SchemaCategoryIdentifier;
 
 /**
  * Content modifier for defining custom property categories. Custom categories are not present in the result unless

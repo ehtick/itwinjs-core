@@ -5,12 +5,14 @@
 import * as fs from "fs";
 import * as path from "path";
 import { Logger, LogLevel, ProcessDetector } from "@itwin/core-bentley";
-import { ElectronMainAuthorization } from "@itwin/electron-authorization/lib/cjs/ElectronMain";
+import { ElectronMainAuthorization } from "@itwin/electron-authorization/Main";
 import { ElectronHost, ElectronHostOptions } from "@itwin/core-electron/lib/cjs/ElectronBackend";
 import { BackendIModelsAccess } from "@itwin/imodels-access-backend";
 import { IModelsClient } from "@itwin/imodels-client-authoring";
-import { IModelHost, IModelHostOptions, LocalhostIpcHost } from "@itwin/core-backend";
-import { IModelReadRpcInterface, IModelTileRpcInterface, RpcInterfaceDefinition, RpcManager, SnapshotIModelRpcInterface } from "@itwin/core-common";
+import { IModelDb, IModelHost, IModelHostOptions, LocalhostIpcHost, produceTextAnnotationGeometry } from "@itwin/core-backend";
+import {
+  IModelReadRpcInterface, IModelRpcProps, IModelTileRpcInterface, RpcInterfaceDefinition, RpcManager, TextAnnotation, TextAnnotationProps, TextBlockGeometryProps,
+} from "@itwin/core-common";
 import { MobileHost, MobileHostOpts } from "@itwin/core-mobile/lib/cjs/MobileBackend";
 import { DtaConfiguration, getConfig } from "../common/DtaConfiguration";
 import { DtaRpcInterface } from "../common/DtaRpcInterface";
@@ -22,8 +24,8 @@ function loadEnv(envFile: string) {
   if (!fs.existsSync(envFile))
     return;
 
-  const dotenv = require("dotenv"); // eslint-disable-line @typescript-eslint/no-var-requires
-  const dotenvExpand = require("dotenv-expand"); // eslint-disable-line @typescript-eslint/no-var-requires
+  const dotenv = require("dotenv"); // eslint-disable-line @typescript-eslint/no-require-imports
+  const dotenvExpand = require("dotenv-expand"); // eslint-disable-line @typescript-eslint/no-require-imports
   const envResult = dotenv.config({ path: envFile });
   if (envResult.error) {
     throw envResult.error;
@@ -161,7 +163,7 @@ class DisplayTestAppRpc extends DtaRpcInterface {
 
     // Electron only
     try {
-      const { app } = require("electron"); // eslint-disable-line @typescript-eslint/no-var-requires
+      const { app } = require("electron"); // eslint-disable-line @typescript-eslint/no-require-imports
       if (app !== undefined)
         app.exit();
     } catch {
@@ -176,6 +178,12 @@ class DisplayTestAppRpc extends DtaRpcInterface {
   public override async getAccessToken(): Promise<string> {
     return (await IModelHost.authorizationClient?.getAccessToken()) ?? "";
   }
+
+  public override async produceTextAnnotationGeometry(iModelToken: IModelRpcProps, annotationProps: TextAnnotationProps, debugAnchorPointAndRange?: boolean): Promise<TextBlockGeometryProps> {
+    const iModel = IModelDb.findByKey(iModelToken.key);
+    const annotation = TextAnnotation.fromJSON(annotationProps);
+    return produceTextAnnotationGeometry({ iModel, annotation, debugAnchorPointAndRange });
+  }
 }
 
 export const getRpcInterfaces = (): RpcInterfaceDefinition[] => {
@@ -183,7 +191,6 @@ export const getRpcInterfaces = (): RpcInterfaceDefinition[] => {
     DtaRpcInterface,
     IModelReadRpcInterface,
     IModelTileRpcInterface,
-    SnapshotIModelRpcInterface,
   ];
 
   return rpcs;
@@ -215,6 +222,7 @@ export const initializeDtaBackend = async (hostOpts?: ElectronHostOptions & Mobi
     logTileLoadTimeThreshold: 3,
     logTileSizeThreshold: 500000,
     cacheDir: process.env.IMJS_BRIEFCASE_CACHE_LOCATION,
+    profileName: "display-test-app",
     hubAccess,
   };
 
@@ -246,20 +254,20 @@ export const initializeDtaBackend = async (hostOpts?: ElectronHostOptions & Mobi
   }
 };
 
-async function initializeAuthorizationClient(): Promise<ElectronMainAuthorization  | undefined> {
+async function initializeAuthorizationClient(): Promise<ElectronMainAuthorization | undefined> {
   if (
     ProcessDetector.isElectronAppBackend &&
     checkEnvVars(
       "IMJS_OIDC_ELECTRON_TEST_CLIENT_ID",
-      "IMJS_OIDC_ELECTRON_TEST_SCOPES"
+      "IMJS_OIDC_ELECTRON_TEST_SCOPES",
     )
   ) {
     return new ElectronMainAuthorization({
       clientId: process.env.IMJS_OIDC_ELECTRON_TEST_CLIENT_ID!,
-      scope: process.env.IMJS_OIDC_ELECTRON_TEST_SCOPES!,
-      redirectUri:
-        process.env.IMJS_OIDC_ELECTRON_TEST_REDIRECT_URI ??
-        "http://localhost:3000/signin-callback",
+      scopes: process.env.IMJS_OIDC_ELECTRON_TEST_SCOPES!,
+      redirectUris:
+        process.env.IMJS_OIDC_ELECTRON_TEST_REDIRECT_URI !== undefined ?
+          [process.env.IMJS_OIDC_ELECTRON_TEST_REDIRECT_URI] : ["http://localhost:3000/signin-callback"],
       issuerUrl: `https://${process.env.IMJS_URL_PREFIX ?? ""}ims.bentley.com`,
     });
   }

@@ -4,19 +4,20 @@
 *--------------------------------------------------------------------------------------------*/
 import { expect } from "chai";
 import { CompressedId64Set } from "@itwin/core-bentley";
-import { Vector3d } from "@itwin/core-geometry";
 import {
-  Atmosphere,
-  BackgroundMapType, ColorByName, DisplayStyle3dProps, DisplayStyle3dSettingsProps, GroundPlane, PlanarClipMaskMode, PlanarClipMaskSettings,
-  SkyGradient, SpatialClassifierInsideDisplay, SpatialClassifierOutsideDisplay, ThematicDisplayMode,
+  Atmosphere, AuthorizationClient, BackgroundMapType, ColorByName, DisplayStyle3dProps, DisplayStyle3dSettingsProps, GroundPlane, PlanarClipMaskMode,
+  PlanarClipMaskSettings, SkyGradient, SpatialClassifierInsideDisplay, SpatialClassifierOutsideDisplay, ThematicDisplayMode,
 } from "@itwin/core-common";
-import { ContextRealityModelState, DisplayStyle3dState, IModelConnection, SnapshotConnection } from "@itwin/core-frontend";
+import { ContextRealityModelState, DisplayStyle3dState, IModelConnection } from "@itwin/core-frontend";
+import { Vector3d } from "@itwin/core-geometry";
+import { AzuriteUsers, TestRpcInterface } from "../../common/RpcInterfaces";
 import { TestUtility } from "../TestUtility";
+import { TestSnapshotConnection } from "../TestSnapshotConnection";
 
 describe("DisplayStyle", () => {
   let imodel: IModelConnection;
   const styleProps: DisplayStyle3dProps = {
-    classFullName: "bis.DisplayStyle3d",
+    classFullName: "BisCore:DisplayStyle3d",
     model: "0",
     code: {
       spec: "0x1",
@@ -25,15 +26,23 @@ describe("DisplayStyle", () => {
     },
   };
 
+  let userToken = ""; // changes to simulate different levels of ViewStore authorization
+  let azuriteUsers: AzuriteUsers; // valid users (sent from backend)
+  const authorizationClient: AuthorizationClient = {
+    getAccessToken: async () => { return userToken; },
+  };
+
   before(async () => {
-    await TestUtility.startFrontend(undefined, true);
-    imodel = await SnapshotConnection.openFile("test.bim");
+    await TestUtility.startFrontend({ authorizationClient }, true);
+    azuriteUsers = await TestRpcInterface.getClient().startViewStore();
+    imodel = await TestSnapshotConnection.openFile("test.bim");
   });
 
   after(async () => {
     if (imodel)
       await imodel.close();
 
+    await TestRpcInterface.getClient().stopViewStore();
     await TestUtility.shutdownFrontend();
   });
 
@@ -45,7 +54,28 @@ describe("DisplayStyle", () => {
     // ###TODO More substantial tests (change style properties)
   });
 
-  it("should preserve sun direction", () => {
+  it("should save to ViewStore over RPC", async () => {
+    const style1 = new DisplayStyle3dState(styleProps, imodel);
+
+    // bad token should be unauthorized
+    userToken = "bad guy";
+    await expect(imodel.views.viewStoreWriter.addDisplayStyle({ name: "test", className: style1.classFullName, settings: style1.settings.toJSON() })).rejectedWith("unauthorized");
+
+    // valid readonly token should fail too
+    userToken = azuriteUsers.readOnly;
+    await expect(imodel.views.viewStoreWriter.addDisplayStyle({ name: "test", className: style1.classFullName, settings: style1.settings.toJSON() })).rejectedWith("unauthorized");
+
+    // should save correctly with valid readwrite token
+    userToken = azuriteUsers.readWrite;
+    const id = await imodel.views.viewStoreWriter.addDisplayStyle({ name: "test", className: style1.classFullName, settings: style1.settings.toJSON() });
+    expect(id).equal("@1");
+
+    userToken = azuriteUsers.readOnly;
+    const style2 = await imodel.views.viewsStoreReader.getDisplayStyle({ id });
+    expect(style2.jsonProperties?.styles).deep.equal(style1.settings.toJSON());
+  });
+
+  it("should preserve sun direction", async () => {
     const style1 = new DisplayStyle3dState(styleProps, imodel);
     expect(style1.sunDirection).not.to.be.undefined;
 
@@ -101,7 +131,6 @@ describe("DisplayStyle", () => {
       if (undefined !== expected.contextRealityModels)
         compareRealityModels(style, expected);
 
-      // eslint-disable-next-line deprecation/deprecation
       if (undefined !== expected.scheduleScript)
         compareScheduleScripts(style, expected);
     };
@@ -142,10 +171,8 @@ describe("DisplayStyle", () => {
 
     function compareScheduleScripts(style3d: DisplayStyle3dState, expected: DisplayStyle3dSettingsProps): void {
       if (undefined !== style3d.scheduleScript) {
-        // eslint-disable-next-line deprecation/deprecation
         expect(JSON.stringify(style3d.scheduleScript.toJSON())).to.equal(JSON.stringify(expected.scheduleScript));
       } else {
-        // eslint-disable-next-line deprecation/deprecation
         expect(expected.scheduleScript).to.be.undefined;
       }
     }
@@ -284,6 +311,10 @@ describe("DisplayStyle", () => {
 
     // Also, while we have one constructed, test creation with reality model and script.
     const newStyle = new DisplayStyle3dState(style.toJSON(), imodel);
+    userToken = azuriteUsers.readWrite;
+    const s2 = await imodel.views.viewStoreWriter.addDisplayStyle({ name: "newStyle", className: newStyle.classFullName, settings: newStyle.settings.toJSON() });
+    expect(s2).not.to.be.undefined;
+
     await newStyle.load();
     expect(newStyle.equals(style)).to.be.true;
     compareRealityModels(newStyle, style.settings.toJSON());

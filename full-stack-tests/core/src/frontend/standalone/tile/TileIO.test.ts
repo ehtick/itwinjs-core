@@ -6,16 +6,20 @@ import { expect } from "chai";
 import { ByteStream, Id64, Id64String, ProcessDetector } from "@itwin/core-bentley";
 import {
   BatchType, CurrentImdlVersion, EdgeOptions, EmptyLocalization, ImdlFlags, ImdlHeader, IModelReadRpcInterface, IModelRpcProps, IModelTileRpcInterface, IModelTileTreeId, iModelTileTreeIdToString,
-  ModelProps, PackedFeatureTable, RelatedElementProps, RenderMode, SnapshotIModelRpcInterface, TileContentSource, TileFormat, TileReadStatus, ViewFlags,
+  ModelProps, PackedFeatureTable, RelatedElementProps, RenderMode, TileContentSource, TileFormat, TileReadStatus, ViewFlags,
 } from "@itwin/core-common";
 import {
-  GeometricModelState, ImdlModel, ImdlReader, IModelApp, IModelConnection, IModelTileContent, IModelTileTree, iModelTileTreeParamsFromJSON, MockRender,
-  parseImdlDocument, RenderGraphic, SnapshotConnection, TileAdmin, TileRequest, TileTreeLoadStatus, ViewState,
+  GeometricModelState, IModelApp, IModelConnection, RenderGraphic, TileAdmin, TileRequest, TileTreeLoadStatus, ViewState,
 } from "@itwin/core-frontend";
-import { SurfaceType } from "@itwin/core-frontend/lib/cjs/render-primitives";
-import { Batch, GraphicsArray, MeshGraphic, PolylineGeometry, Primitive, RenderOrder } from "@itwin/core-frontend/lib/cjs/webgl";
+import { MockRender } from "@itwin/core-frontend/lib/cjs/internal/render/MockRender"
+import { ImdlModel } from "@itwin/core-frontend/lib/cjs/common/imdl/ImdlModel";
+import { parseImdlDocument } from "@itwin/core-frontend/lib/cjs/common/imdl/ParseImdlDocument";
+import { SurfaceType } from "@itwin/core-frontend/lib/cjs/common/internal/render/SurfaceParams";
+import { Batch, GraphicsArray, MeshGraphic, PolylineGeometry, Primitive, RenderOrder } from "@itwin/core-frontend/lib/cjs/internal/webgl";
 import { ElectronApp } from "@itwin/core-electron/lib/cjs/ElectronFrontend";
+import { TestRpcInterface } from "../../../common/RpcInterfaces";
 import { TestUtility } from "../../TestUtility";
+import { TestSnapshotConnection } from "../../TestSnapshotConnection";
 import { TileTestCase, TileTestData } from "./data/TileIO.data";
 import { TILE_DATA_1_1 } from "./data/TileIO.data.1.1";
 import { TILE_DATA_1_2 } from "./data/TileIO.data.1.2";
@@ -23,6 +27,7 @@ import { TILE_DATA_1_3 } from "./data/TileIO.data.1.3";
 import { TILE_DATA_1_4 } from "./data/TileIO.data.1.4";
 import { TILE_DATA_2_0 } from "./data/TileIO.data.2.0";
 import { changeHeaderLength, changeMajorVersion, changeMinorVersion } from "./data/TileIO.data.fake";
+import { ImdlReader, IModelTileContent, IModelTileTree, iModelTileTreeParamsFromJSON } from "@itwin/core-frontend/lib/cjs/tile/internal";
 
 /* eslint-disable @typescript-eslint/unbound-method */
 
@@ -70,7 +75,7 @@ export function fakeViewState(iModel: IModelConnection, options?: { visibleEdges
       renderMode: options?.renderMode ?? RenderMode.SmoothShade,
       visibleEdges: options?.visibleEdges ?? false,
     }),
-    displayStyle: { },
+    displayStyle: {},
   } as unknown as ViewState;
 }
 
@@ -260,7 +265,7 @@ describe("TileIO (WebGL)", () => {
 
   before(async () => {
     await TestUtility.startFrontend();
-    imodel = await SnapshotConnection.openFile("test.bim"); // relative path resolved by BackendTestAssetResolver
+    imodel = await TestSnapshotConnection.openFile("test.bim"); // relative path resolved by BackendTestAssetResolver
   });
 
   after(async () => {
@@ -438,7 +443,7 @@ describe("TileIO (mock render)", () => {
 
   before(async () => {
     await TestUtility.startFrontend(undefined, true);
-    imodel = await SnapshotConnection.openFile("test.bim"); // relative path resolved by BackendTestAssetResolver
+    imodel = await TestSnapshotConnection.openFile("test.bim"); // relative path resolved by BackendTestAssetResolver
   });
 
   after(async () => {
@@ -557,7 +562,7 @@ async function waitUntil(condition: () => boolean): Promise<void> {
 }
 
 async function getGeometricModel(imodel: IModelConnection, modelId: Id64String): Promise<GeometricModelState> {
-  await imodel.models.load(modelId)!;
+  await imodel.models.load(modelId);
   const baseModel = imodel.models.getLoaded(modelId)!;
   expect(baseModel).not.to.be.undefined;
   const model = baseModel.asGeometricModel!;
@@ -601,11 +606,23 @@ describe("mirukuru TileTree", () => {
 
   before(async () => {
     MockRender.App.systemFactory = () => new TestSystem();
-    await MockRender.App.startup();
-    if (ProcessDetector.isElectronAppFrontend)
-      await ElectronApp.startup({ iModelApp: { localization: new EmptyLocalization(), rpcInterfaces: [ IModelReadRpcInterface, IModelTileRpcInterface, SnapshotIModelRpcInterface ] }});
 
-    imodel = await SnapshotConnection.openFile("mirukuru.ibim"); // relative path resolved by BackendTestAssetResolver
+    // electron version of certa doesn't serve worker scripts.
+    const isElectron = ProcessDetector.isElectronAppFrontend;
+    const tileAdmin = isElectron ? { decodeImdlInWorker: false } : undefined;
+
+    await MockRender.App.startup({ tileAdmin });
+    if (ProcessDetector.isElectronAppFrontend) {
+      await ElectronApp.startup({
+        iModelApp: {
+          localization: new EmptyLocalization(),
+          rpcInterfaces: [IModelReadRpcInterface, IModelTileRpcInterface, TestRpcInterface],
+          tileAdmin,
+        },
+      });
+    }
+
+    imodel = await TestSnapshotConnection.openFile("mirukuru.ibim"); // relative path resolved by BackendTestAssetResolver
   });
 
   afterEach(() => {
@@ -641,7 +658,7 @@ describe("mirukuru TileTree", () => {
     const rootTile = treeProps.rootTile;
     expect(rootTile.isLeaf).not.to.be.true; // the backend will only set this to true if the tile range contains no elements.
 
-    const edges = { indexed: false, smooth: false };
+    const edges = { smooth: false, type: "non-indexed" as const };
     const options = { is3d: true, batchType: BatchType.Primary, edges, allowInstancing: true, timeline: undefined };
     const params = iModelTileTreeParamsFromJSON(treeProps, imodel, "0x1c", options);
     const tree = new IModelTileTree(params, { edges, type: BatchType.Primary });
@@ -663,7 +680,7 @@ describe("mirukuru TileTree", () => {
   });
 
   it("should load model's tile tree asynchronously", async () => {
-    const tree = getTileTree(imodel, "0x1c")!;
+    const tree = getTileTree(imodel, "0x1c");
     expect(tree).not.to.be.undefined;
   });
 
@@ -752,16 +769,31 @@ describe("TileAdmin", () => {
     public static async start(props: TileAdmin.Props): Promise<IModelConnection> {
       await cleanup();
 
+      // The default is true which changes the expected tile tree Ids. Not relevant to these tests.
+      props.expandProjectExtents = false;
+
+      if (ProcessDetector.isElectronAppFrontend) {
+        // certa doesn't serve worker script.
+        props.decodeImdlInWorker = false;
+      }
+
       await super.startup({
         tileAdmin: props,
         localization: new EmptyLocalization(),
-        rpcInterfaces: [ IModelReadRpcInterface, IModelTileRpcInterface, SnapshotIModelRpcInterface ],
+        rpcInterfaces: [IModelReadRpcInterface, IModelTileRpcInterface, TestRpcInterface],
       });
 
-      if (ProcessDetector.isElectronAppFrontend)
-        await ElectronApp.startup({ iModelApp: { localization: new EmptyLocalization(), rpcInterfaces: [ IModelReadRpcInterface, IModelTileRpcInterface, SnapshotIModelRpcInterface ] }});
+      if (ProcessDetector.isElectronAppFrontend) {
+        await ElectronApp.startup({
+          iModelApp: {
+            tileAdmin: props,
+            localization: new EmptyLocalization(),
+            rpcInterfaces: [IModelReadRpcInterface, IModelTileRpcInterface, TestRpcInterface],
+          },
+        });
+      }
 
-      theIModel = await SnapshotConnection.openFile("mirukuru.ibim"); // relative path resolved by BackendTestAssetResolver
+      theIModel = await TestSnapshotConnection.openFile("mirukuru.ibim"); // relative path resolved by BackendTestAssetResolver
       return theIModel;
     }
 
@@ -787,16 +819,16 @@ describe("TileAdmin", () => {
         expect(response).not.to.be.undefined;
         expect(response).instanceof(Uint8Array);
 
-        const stream = ByteStream.fromUint8Array(response);
-        const document = parseImdlDocument({
-          stream,
+        const document = await parseImdlDocument({
+          data: response,
           batchModelId: "0x1c",
           is3d: true,
           maxVertexTableSize: IModelApp.renderSystem.maxTextureSize,
+          timeline: undefined,
         }) as ImdlModel.Document;
 
         expect(typeof document).to.equal("object");
-        return document.nodes.some((node) => node.primitives.some((primitive) => primitive.type === "mesh" && undefined !== primitive.params.edges));
+        return document.nodes.some((node) => node.primitives && node.primitives.some((primitive) => primitive.type === "mesh" && undefined !== primitive.params.edges));
       }
 
       public static async test(imodel: IModelConnection) {
@@ -819,7 +851,7 @@ describe("TileAdmin", () => {
 
         const version = CurrentImdlVersion.Major.toString(16);
         await expectTreeId(false, `${version}_d-E:0_0x1c`);
-        await expectTreeId({ indexed: true, smooth: true }, `${version}_d-E:4_0x1c`);
+        await expectTreeId({ type: "compact" as const, smooth: true }, `${version}_d-E:6_0x1c`);
       }
     }
 
@@ -880,7 +912,7 @@ describe("TileAdmin", () => {
         if (undefined !== qualifier)
           expect(qualifier.length > 0).to.be.true;
 
-        const edges = { indexed: false, smooth: false };
+        const edges = { type: "non-indexed" as const, smooth: false };
         const options = { is3d: true, batchType: BatchType.Primary, edges, allowInstancing: true, timeline: undefined };
         const params = iModelTileTreeParamsFromJSON(treeProps, imodel, "0x1c", options);
         const tree = new IModelTileTree(params, { edges, type: BatchType.Primary });

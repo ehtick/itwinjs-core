@@ -19,6 +19,18 @@ export type ImageryMapLayerFormatId  = "ArcGIS" | "BingMaps" | "MapboxImagery" |
 /** @public */
 export type SubLayerId = string | number;
 
+/**
+ * Type for map layer provider array property.
+ * @beta
+ */
+export type MapLayerProviderArrayProperty = number[] | string[] | boolean[];
+
+/**
+ * Type for map layer provider properties.
+ * @beta
+ */
+export interface MapLayerProviderProperties { [key: string]: number | string | boolean | MapLayerProviderArrayProperty };
+
 /** JSON representation of the settings associated with a map sublayer included within a [[MapLayerProps]].
  * A map sub layer represents a set of objects within the layer that can be controlled separately.  These
  * are produced only from map servers that produce images on demand and are not supported by tiled (cached) servers.
@@ -101,7 +113,7 @@ export class MapSubLayerSettings {
       children: undefined !== changedProps.children ? changedProps.children.slice() : this.children?.slice(),
       title: undefined !== changedProps.title ? changedProps.title : this.title,
     };
-    return MapSubLayerSettings.fromJSON(props)!;
+    return MapSubLayerSettings.fromJSON(props);
   }
 
   /** @internal */
@@ -132,10 +144,12 @@ export interface CommonMapLayerProps {
 
   /** A user-friendly name for the layer. */
   name: string;
+
   /** A transparency value from 0.0 (fully opaque) to 1.0 (fully transparent) to apply to map graphics when drawing,
    * or false to indicate the transparency should not be overridden.
    * Default value: 0.
    */
+
   transparency?: number;
   /** True to indicate background is transparent.
    * Default: true.
@@ -163,6 +177,17 @@ export interface ImageMapLayerProps extends CommonMapLayerProps {
 
   /** @internal */
   modelId?: never;
+
+  /** List of query parameters that will get appended to the source.
+   * @beta
+  */
+  queryParams?: { [key: string]: string };
+
+  /** Properties specific to the map layer provider.
+   * @beta
+  */
+  properties?: MapLayerProviderProperties;
+
 }
 
 /** JSON representation of a [[ModelMapLayerSettings]].
@@ -280,6 +305,23 @@ export class ImageMapLayerSettings extends MapLayerSettings {
   public userName?: string;
   public password?: string;
   public accessKey?: MapLayerKey;
+
+  /** List of query parameters to append to the settings URL and persisted as part of the JSON representation.
+   * @note Sensitive information like user credentials should be provided in [[unsavedQueryParams]] to ensure it is never persisted.
+   * @beta
+  */
+  public savedQueryParams?: { [key: string]: string };
+
+  /** List of query parameters that will get appended to the settings URL that should *not* be be persisted part of the JSON representation.
+   * @beta
+  */
+  public unsavedQueryParams?: { [key: string]: string };
+
+  /** Properties specific to the map layer provider.
+   * @beta
+  */
+  public readonly properties?: MapLayerProviderProperties;
+
   public readonly subLayers: MapSubLayerSettings[];
   public override get source(): string { return this.url; }
 
@@ -291,6 +333,14 @@ export class ImageMapLayerSettings extends MapLayerSettings {
     this.formatId = props.formatId;
     this.url = props.url;
     this.accessKey = props.accessKey;
+    if (props.queryParams) {
+      this.savedQueryParams = {...props.queryParams};
+    }
+
+    if (props.properties) {
+      this.properties = {...props.properties}
+    }
+
     this.subLayers = [];
     if (!props.subLayers)
       return;
@@ -315,6 +365,13 @@ export class ImageMapLayerSettings extends MapLayerSettings {
     if (this.subLayers.length > 0)
       props.subLayers = this.subLayers.map((x) => x.toJSON());
 
+    if (this.savedQueryParams)
+      props.queryParams = {...this.savedQueryParams};
+
+    if (this.properties) {
+      props.properties = structuredClone(this.properties);
+    }
+
     return props;
   }
 
@@ -328,7 +385,10 @@ export class ImageMapLayerSettings extends MapLayerSettings {
     // Clone members not part of MapLayerProps
     clone.userName = this.userName;
     clone.password = this.password;
-    clone.accessKey = this.accessKey;
+    if (this.unsavedQueryParams)
+      clone.unsavedQueryParams = {...this.unsavedQueryParams};
+    if (this.savedQueryParams)
+      clone.savedQueryParams = {...this.savedQueryParams};
 
     return clone;
   }
@@ -341,7 +401,17 @@ export class ImageMapLayerSettings extends MapLayerSettings {
     props.url = changedProps.url ?? this.url;
     props.accessKey = changedProps.accessKey ?? this.accessKey;
     props.subLayers = changedProps.subLayers ?? this.subLayers;
+    if (changedProps.queryParams) {
+      props.queryParams = {...changedProps.queryParams};
+    } else if (this.savedQueryParams) {
+      props.queryParams = {...this.savedQueryParams};
+    }
 
+    if (changedProps.properties) {
+      props.properties = {...changedProps.properties}
+    } else  if (this.properties) {
+      props.properties = {...this.properties}
+    }
     return props;
   }
 
@@ -426,6 +496,20 @@ export class ImageMapLayerSettings extends MapLayerSettings {
   public setCredentials(userName?: string, password?: string) {
     this.userName = userName;
     this.password = password;
+  }
+
+  /** Collect all query parameters
+ * @beta
+ */
+  public collectQueryParams() {
+    let queryParams: {[key: string]: string} = {};
+    if (this.savedQueryParams)
+      queryParams = {...this.savedQueryParams};
+
+    if (this.unsavedQueryParams)
+      queryParams = {...queryParams, ...this.unsavedQueryParams};
+
+    return queryParams;
   }
 }
 
@@ -548,7 +632,7 @@ export class BaseMapLayerSettings extends ImageMapLayerSettings {
   /** Create a copy of this layer. */
   public override clone(changedProps: Partial<BaseMapLayerProps>): BaseMapLayerSettings {
     const prevUrl = this.url;
-    const clone = BaseMapLayerSettings.fromJSON(this.cloneProps(changedProps))!;
+    const clone = BaseMapLayerSettings.fromJSON(this.cloneProps(changedProps));
 
     if (this.provider && prevUrl !== this.url)
       clone._provider = undefined;

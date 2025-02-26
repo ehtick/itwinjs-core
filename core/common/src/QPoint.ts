@@ -31,7 +31,7 @@ export namespace Quantization {
     return 0.0 === extent ? extent : rangeScale / extent;
   }
 
-  /** @internal */
+  /** Returns true if the quantized value `qpos` fits within the specified range. */
   export function isInRange(qpos: number, rangeScale = rangeScale16): boolean {
     return qpos >= 0.0 && qpos < rangeScale + 1.0;
   }
@@ -43,7 +43,7 @@ export namespace Quantization {
     return Math.floor(Math.max(0.0, Math.min(rangeScale, 0.5 + (pos - origin) * scale)));
   }
 
-  /** @internal */
+  /** Returns true if the value `pos` can be quantized to the specified range. */
   export function isQuantizable(pos: number, origin: number, scale: number, rangeScale = rangeScale16) {
     return isInRange(quantize(pos, origin, scale, rangeScale));
   }
@@ -55,7 +55,7 @@ export namespace Quantization {
     return 0.0 === scale ? origin : origin + qpos / scale;
   }
 
-  /** @internal */
+  /** Returns true if `qpos` is a valid quantized 16-bit value. */
   export function isQuantized(qpos: number) {
     return isInRange(qpos) && qpos === Math.floor(qpos);
   }
@@ -141,7 +141,7 @@ export class QParams2d {
     return new QParams2d(originX, originY, scaleX, scaleY);
   }
 
-  /** @internal */
+  /** The diagonal of the unquantized range represented by these parameters. */
   public get rangeDiagonal(): Vector2d {
     return Vector2d.createFrom({ x: 0 === this.scale.x ? 0 : Quantization.rangeScale16 / this.scale.x, y: 0 === this.scale.y ? 0 : Quantization.rangeScale16 / this.scale.y });
   }
@@ -266,7 +266,8 @@ export interface QPoint2dBuffer {
   points: Uint16Array;
 }
 
-/** @public
+/**
+ * @public
  * @extensions
  */
 export namespace QPoint2dBuffer {
@@ -512,7 +513,7 @@ export class QParams3d {
     return QParams3d.fromRange(Range3d.createArray([Point3d.create(0, 0, 0), Point3d.create(1, 1, 1)]), undefined, rangeScale);
   }
 
-  /** @internal */
+  /** The diagonal of the unquantized range represented by these parameters. */
   public get rangeDiagonal(): Vector3d {
     return Vector3d.createFrom({
       x: this.scale.x === 0 ? 0 : Quantization.rangeScale16 / this.scale.x,
@@ -716,7 +717,7 @@ export namespace QPoint3dBuffer {
 
   /** Extracts and unquantizes the point at the specified index from a buffer.
    * @param buffer The array of points and the quantization parameters.
-   * @param The index of the point to extract, ranging from zero to one less than the number of points in the buffer.
+   * @param buffer The index of the point to extract, ranging from zero to one less than the number of points in the buffer.
    * @param result If supplied, a preallocated [Point3d]($core-geometry) to initialize with the result and return.
    * @returns The point at `pointIndex`.
    * @throws Error if `pointIndex` is out of bounds.
@@ -742,14 +743,14 @@ export class QPoint3dList {
   }
 
   /** Construct an empty list set up to quantize to the supplied range.
-   * @param The quantization parameters. If omitted, a null range will be used.
+   * @param params The quantization parameters. If omitted, a null range will be used.
    */
   public constructor(params?: QParams3d) {
     this.params = params ? params.clone() : QParams3d.fromRange(Range3d.createNull());
   }
 
   /** Construct a QPoint3dList containing all points in the supplied list, quantized to the range of those points.
-   * @param The points to quantize and add to the list.
+   * @param points The points to quantize and add to the list.
    * @param out If supplied, it will be cleared, its parameters recomputed, and the points will be added to it; otherwise, a new QPoint3dList will be created and returned.
    */
   public static fromPoints(points: Point3d[], out?: QPoint3dList): QPoint3dList {
@@ -858,7 +859,7 @@ export class QPoint3dList {
 }
 
 /** Options used to construct a [[QPoint2dBufferBuilder]].
- * @beta
+ * @public
  * @extensions
  */
 interface QPoint2dBufferBuilderOptions {
@@ -944,7 +945,7 @@ export class QPoint2dBufferBuilder {
 }
 
 /** Options used to construct a [[QPoint3dBufferBuilder]].
- * @beta
+ * @public
  * @extensions
  */
 interface QPoint3dBufferBuilderOptions {
