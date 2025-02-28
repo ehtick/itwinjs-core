@@ -1,12 +1,11 @@
 /*---------------------------------------------------------------------------------------------
-* Copyright (c) Bentley Systems, Incorporated. All rights reserved.
-* See LICENSE.md in the project root for license terms and full copyright notice.
-*--------------------------------------------------------------------------------------------*/
+ * Copyright (c) Bentley Systems, Incorporated. All rights reserved.
+ * See LICENSE.md in the project root for license terms and full copyright notice.
+ *--------------------------------------------------------------------------------------------*/
 /** @packageDocumentation
  * @module Core
  */
 
-import { IDisposable } from "@itwin/core-bentley";
 import { Rule } from "./rules/Rule";
 import { Ruleset, SupplementationInfo } from "./rules/Ruleset";
 import { VariablesGroup } from "./rules/Variables";
@@ -15,7 +14,7 @@ import { VariablesGroup } from "./rules/Variables";
  * A ruleset that is registered in a ruleset manager.
  * @public
  */
-export class RegisteredRuleset implements IDisposable, Ruleset {
+export class RegisteredRuleset implements Disposable, Ruleset {
   private _ruleset: Ruleset;
   private _uniqueIdentifier: string;
   private _disposeFunc: (ruleset: RegisteredRuleset) => void;
@@ -28,14 +27,32 @@ export class RegisteredRuleset implements IDisposable, Ruleset {
   }
 
   /** Dispose registered ruleset. */
-  public dispose() {
+  public [Symbol.dispose]() {
     this._disposeFunc(this);
   }
 
-  public get uniqueIdentifier() { return this._uniqueIdentifier; }
-  public get id(): string { return this._ruleset.id; }
-  public get supplementationInfo(): SupplementationInfo | undefined { return this._ruleset.supplementationInfo; }
-  public get rules(): Rule[] { return this._ruleset.rules; }
-  public get vars(): VariablesGroup[] | undefined { return this._ruleset.vars; }
-  public toJSON(): Ruleset { return this._ruleset; }
+  /** @deprecated in 5.0 Use [Symbol.dispose] instead. */
+  // istanbul ignore next
+  public dispose() {
+    this[Symbol.dispose]();
+  }
+
+  public get uniqueIdentifier() {
+    return this._uniqueIdentifier;
+  }
+  public get id(): string {
+    return this._ruleset.id;
+  }
+  public get supplementationInfo(): SupplementationInfo | undefined {
+    return this._ruleset.supplementationInfo;
+  }
+  public get rules(): Rule[] {
+    return this._ruleset.rules;
+  }
+  public get vars(): VariablesGroup[] | undefined {
+    return this._ruleset.vars;
+  }
+  public toJSON(): Ruleset {
+    return this._ruleset;
+  }
 }

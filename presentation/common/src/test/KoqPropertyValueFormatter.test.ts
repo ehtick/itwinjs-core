@@ -1,11 +1,18 @@
 /*---------------------------------------------------------------------------------------------
-* Copyright (c) Bentley Systems, Incorporated. All rights reserved.
-* See LICENSE.md in the project root for license terms and full copyright notice.
-*--------------------------------------------------------------------------------------------*/
+ * Copyright (c) Bentley Systems, Incorporated. All rights reserved.
+ * See LICENSE.md in the project root for license terms and full copyright notice.
+ *--------------------------------------------------------------------------------------------*/
 
 import { expect } from "chai";
 import {
-  KindOfQuantityProps, PhenomenonProps, Schema, SchemaContext, SchemaItemFormatProps, SchemaItemType, schemaItemTypeToString, SchemaItemUnitProps, SchemaProps,
+  KindOfQuantityProps,
+  PhenomenonProps,
+  Schema,
+  SchemaContext,
+  SchemaItemFormatProps,
+  SchemaItemType,
+  SchemaItemUnitProps,
+  SchemaProps,
   UnitSystemProps,
 } from "@itwin/ecschema-metadata";
 import { KoqPropertyValueFormatter } from "../presentation-common/KoqPropertyValueFormatter";
@@ -16,7 +23,12 @@ describe("KoqPropertyValueFormatter", () => {
   beforeEach(async () => {
     const schemaContext = new SchemaContext();
     await Schema.fromJson(schemaProps, schemaContext);
-    formatter = new KoqPropertyValueFormatter(schemaContext);
+    formatter = new KoqPropertyValueFormatter(schemaContext, {
+      [phenomenon.name!]: {
+        unitSystems: ["usSurvey"],
+        format: usSurveyFormat,
+      },
+    });
   });
 
   describe("getFormatterSpec", () => {
@@ -120,6 +132,22 @@ describe("KoqPropertyValueFormatter", () => {
       expect(formatted).to.be.eq(`1,5 ${usSurveyUnit.label}`);
     });
 
+    it("formats value using 'Metric' system when KoQ supports metric and SI", async () => {
+      const formatted = await formatter.format(1.5, {
+        koqName: "TestSchema:TestKoqMetricAndSi",
+        unitSystem: "metric",
+      });
+      expect(formatted).to.be.eq(`1,5 ${metricUnit.label}`);
+    });
+
+    it("formats value format in default formats map", async () => {
+      const formatted = await formatter.format(1.5, {
+        koqName: "TestSchema:TestKOQOnlyMetric",
+        unitSystem: "usSurvey",
+      });
+      expect(formatted).to.be.eq(`1,5 ${usSurveyUnit.label}`);
+    });
+
     it("formats value using default format", async () => {
       const formatted = await formatter.format(1.5, {
         koqName: "TestSchema:TestKOQOnlyMetric",
@@ -153,10 +181,20 @@ describe("KoqPropertyValueFormatter", () => {
   });
 });
 
+const siUnit: SchemaItemUnitProps = {
+  schemaItemType: SchemaItemType.Unit,
+  name: "SiUnit",
+  definition: "SiUnit",
+  label: "SI",
+  phenomenon: "TestSchema.TestPhenomenon",
+  unitSystem: "TestSchema.SI",
+  schema: "TestSchema",
+};
+
 const metricUnit: SchemaItemUnitProps = {
-  schemaItemType: schemaItemTypeToString(SchemaItemType.Unit),
+  schemaItemType: SchemaItemType.Unit,
   name: "MetricUnit",
-  definition: "MetricUnit",
+  definition: "SiUnit",
   label: "Metric",
   phenomenon: "TestSchema.TestPhenomenon",
   unitSystem: "TestSchema.Metric",
@@ -164,9 +202,9 @@ const metricUnit: SchemaItemUnitProps = {
 };
 
 const imperialUnit: SchemaItemUnitProps = {
-  schemaItemType: schemaItemTypeToString(SchemaItemType.Unit),
+  schemaItemType: SchemaItemType.Unit,
   name: "ImperialUnit",
-  definition: "MetricUnit",
+  definition: "SiUnit",
   numerator: 1,
   label: "Imperial",
   phenomenon: "TestSchema.TestPhenomenon",
@@ -175,9 +213,9 @@ const imperialUnit: SchemaItemUnitProps = {
 };
 
 const usSurveyUnit: SchemaItemUnitProps = {
-  schemaItemType: schemaItemTypeToString(SchemaItemType.Unit),
+  schemaItemType: SchemaItemType.Unit,
   name: "UsSurveyUnit",
-  definition: "MetricUnit",
+  definition: "SiUnit",
   numerator: 1,
   label: "UsSurvey",
   phenomenon: "TestSchema.TestPhenomenon",
@@ -186,9 +224,9 @@ const usSurveyUnit: SchemaItemUnitProps = {
 };
 
 const usCustomUnit: SchemaItemUnitProps = {
-  schemaItemType: schemaItemTypeToString(SchemaItemType.Unit),
+  schemaItemType: SchemaItemType.Unit,
   name: "UsCustomUnit",
-  definition: "MetricUnit",
+  definition: "SiUnit",
   numerator: 1,
   label: "UsCustom",
   phenomenon: "TestSchema.TestPhenomenon",
@@ -196,42 +234,63 @@ const usCustomUnit: SchemaItemUnitProps = {
   schema: "TestSchema",
 };
 
+const siUnitSystem: UnitSystemProps = {
+  schemaItemType: SchemaItemType.UnitSystem,
+  name: "SI",
+  schema: "TestSchema",
+  description: "Test SI Unit System",
+};
+
 const metricUnitSystem: UnitSystemProps = {
-  schemaItemType: schemaItemTypeToString(SchemaItemType.UnitSystem),
+  schemaItemType: SchemaItemType.UnitSystem,
   name: "Metric",
   schema: "TestSchema",
   description: "Test Metric Unit System",
 };
 
 const imperialUnitSystem: UnitSystemProps = {
-  schemaItemType: schemaItemTypeToString(SchemaItemType.UnitSystem),
+  schemaItemType: SchemaItemType.UnitSystem,
   name: "Imperial",
   schema: "TestSchema",
   description: "Test Imperial Unit System",
 };
 
 const usCustomUnitSystem: UnitSystemProps = {
-  schemaItemType: schemaItemTypeToString(SchemaItemType.UnitSystem),
+  schemaItemType: SchemaItemType.UnitSystem,
   name: "UsCustom",
   schema: "TestSchema",
   description: "Test UsCustom Unit System",
 };
 
 const usSurveyUnitSystem: UnitSystemProps = {
-  schemaItemType: schemaItemTypeToString(SchemaItemType.UnitSystem),
+  schemaItemType: SchemaItemType.UnitSystem,
   name: "UsSurvey",
   schema: "TestSchema",
   description: "Test UsSurvey Unit System",
 };
 
 const phenomenon: PhenomenonProps = {
-  schemaItemType: schemaItemTypeToString(SchemaItemType.Phenomenon),
+  schemaItemType: SchemaItemType.Phenomenon,
   definition: "PhenomenonDefinition",
   name: "TestPhenomenon",
 };
 
+const siFormat: SchemaItemFormatProps = {
+  schemaItemType: SchemaItemType.Format,
+  name: "SiFormat",
+  schema: "TestSchema",
+  type: "decimal",
+  decimalSeparator: ",",
+  formatTraits: ["ShowUnitLabel"],
+  composite: {
+    units: [{ name: "TestSchema.SiUnit" }],
+    includeZero: true,
+    spacer: " ",
+  },
+};
+
 const metricFormat: SchemaItemFormatProps = {
-  schemaItemType: schemaItemTypeToString(SchemaItemType.Format),
+  schemaItemType: SchemaItemType.Format,
   name: "MetricFormat",
   schema: "TestSchema",
   type: "decimal",
@@ -245,7 +304,7 @@ const metricFormat: SchemaItemFormatProps = {
 };
 
 const imperialFormat: SchemaItemFormatProps = {
-  schemaItemType: schemaItemTypeToString(SchemaItemType.Format),
+  schemaItemType: SchemaItemType.Format,
   name: "ImperialFormat",
   schema: "TestSchema",
   type: "decimal",
@@ -259,7 +318,7 @@ const imperialFormat: SchemaItemFormatProps = {
 };
 
 const usSurveyFormat: SchemaItemFormatProps = {
-  schemaItemType: schemaItemTypeToString(SchemaItemType.Format),
+  schemaItemType: SchemaItemType.Format,
   name: "UsSurveyFormat",
   schema: "TestSchema",
   type: "decimal",
@@ -273,7 +332,7 @@ const usSurveyFormat: SchemaItemFormatProps = {
 };
 
 const usCustomFormat: SchemaItemFormatProps = {
-  schemaItemType: schemaItemTypeToString(SchemaItemType.Format),
+  schemaItemType: SchemaItemType.Format,
   name: "UsCustomFormat",
   schema: "TestSchema",
   type: "decimal",
@@ -287,7 +346,7 @@ const usCustomFormat: SchemaItemFormatProps = {
 };
 
 const koq: KindOfQuantityProps = {
-  schemaItemType: schemaItemTypeToString(SchemaItemType.KindOfQuantity),
+  schemaItemType: SchemaItemType.KindOfQuantity,
   name: "TestKOQ",
   schema: "TestSchema",
   relativeError: 6,
@@ -296,7 +355,7 @@ const koq: KindOfQuantityProps = {
 };
 
 const koqOnlyMetric: KindOfQuantityProps = {
-  schemaItemType: schemaItemTypeToString(SchemaItemType.KindOfQuantity),
+  schemaItemType: SchemaItemType.KindOfQuantity,
   name: "TestKOQOnlyMetric",
   schema: "TestSchema",
   relativeError: 6,
@@ -304,8 +363,17 @@ const koqOnlyMetric: KindOfQuantityProps = {
   presentationUnits: ["TestSchema.MetricFormat"],
 };
 
+const koqMetricAndSi: KindOfQuantityProps = {
+  schemaItemType: SchemaItemType.KindOfQuantity,
+  name: "TestKoqMetricAndSi",
+  schema: "TestSchema",
+  relativeError: 6,
+  persistenceUnit: "TestSchema.MetricUnit",
+  presentationUnits: ["TestSchema.MetricFormat", "TestSchema.SiFormat"],
+};
+
 const koqNoPresentationUnits: KindOfQuantityProps = {
-  schemaItemType: schemaItemTypeToString(SchemaItemType.KindOfQuantity),
+  schemaItemType: SchemaItemType.KindOfQuantity,
   name: "TestKOQNoPresentationUnit",
   schema: "TestSchema",
   relativeError: 6,
@@ -318,14 +386,17 @@ const schemaProps: SchemaProps = {
   alias: "test",
   version: "1.0.0",
   items: {
+    [siUnit.name!]: siUnit,
     [metricUnit.name!]: metricUnit,
     [imperialUnit.name!]: imperialUnit,
     [usCustomUnit.name!]: usCustomUnit,
     [usSurveyUnit.name!]: usSurveyUnit,
+    [siUnitSystem.name!]: siUnitSystem,
     [metricUnitSystem.name!]: metricUnitSystem,
     [imperialUnitSystem.name!]: imperialUnitSystem,
     [usSurveyUnitSystem.name!]: usSurveyUnitSystem,
     [usCustomUnitSystem.name!]: usCustomUnitSystem,
+    [siFormat.name!]: siFormat,
     [metricFormat.name!]: metricFormat,
     [imperialFormat.name!]: imperialFormat,
     [usSurveyFormat.name!]: usSurveyFormat,
@@ -333,6 +404,7 @@ const schemaProps: SchemaProps = {
     [phenomenon.name!]: phenomenon,
     [koq.name!]: koq,
     [koqOnlyMetric.name!]: koqOnlyMetric,
+    [koqMetricAndSi.name!]: koqMetricAndSi,
     [koqNoPresentationUnits.name!]: koqNoPresentationUnits,
   },
 };

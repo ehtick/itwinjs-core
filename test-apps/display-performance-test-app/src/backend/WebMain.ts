@@ -6,14 +6,14 @@ import * as child_process from "child_process";
 import * as chromeLauncher from "chrome-launcher";
 import * as express from "express";
 import * as path from "path";
-import { BentleyCloudRpcConfiguration, BentleyCloudRpcManager, IModelReadRpcInterface, IModelTileRpcInterface, SnapshotIModelRpcInterface } from "@itwin/core-common";
+import { BentleyCloudRpcConfiguration, BentleyCloudRpcManager, IModelReadRpcInterface, IModelTileRpcInterface } from "@itwin/core-common";
 import DisplayPerfRpcInterface from "../common/DisplayPerfRpcInterface";
 import { initializeBackend } from "./backend";
 
 /* eslint-disable no-console */
 
 export function getRpcInterfaces() {
-  return [DisplayPerfRpcInterface, IModelTileRpcInterface, SnapshotIModelRpcInterface, IModelReadRpcInterface];
+  return [DisplayPerfRpcInterface, IModelTileRpcInterface, IModelReadRpcInterface];
 }
 
 // Start the Express web server
@@ -29,7 +29,7 @@ function startWebServer() {
   });
   // All we do is serve out static files, so We have only the simple public path route.
   // If args.resources is relative, we expect it to be relative to process.cwd
-  const resourceRoot = path.resolve(process.cwd(), "./build");
+  const resourceRoot = path.resolve(process.cwd(), "./lib");
   appExp.use(express.static(resourceRoot));
   appExp.use("*", (_req, resp) => {
     resp.sendFile(path.resolve(resourceRoot, "index.html"));
@@ -58,6 +58,10 @@ function startWebServer() {
       browser = arg;
     else if (arg === "headless")
       chromeFlags.push("--headless");
+    else if (arg === "egl"){
+      chromeFlags.push("--use-gl=angle");
+      chromeFlags.push("--use-angle=gl-egl");
+    }
   });
 
   if (serverConfig === undefined) {

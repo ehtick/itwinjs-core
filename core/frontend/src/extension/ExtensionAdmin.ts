@@ -8,7 +8,7 @@
 
 import { Logger } from "@itwin/core-bentley";
 
-import { FrontendLoggerCategory } from "../FrontendLoggerCategory";
+import { FrontendLoggerCategory } from "../common/FrontendLoggerCategory";
 import type { ExtensionManifest, ExtensionProvider } from "./Extension";
 
 /** The Extensions loading system has the following goals:
@@ -91,7 +91,7 @@ export class ExtensionAdmin {
    */
   public async addExtensions(providers: ExtensionProvider[]): Promise<void[]> {
     return Promise.all(
-      providers.map(async (provider) => this.addExtension(provider))
+      providers.map(async (provider) => this.addExtension(provider)),
     );
   }
 

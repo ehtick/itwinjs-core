@@ -9,7 +9,7 @@
 import { Geometry } from "../../Geometry";
 import { Point3d } from "../../geometry3d/Point3dVector3d";
 import { Range1d } from "../../geometry3d/Range";
-import { AnyCurve } from "../CurveChain";
+import { AnyCurve } from "../CurveTypes";
 import { CurveChain, CurveCollection } from "../CurveCollection";
 import { LineString3d } from "../LineString3d";
 import { Loop } from "../Loop";
@@ -339,7 +339,7 @@ export class StrokeCountSection {
       const numPrimitive = sections[0].chains[chainIndex].maps.length;
       for (let primitiveIndex = 0; primitiveIndex < numPrimitive; primitiveIndex++) {
         if (sections[0].chains[chainIndex].maps[primitiveIndex].componentData) {
-          const numComponent = sections[0].chains[chainIndex].maps[primitiveIndex]!.componentData!.length;
+          const numComponent = sections[0].chains[chainIndex].maps[primitiveIndex].componentData!.length;
           for (let i = 0; i < numComponent; i++)
             if (!this.applyMultipassVisitorCallbackNoComponents(sections, chainIndex, primitiveIndex, i, callback))
               return false;

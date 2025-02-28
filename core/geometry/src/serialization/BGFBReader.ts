@@ -2,49 +2,48 @@
 * Copyright (c) Bentley Systems, Incorporated. All rights reserved.
 * See LICENSE.md in the project root for license terms and full copyright notice.
 *--------------------------------------------------------------------------------------------*/
-/** @packageDocumentation
- * @module Serialization
- */
 import { flatbuffers } from "flatbuffers";
-import { BGFBAccessors } from "./BGFBAccessors";
-import { CurvePrimitive } from "../curve/CurvePrimitive";
-import { LineSegment3d } from "../curve/LineSegment3d";
-import { Arc3d } from "../curve/Arc3d";
-import { AngleSweep } from "../geometry3d/AngleSweep";
-import { LineString3d } from "../curve/LineString3d";
-import { IndexedPolyface } from "../polyface/Polyface";
-import { BagOfCurves, CurveCollection } from "../curve/CurveCollection";
-import { Loop } from "../curve/Loop";
-import { Path } from "../curve/Path";
-import { UnionRegion } from "../curve/UnionRegion";
-import { ParityRegion } from "../curve/ParityRegion";
-import { BSplineCurve3dH } from "../bspline/BSplineCurve3dH";
+import { assert } from "@itwin/core-bentley";
+import { AkimaCurve3d, AkimaCurve3dOptions } from "../bspline/AkimaCurve3d";
 import { BSplineCurve3d } from "../bspline/BSplineCurve";
-import { SolidPrimitive } from "../solid/SolidPrimitive";
-import { Box } from "../solid/Box";
-import { Point3d, Vector3d } from "../geometry3d/Point3dVector3d";
-import { Transform } from "../geometry3d/Transform";
-import { Sphere } from "../solid/Sphere";
-import { Cone } from "../solid/Cone";
-import { TorusPipe } from "../solid/TorusPipe";
+import { BSplineCurve3dH } from "../bspline/BSplineCurve3dH";
+import { BSplineSurface3d, BSplineSurface3dH, UVSelect } from "../bspline/BSplineSurface";
+import { InterpolationCurve3d, InterpolationCurve3dOptions } from "../bspline/InterpolationCurve3d";
+import { Arc3d } from "../curve/Arc3d";
+import { BagOfCurves, CurveCollection } from "../curve/CurveCollection";
+import { CurvePrimitive } from "../curve/CurvePrimitive";
+import { GeometryQuery } from "../curve/GeometryQuery";
+import { LineSegment3d } from "../curve/LineSegment3d";
+import { LineString3d } from "../curve/LineString3d";
+import { Loop } from "../curve/Loop";
+import { ParityRegion } from "../curve/ParityRegion";
+import { Path } from "../curve/Path";
+import { PointString3d } from "../curve/PointString3d";
+import { DirectSpiral3d } from "../curve/spiral/DirectSpiral3d";
+import { IntegratedSpiral3d } from "../curve/spiral/IntegratedSpiral3d";
+import { TransitionSpiral3d } from "../curve/spiral/TransitionSpiral3d";
+import { UnionRegion } from "../curve/UnionRegion";
+import { Geometry } from "../Geometry";
 import { Angle } from "../geometry3d/Angle";
+import { AngleSweep } from "../geometry3d/AngleSweep";
+import { Point3d, Vector3d } from "../geometry3d/Point3dVector3d";
+import { NumberArray, Point3dArray } from "../geometry3d/PointHelpers";
+import { Ray3d } from "../geometry3d/Ray3d";
+import { Segment1d } from "../geometry3d/Segment1d";
+import { Transform } from "../geometry3d/Transform";
+import { AuxChannel, AuxChannelData, PolyfaceAuxData } from "../polyface/AuxData";
+import { IndexedPolyface } from "../polyface/Polyface";
+import { TaggedNumericData } from "../polyface/TaggedNumericData";
+import { Box } from "../solid/Box";
+import { Cone } from "../solid/Cone";
 import { LinearSweep } from "../solid/LinearSweep";
 import { RotationalSweep } from "../solid/RotationalSweep";
-import { Ray3d } from "../geometry3d/Ray3d";
 import { RuledSweep } from "../solid/RuledSweep";
-import { GeometryQuery } from "../curve/GeometryQuery";
-import { BSplineSurface3d, BSplineSurface3dH } from "../bspline/BSplineSurface";
-import { PointString3d } from "../curve/PointString3d";
-import { AuxChannel, AuxChannelData, PolyfaceAuxData } from "../polyface/AuxData";
-import { TransitionSpiral3d } from "../curve/spiral/TransitionSpiral3d";
-import { Geometry } from "../Geometry";
-import { Segment1d } from "../geometry3d/Segment1d";
-import { IntegratedSpiral3d } from "../curve/spiral/IntegratedSpiral3d";
-import { DirectSpiral3d } from "../curve/spiral/DirectSpiral3d";
-import { TaggedNumericData } from "../polyface/TaggedNumericData";
-import { InterpolationCurve3d, InterpolationCurve3dOptions } from "../bspline/InterpolationCurve3d";
-import { NumberArray, Point3dArray } from "../geometry3d/PointHelpers";
-import { AkimaCurve3d, AkimaCurve3dOptions } from "../bspline/AkimaCurve3d";
+import { SolidPrimitive } from "../solid/SolidPrimitive";
+import { Sphere } from "../solid/Sphere";
+import { TorusPipe } from "../solid/TorusPipe";
+import { BGFBAccessors } from "./BGFBAccessors";
+import { SerializationHelpers } from "./SerializationHelpers";
 
 /** * Context to write to a flatbuffer blob.
  *  * This class is internal.
@@ -59,6 +58,7 @@ export class BGFBReader {
    * @param variant read position in the flat buffer.
    */
   public readBSplineSurfaceFromVariant(variantHeader: BGFBAccessors.VariantGeometry): BSplineSurface3d | BSplineSurface3dH | undefined {
+    let newSurface: BSplineSurface3d | BSplineSurface3dH | undefined;
     const geometryType = variantHeader.geometryType();
     if (geometryType === BGFBAccessors.VariantGeometryUnion.tagBsplineSurface) {
       const bsurfHeader = variantHeader.geometry(new BGFBAccessors.BsplineSurface());
@@ -71,16 +71,35 @@ export class BGFBReader {
         const knotArrayU = bsurfHeader.knotsUArray();
         const knotArrayV = bsurfHeader.knotsVArray();
         const weightArray = bsurfHeader.weightsArray();
-        // const closed = header.closed();
-        if (xyzArray !== null && knotArrayU !== null && knotArrayV !== null)
-          if (weightArray === null) {
-            return BSplineSurface3d.create(xyzArray, numPolesU, orderU, knotArrayU, numPolesV, orderV, knotArrayV);
-          } else {
-            return BSplineSurface3dH.create(xyzArray, weightArray, numPolesU, orderU, knotArrayU, numPolesV, orderV, knotArrayV);
+        const closedU = bsurfHeader.closedU();
+        const closedV = bsurfHeader.closedV();
+
+        if (xyzArray !== null && knotArrayU !== null && knotArrayV !== null) {
+          const myData = SerializationHelpers.createBSplineSurfaceData(xyzArray, 3, knotArrayU, numPolesU, orderU, knotArrayV, numPolesV, orderV);
+          if (weightArray !== null)
+            myData.weights = weightArray;
+          if (closedU)
+            myData.uParams.closed = true;
+          if (closedV)
+            myData.vParams.closed = true;
+
+          if (SerializationHelpers.Import.prepareBSplineSurfaceData(myData, {jsonPoles: false})) {
+            if (undefined === myData.weights)
+              newSurface = BSplineSurface3d.create(myData.poles as Float64Array, myData.uParams.numPoles, myData.uParams.order, myData.uParams.knots, myData.vParams.numPoles, myData.vParams.order, myData.vParams.knots);
+            else
+              newSurface = BSplineSurface3dH.create(myData.poles as Float64Array, myData.weights as Float64Array, myData.uParams.numPoles, myData.uParams.order, myData.uParams.knots, myData.vParams.numPoles, myData.vParams.order, myData.vParams.knots);
+
+            if (undefined !== newSurface) {
+              if (undefined !== myData.uParams.wrapMode)
+                newSurface.setWrappable(UVSelect.uDirection, myData.uParams.wrapMode);
+              if (undefined !== myData.vParams.wrapMode)
+                newSurface.setWrappable(UVSelect.vDirection, myData.vParams.wrapMode);
+            }
           }
+        }
       }
     }
-    return undefined;
+    return newSurface;
   }
 
  /**
@@ -90,7 +109,7 @@ export class BGFBReader {
   public readInterpolationCurve3d(header: BGFBAccessors.InterpolationCurve): InterpolationCurve3d | undefined {
     const xyzArray = header.fitPointsArray();
     if (xyzArray instanceof Float64Array){
-    const knots = header.knotsArray();
+      const knots = header.knotsArray();
       const options = new InterpolationCurve3dOptions(Point3dArray.clonePoint3dArray(xyzArray), knots ? NumberArray.create(knots) : undefined);
       const startTangent = header.startTangent();
       const endTangent = header.endTangent();
@@ -125,18 +144,34 @@ return undefined;
    * @param variant read position in the flat buffer.
    */
   public readBSplineCurve(header: BGFBAccessors.BsplineCurve): BSplineCurve3d | BSplineCurve3dH | undefined {
+    let newCurve: BSplineCurve3d | BSplineCurve3dH | undefined;
     const order = header.order();
     const xyzArray = header.polesArray();
     const knots = header.knotsArray();
     const weightsArray = header.weightsArray();
-    // const closed = header.closed();
-    if (xyzArray !== null && knots !== null)
+    const closed = header.closed();
+
+    if (xyzArray !== null && knots !== null) {
+      const numPoles = Math.floor(xyzArray.length / 3);
+      const myData = SerializationHelpers.createBSplineCurveData(xyzArray, 3, knots, numPoles, order);
+      if (closed)
+        myData.params.closed = true;
+
       if (weightsArray === null) {
-        return BSplineCurve3d.create(xyzArray, knots, order);
+        if (SerializationHelpers.Import.prepareBSplineCurveData(myData))
+          newCurve = BSplineCurve3d.create(myData.poles, myData.params.knots, myData.params.order);
       } else {
-        return BSplineCurve3dH.create({ xyz: xyzArray, weights: weightsArray }, knots, order);
+        myData.weights = weightsArray;
+        if (SerializationHelpers.Import.prepareBSplineCurveData(myData, {jsonPoles: false}))
+          newCurve = BSplineCurve3dH.create({ xyz: myData.poles as Float64Array, weights: myData.weights }, myData.params.knots, myData.params.order);
       }
-    return undefined;
+
+      if (undefined !== newCurve) {
+        if (undefined !== myData.params.wrapMode)
+          newCurve.setWrappable(myData.params.wrapMode);
+      }
+    }
+    return newCurve;
   }
   /**
    * Extract a bspline curve
@@ -223,13 +258,13 @@ return undefined;
       if (offsetToTransitionSpiralTable !== null)
         return this.readTransitionSpiral(offsetToTransitionSpiralTable);
     } else if (geometryType === BGFBAccessors.VariantGeometryUnion.tagInterpolationCurve) {
-        const offsetToInterpolationCurveTable = variant.geometry(new BGFBAccessors.InterpolationCurve());
-        if (offsetToInterpolationCurveTable !== null)
+      const offsetToInterpolationCurveTable = variant.geometry(new BGFBAccessors.InterpolationCurve());
+      if (offsetToInterpolationCurveTable !== null)
         return this.readInterpolationCurve3d(offsetToInterpolationCurveTable);
     } else if (geometryType === BGFBAccessors.VariantGeometryUnion.tagAkimaCurve) {
-          const offsetToAkimaCurveTable = variant.geometry(new BGFBAccessors.AkimaCurve());
-          if (offsetToAkimaCurveTable !== null)
-            return this.readAkimaCurve3d(offsetToAkimaCurveTable);
+      const offsetToAkimaCurveTable = variant.geometry(new BGFBAccessors.AkimaCurve());
+      if (offsetToAkimaCurveTable !== null)
+        return this.readAkimaCurve3d(offsetToAkimaCurveTable);
     }
     return undefined;
   }
@@ -250,10 +285,7 @@ return undefined;
     }
     return undefined;
   }
-  /**
- * Extract auxData for a mesh
- * @param variant read position in the flat buffer.
- */
+  /** Extract auxData channel data for a mesh */
   public readPolyfaceAuxChannelData(channelDataHeader: BGFBAccessors.PolyfaceAuxChannelData | null): AuxChannelData | undefined {
     if (channelDataHeader !== null) {
       const input = channelDataHeader.input();
@@ -264,10 +296,7 @@ return undefined;
     return undefined;
   }
 
-  /**
- * Extract auxData for a mesh
- * @param variant read position in the flat buffer.
- */
+  /** Extract auxData channel for a mesh */
   public readPolyfaceAuxChannel(channelHeader: BGFBAccessors.PolyfaceAuxChannel | null): AuxChannel | undefined {
     if (channelHeader) {
       const dataType = channelHeader.dataType();
@@ -284,37 +313,114 @@ return undefined;
     }
     return undefined;
   }
-  /**
- * Extract auxData for a mesh
- * @param variant read position in the flat buffer.
- */
-  public readPolyfaceAuxData(auxDataHeader: BGFBAccessors.PolyfaceAuxData | null): PolyfaceAuxData | undefined {
-    if (auxDataHeader) {
-      const channelsLength = auxDataHeader.channelsLength();
-      const indicesArray = auxDataHeader.indicesArray();
-      const indices: number[] = [];
-      const channels: AuxChannel[] = [];
-      if (null !== indicesArray) {
-        for (const i of indicesArray)
-          indices.push(i);
-      }
-      if (0 !== channelsLength) {
-        for (let i = 0; i < channelsLength; i++) {
-          const channelHeader = auxDataHeader.channels(i);
-          const channelContent = this.readPolyfaceAuxChannel(channelHeader);
-          if (channelContent)
-            channels.push(channelContent);
-        }
-      }
-      return new PolyfaceAuxData(channels, indices);
+
+  /** Compute the number of logical entries in every flat data array in the AuxData */
+  private static channelDataLength(fbAuxData: BGFBAccessors.PolyfaceAuxData): number {
+    if (fbAuxData.channelsLength() <= 0)
+      return 0;
+
+    const fbChannel0 = nullToUndefined<BGFBAccessors.PolyfaceAuxChannel>(fbAuxData.channels(0));
+    if (!fbChannel0)
+      return 0;
+
+    const numChannel0Data = fbChannel0.dataLength();
+    if (numChannel0Data <= 0)
+      return 0;
+
+    const fbChannel0Data0 = nullToUndefined<BGFBAccessors.PolyfaceAuxChannelData>(fbChannel0.data(0));
+    if (!fbChannel0Data0)
+      return 0;
+
+    const numChannelDataValues = fbChannel0Data0.valuesLength();
+    if (numChannelDataValues <= 0)
+      return 0;
+
+    return numChannelDataValues / AuxChannel.entriesPerValue(fbChannel0.dataType());
+  }
+
+  /** Examine int array for range and zero count  */
+  private countIntArray(ints: Int32Array): { min: number, max: number, numZeroes: number } {
+    let min = Infinity;
+    let max = -Infinity;
+    let numZeroes = 0;
+    for (const i of ints) {
+      if (min > i)
+        min = i;
+      if (max < i)
+        max = i;
+      if (0 === i)
+        ++numZeroes;
     }
-    return undefined;
+    return {min, max, numZeroes};
   }
 
   /**
- * Extract auxData for a mesh
- * @param variant read position in the flat buffer.
- */
+   * Extract auxData for a mesh.
+   * Typescript object format for Polyface/PolyfaceAuxData indices is 0-based, unterminated.
+   * FlatBuffer format for Polyface/PolyfaceAuxData indices is 1-based, 0-terminated/padded.
+   * Typescript API previously wrote FlatBuffer PolyfaceAuxData indices as 0-based, unterminated;
+   * heuristics are used herein to identify this legacy format so it can still be read.
+   */
+  public readPolyfaceAuxData(fbPolyface: BGFBAccessors.Polyface | null, fbAuxData: BGFBAccessors.PolyfaceAuxData | null): PolyfaceAuxData | undefined {
+    if (!fbPolyface || !fbAuxData)
+      return undefined;
+
+    const fbPointIndices = nullToUndefined<Int32Array>(fbPolyface.pointIndexArray());
+    const fbAuxIndices = nullToUndefined<Int32Array>(fbAuxData.indicesArray());
+    const numChannels = fbAuxData.channelsLength();
+    const fbNumData = BGFBReader.channelDataLength(fbAuxData);
+    if (!fbPointIndices || !fbPointIndices.length || !fbAuxIndices || !fbAuxIndices.length || numChannels <= 0 || fbNumData <= 0)
+      return undefined;
+
+    const numPerFace = fbPolyface.numPerFace();
+
+    // HEURISTICS to detect legacy AuxData indices, previously mistakenly serialized by BGFBWriter.writePolyfaceAsFBVariantGeometry as 0-based unblocked indices
+    let isLegacy = false;
+    const pointIndicesPadCount = fbPointIndices.filter((index) => index === 0).length;
+    if (numPerFace > 1) {
+      const auxIndexCounts = this.countIntArray(fbAuxIndices);
+      if (auxIndexCounts.max > fbNumData) // auxIndices invalid
+        return undefined;
+      if (auxIndexCounts.max === fbNumData) // auxIndices 1-based
+        isLegacy = false;
+      else if (auxIndexCounts.max <= 0 || auxIndexCounts.min < 0) // auxIndices 1-based (signed)
+        isLegacy = false;
+      else if (auxIndexCounts.min === 0) // auxIndices likely legacy 0-based index, but could be modern with padding
+        isLegacy = pointIndicesPadCount !== auxIndexCounts.numZeroes;
+      else if (auxIndexCounts.min > 0) // auxIndices likely modern without padding, but could be legacy if first datum not indexed
+        isLegacy = pointIndicesPadCount > 0;
+    } else {
+      isLegacy = (fbAuxIndices.length < fbPointIndices.length) && (fbAuxIndices.length + pointIndicesPadCount === fbPointIndices.length);
+    }
+    if (!isLegacy && fbAuxIndices.length !== fbPointIndices.length)
+      return undefined; // auxIndices invalid
+
+    const indices: number[] = [];
+    if (isLegacy)
+      SerializationHelpers.announceZeroBasedIndicesWithExternalBlocking(fbAuxIndices, fbPointIndices, numPerFace, (i0: number) => { indices.push(i0); });
+    else
+      SerializationHelpers.announceZeroBasedIndicesFromSignedOneBasedIndices(fbAuxIndices, numPerFace, (i0: number) => { indices.push(i0); });
+    if (indices.length + pointIndicesPadCount !== fbPointIndices.length)
+      return undefined;
+    const maxIndex = Math.max(...indices);
+
+    const channels: AuxChannel[] = [];
+    for (let i = 0; i < numChannels; i++) {
+      const channelHeader = fbAuxData.channels(i);
+      const channelContent = this.readPolyfaceAuxChannel(channelHeader);
+      if (channelContent) {
+        if (maxIndex >= channelContent.valueCount)
+          return undefined; // invalid index
+        channels.push(channelContent);
+      }
+    }
+    if (!channels.length)
+      return undefined;
+
+    return new PolyfaceAuxData(channels, indices);
+  }
+
+  /** Extract tagged numeric data for a mesh */
   public readTaggedNumericData(accessor: BGFBAccessors.TaggedNumericData | undefined): TaggedNumericData | undefined {
     if (accessor) {
       const taggedNumericData = new TaggedNumericData(accessor.tagA(), accessor.tagB());
@@ -336,9 +442,9 @@ return undefined;
     return undefined;
   }
   /**
- * Extract a mesh
- * @param variant read position in the flat buffer.
- */
+   * Extract a mesh
+   * @param variant read position in the flat buffer.
+   */
   public readPolyfaceFromVariant(variant: BGFBAccessors.VariantGeometry): IndexedPolyface | undefined {
     const geometryType = variant.geometryType();
     if (geometryType === BGFBAccessors.VariantGeometryUnion.tagPolyface) {
@@ -359,60 +465,47 @@ return undefined;
         const normalIndexI32 = nullToUndefined<Int32Array>(polyfaceHeader.normalIndexArray());
         const colorIndexI32 = nullToUndefined<Int32Array>(polyfaceHeader.colorIndexArray());
         const taggedNumericDataOffset = polyfaceHeader.taggedNumericData();
+
+        assert(meshStyle === 1, "Unrecognized flatbuffer mesh style");
+
+        // The flatbuffer data is one based.
+        // If numPerFace is less than 2, facets are variable size and zero terminated
+        // If numPerFace is 2 or more, indices are blocked
         if (meshStyle === 1 && pointF64 && pointIndexI32) {
-          const polyface = IndexedPolyface.create(normalF64 !== undefined, paramF64 !== undefined, intColorU32 !== undefined, twoSided);
+          const polyface = IndexedPolyface.create();
+          polyface.twoSided = twoSided;
           polyface.expectedClosure = expectedClosure;
-          for (let i = 0; i + 2 < pointF64?.length; i += 3)
-            polyface.data.point.pushXYZ(pointF64[i], pointF64[i + 1], pointF64[i + 2]);
-          if (paramF64) {
-            for (let i = 0; i + 1 < paramF64?.length; i += 2)
-              polyface.data.param!.pushXY(paramF64[i], paramF64[i + 1]);
+
+          if (normalF64 && normalIndexI32) {
+            for (let i = 0; i + 2 < normalF64.length; i += 3)
+              polyface.addNormalXYZ(normalF64[i], normalF64[i + 1], normalF64[i + 2]);
+            SerializationHelpers.announceZeroBasedIndicesFromSignedOneBasedIndices(normalIndexI32, numPerFace,
+              (i: number) => { polyface.addNormalIndex(i); });
           }
-          if (normalF64) {
-            for (let i = 0; i + 2 < normalF64?.length; i += 3)
-              polyface.data.normal!.pushXYZ(normalF64[i], normalF64[i + 1], normalF64[i + 2]);
+          if (paramF64 && paramIndexI32) {
+            for (let i = 0; i + 1 < paramF64.length; i += 2)
+              polyface.addParamUV(paramF64[i], paramF64[i + 1]);
+            SerializationHelpers.announceZeroBasedIndicesFromSignedOneBasedIndices(paramIndexI32, numPerFace,
+              (i: number) => { polyface.addParamIndex(i); });
           }
-          if (intColorU32) {
+          if (intColorU32 && colorIndexI32) {
             for (const c of intColorU32)
-              polyface.data.color!.push(c);
+              polyface.addColor(c);
+            SerializationHelpers.announceZeroBasedIndicesFromSignedOneBasedIndices(colorIndexI32, numPerFace,
+              (i: number) => { polyface.addColorIndex(i); });
           }
-          // The flatbuffer data is one based.
-          // If numPerFace is less than 2, facets are variable size and zero terminated
-          // If numPerFace is 2 or more, indices are blocked
-          const numIndex = pointIndexI32.length;
-          const addIndicesInBlock = (k0: number, k1: number) => {
-            for (let k = k0; k < k1; k++) {
-              const q = pointIndexI32[k];
-              polyface.addPointIndex(Math.abs(q) - 1, q > 0);
-              if (normalF64 && normalIndexI32) {
-                polyface.addNormalIndex(Math.abs(normalIndexI32[k]) - 1);
-              }
-              if (paramF64 && paramIndexI32) {
-                polyface.addParamIndex(Math.abs(paramIndexI32[k]) - 1);
-              }
-              if (intColorU32 && colorIndexI32) {
-                polyface.addColorIndex(Math.abs(colorIndexI32[k]) - 1);
-              }
-            }
-          };
 
-          if (numPerFace > 1) {
-            for (let i0 = 0; i0 + numPerFace <= numIndex; i0 += numPerFace){
-              addIndicesInBlock(i0, i0 + numPerFace);
-              polyface.terminateFacet(true);
-            }
-          } else {
-            let i0 = 0;
-            for (let i1 = i0; i1 < numIndex; i1++) {
-              if (pointIndexI32[i1] === 0) {
-                addIndicesInBlock(i0, i1);
-                polyface.terminateFacet(true);
-                i0 = i1 + 1;
-                }
-              }
-            }
+          for (let i = 0; i + 2 < pointF64.length; i += 3)
+            polyface.addPointXYZ(pointF64[i], pointF64[i + 1], pointF64[i + 2]);
+          SerializationHelpers.announceZeroBasedIndicesFromSignedOneBasedIndices(pointIndexI32, numPerFace,
+            (i: number, v?: boolean) => { polyface.addPointIndex(i, v); },
+            () => { polyface.terminateFacet(false); });
 
-          polyface.data.auxData = this.readPolyfaceAuxData(polyfaceHeader.auxData());
+          if (!polyface.validateAllIndices())
+            return undefined;
+
+          polyface.data.auxData = this.readPolyfaceAuxData(polyfaceHeader, polyfaceHeader.auxData());
+
           if (taggedNumericDataOffset) {
               const taggedNumericDataAccessor = nullToUndefined<BGFBAccessors.TaggedNumericData>(taggedNumericDataOffset);
               if (taggedNumericDataAccessor !== undefined) {

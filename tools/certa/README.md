@@ -99,7 +99,7 @@ The following diagram shows a simplified process tree for each test runner:
                          🞑 = Frontend    ⧈ = Backend    □ = Other
 ```
 
-> *Chrome technically spawns many child processes of its own, but since we're using Puppeteer to automate chrome,
+> *Chrome technically spawns many child processes of its own, but since we're using Playwright to automate chrome,
 > this can be considered an implementation detail.
 
 Note that each test runner designates a single __frontend__ and __backend__ process (for the node test runner,
@@ -195,12 +195,12 @@ Here's an example webpack config that you can use to bundle your tests:
 
 ```JavaScript
 const path = require("path");
-const glob = require("glob");
+const { globSync } = require("glob");
 
 function createConfig(shouldInstrument) {
   const config = {
     mode: "development",
-    entry: glob.sync(path.resolve(__dirname, "lib/**/*.test.js")),
+    entry: globSync(path.resolve(__dirname, "lib/**/*.test.js"), { windowsPathsNoEscape: true }),
     output: {
       path: path.resolve(__dirname, "lib/dist"),
       filename: "bundled-tests.js",

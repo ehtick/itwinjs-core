@@ -1,7 +1,7 @@
 /*---------------------------------------------------------------------------------------------
-* Copyright (c) Bentley Systems, Incorporated. All rights reserved.
-* See LICENSE.md in the project root for license terms and full copyright notice.
-*--------------------------------------------------------------------------------------------*/
+ * Copyright (c) Bentley Systems, Incorporated. All rights reserved.
+ * See LICENSE.md in the project root for license terms and full copyright notice.
+ *--------------------------------------------------------------------------------------------*/
 /** @packageDocumentation
  * @module PresentationRules
  */
@@ -49,21 +49,6 @@ export interface RuleBase {
  * @public
  */
 export declare type Rule = CustomizationRule | NavigationRule | ContentRule | ContentModifier | DefaultPropertyCategoryOverride;
-
-/**
- * Container of a [[condition]] property. Used for rules that support conditions. Not
- * meant to be used directly, see [[Rule]].
- *
- * @deprecated in 3.x. This interface is not used anymore. All interfaces that used to extend it, have the [[condition]]
- * attribute of their own.
- * @public
- */
-export interface ConditionContainer {
-  /**
-   * Defines a condition for the rule, which needs to be met in order to execute it.
-   */
-  condition?: string;
-}
 
 /**
  * Used for serializing [[Rule]] objects to JSON.

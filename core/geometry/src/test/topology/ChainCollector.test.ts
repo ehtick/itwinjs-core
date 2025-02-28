@@ -3,16 +3,16 @@
 * See LICENSE.md in the project root for license terms and full copyright notice.
 *--------------------------------------------------------------------------------------------*/
 
-import { expect } from "chai";
+import { describe, expect, it } from "vitest";
 import * as fs from "fs";
-import { AnyCurve } from "../../curve/CurveChain";
+import { AnyCurve } from "../../curve/CurveTypes";
 import { BagOfCurves, CurveChain, CurveCollection } from "../../curve/CurveCollection";
+import { CurveOps } from "../../curve/CurveOps";
 import { GeometryQuery } from "../../curve/GeometryQuery";
-import { OffsetHelpers } from "../../curve/internalContexts/MultiChainCollector";
-import { JointOptions } from "../../curve/internalContexts/PolygonOffsetContext";
 import { LineSegment3d } from "../../curve/LineSegment3d";
 import { LineString3d } from "../../curve/LineString3d";
 import { Loop } from "../../curve/Loop";
+import { JointOptions } from "../../curve/OffsetOptions";
 import { Path } from "../../curve/Path";
 import { RegionOps } from "../../curve/RegionOps";
 import { Geometry } from "../../Geometry";
@@ -23,8 +23,10 @@ import { Sample, SteppedIndexFunctionFactory } from "../../serialization/Geometr
 import { IModelJson } from "../../serialization/IModelJsonSchema";
 import { Checker } from "../Checker";
 import { GeometryCoreTestIO } from "../GeometryCoreTestIO";
+import { ChainMergeContext } from "../../topology/ChainMerge";
+import { Vector3d } from "../../geometry3d/Point3dVector3d";
 
-const chainCollectorInputDirectory = "./src/test/testInputs/ChainCollector/";
+const chainCollectorInputDirectory = "./src/test/data/ChainCollector/";
 const noOffset0 = "aecc_alignment";
 describe("ChainCollector", () => {
 
@@ -42,7 +44,7 @@ describe("ChainCollector", () => {
         if (fragments instanceof CurveChain)
           fragments = [fragments];
         if (Array.isArray(fragments)) {
-          const range = OffsetHelpers.extendRange(Range3d.create(), fragments);
+          const range = CurveOps.extendRange(Range3d.create(), fragments);
           const x0 = xOut - range.low.x;
           y0 = -range.low.y;
 
@@ -80,7 +82,7 @@ describe("ChainCollector", () => {
         }
       }
     }
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
 
   it("OffsetCleanup", () => {
@@ -100,7 +102,7 @@ describe("ChainCollector", () => {
           const pointsA = fragments.getPackedStrokes()!;
           const areaA = PolygonOps.areaXY(pointsA);
           const offsetSign = Geometry.split3WaySign(areaA, 1, 1, -1);
-          const range = OffsetHelpers.extendRange(Range3d.create(), fragments);
+          const range = CurveOps.extendRange(Range3d.create(), fragments);
           let x0 = xOut - range.low.x;
           y0 = -range.low.y;
           GeometryCoreTestIO.captureCloneGeometry(allGeometry, pointsA, x0, y0, 0.01);
@@ -146,7 +148,7 @@ describe("ChainCollector", () => {
         }
       }
     }
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
   it("PrimitiveOrder", () => {
     const ck = new Checker();
@@ -195,7 +197,7 @@ describe("ChainCollector", () => {
       x0 += xShift;
     }
     GeometryCoreTestIO.saveGeometry(allGeometry, "ChainCollector", "PrimitiveOrder");
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
 
   it("SmallInputs", () => {
@@ -219,17 +221,17 @@ describe("ChainCollector", () => {
       GeometryCoreTestIO.captureCloneGeometry(allGeometry, offsets.chains, x0, y0);
       GeometryCoreTestIO.captureCloneGeometry(allGeometry, offsets.insideOffsets, x0, y0, 0.1);
       GeometryCoreTestIO.captureCloneGeometry(allGeometry, offsets.outsideOffsets, x0, y0, -0.1);
-      const outsideOffsetLength = OffsetHelpers.sumLengths(offsets.outsideOffsets);
+      const outsideOffsetLength = CurveOps.sumLengths(offsets.outsideOffsets);
       // skip the inside and outside ..
       const myOffsetA: AnyCurve[] = [];
-      OffsetHelpers.appendOffsets(primitives, -offsetDistance, myOffsetA);
-      const myLengthA = OffsetHelpers.sumLengths(myOffsetA);
+      CurveOps.appendXYOffsets(primitives, -offsetDistance, myOffsetA);
+      const myLengthA = CurveOps.sumLengths(myOffsetA);
       y0 += yShift;
       GeometryCoreTestIO.captureCloneGeometry(allGeometry, myOffsetA, x0, y0);
 
       const myOffsetB: AnyCurve[] = [];
-      OffsetHelpers.appendOffsets([primitives], -offsetDistance, myOffsetB);
-      const myLengthB = OffsetHelpers.sumLengths(myOffsetB);
+      CurveOps.appendXYOffsets([primitives], -offsetDistance, myOffsetB);
+      const myLengthB = CurveOps.sumLengths(myOffsetB);
       y0 += yShift;
       GeometryCoreTestIO.captureCloneGeometry(allGeometry, myOffsetB, x0, y0);
       ck.testCoordinate(outsideOffsetLength, myLengthA);
@@ -237,6 +239,42 @@ describe("ChainCollector", () => {
       x0 += xShift;
     }
     GeometryCoreTestIO.saveGeometry(allGeometry, "ChainCollector", "SmallInputs");
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
+  });
+});
+
+describe("ChainMerge", () => {
+  it("ChainMergeVariants", () => {
+    const ck = new Checker();
+    const allGeometry: GeometryQuery[] = [];
+    const e = 1;    // Really big blob tolerance !!!
+    // line segments of a unit square with gap "e" at the beginning of each edge.
+    const segments = [
+      LineSegment3d.createXYXY(e, 0, 10, 0),
+      LineSegment3d.createXYXY(10, e, 10, 10),
+      LineSegment3d.createXYXY(10 - e, 10, 0, 10),
+      LineSegment3d.createXYXY(0, 10 - e, 0, 0)];
+    let dy = 20.0;
+    for (const tol of [0.0001 * e, 2.0 * e]) {
+      // Create the context with the worst possible sort direction -- trigger N^2 search
+      const chainMergeContext = ChainMergeContext.create(
+        {
+          tolerance: tol,
+          primarySortDirection: Vector3d.create(0, 0, 1),
+        });
+      chainMergeContext.addLineSegment3dArray(segments);
+      chainMergeContext.clusterAndMergeVerticesXYZ();
+      const chains = chainMergeContext.collectMaximalChains();
+      let expectedChains = 4;
+      if (tol > e)
+        expectedChains = 1;
+      ck.testExactNumber(chains.length, expectedChains, "Chain count with variant tolerance");
+      GeometryCoreTestIO.captureGeometry(allGeometry, chains, 0, dy, 0);
+      dy += 20.0;
+    }
+    GeometryCoreTestIO.captureGeometry(allGeometry, segments, 0, 0, 0);
+
+    GeometryCoreTestIO.saveGeometry(allGeometry, "PolyfaceQuery", "ChainMergeVariants");
+    expect(ck.getNumErrors()).toBe(0);
   });
 });

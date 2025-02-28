@@ -7,18 +7,7 @@ import { expect } from "chai";
 import { Suite } from "mocha";
 import { CloudSqlite, IModelHost, PropertyStore } from "@itwin/core-backend";
 import { AzuriteTest } from "./AzuriteTest";
-
-// spell:ignore mkdirs
-
-const blockSize = 64 * 1024;
-const propContainer = "properties-itwin1";
-
-async function initializeContainer(containerId: string) {
-  await AzuriteTest.Sqlite.createAzContainer({ containerId });
-  const props: CloudSqlite.ContainerTokenProps = { baseUri: AzuriteTest.baseUri, storageType: "azure", containerId, writeable: true };
-  const accessToken = await CloudSqlite.requestToken(props);
-  await PropertyStore.CloudAccess.initializeDb({ props: { ...props, accessToken }, initContainer: { blockSize } });
-}
+import { Guid } from "@itwin/core-bentley";
 
 function countProperties(values: any, filter?: PropertyStore.PropertyFilter) {
   let count = 0;
@@ -28,12 +17,14 @@ function countProperties(values: any, filter?: PropertyStore.PropertyFilter) {
   return count;
 }
 
-async function makePropertyStore(moniker: string) {
-  const props: CloudSqlite.ContainerTokenProps = { baseUri: AzuriteTest.baseUri, storageType: "azure", containerId: propContainer, writeable: true };
-  const accessToken = await CloudSqlite.requestToken(props);
-  const propStore = new PropertyStore.CloudAccess({ ...props, accessToken });
-  propStore.setCache(CloudSqlite.CloudCaches.getCache({ cacheName: moniker }));
-  propStore.lockParams.moniker = moniker;
+const iTwinId = Guid.createValue();
+let cloudProps: CloudSqlite.ContainerProps;
+
+async function makePropertyStore(user: string) {
+  const accessToken = await CloudSqlite.requestToken(cloudProps);
+  const propStore = new PropertyStore.CloudAccess({ ...cloudProps, accessToken });
+  propStore.setCache(CloudSqlite.CloudCaches.getCache({ cacheName: user }));
+  propStore.lockParams.user = user;
   return propStore;
 }
 
@@ -45,9 +36,10 @@ describe("PropertyStore", function (this: Suite) {
 
   before(async () => {
     IModelHost.authorizationClient = new AzuriteTest.AuthorizationClient();
-    AzuriteTest.userToken = AzuriteTest.service.userToken.readWrite;
+    AzuriteTest.userToken = AzuriteTest.service.userToken.admin; // only admins may create containers
 
-    await initializeContainer(propContainer);
+    cloudProps = await PropertyStore.CloudAccess.createNewContainer({ metadata: { label: "for PropertyStore tests" }, scope: { iTwinId } });
+    AzuriteTest.userToken = AzuriteTest.service.userToken.readWrite;
 
     ps1 = await makePropertyStore("propertyStore1");
     ps2 = await makePropertyStore("propertyStore2");

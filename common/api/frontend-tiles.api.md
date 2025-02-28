@@ -4,26 +4,192 @@
 
 ```ts
 
+import { AccessToken } from '@itwin/core-bentley';
 import { IModelConnection } from '@itwin/core-frontend';
-import { SpatialTileTreeReferences } from '@itwin/core-frontend';
 
 // @alpha
-export type ComputeSpatialTilesetBaseUrl = (iModel: IModelConnection) => Promise<URL | undefined>;
-
-// @internal (undocumented)
-export const createFallbackSpatialTileTreeReferences: typeof SpatialTileTreeReferences.create;
+export function attachGeoscienceTileset(args: AttachGeoscienceTilesetArgs): Promise<void>;
 
 // @alpha
-export interface FrontendTilesOptions {
-    computeSpatialTilesetBaseUrl: ComputeSpatialTilesetBaseUrl;
-    maxLevelsToSkip?: number;
+export type AttachGeoscienceTilesetArgs = BaseGeoscienceArgs;
+
+// @alpha
+export interface BaseGeoscienceArgs {
+    accessToken: string;
+    endpointUrl: string;
+    geoscienceObjectId: string;
+    organizationId: string;
+    workspaceId: string;
 }
 
-// @internal (undocumented)
-export function getMaxLevelsToSkip(): number;
+// @beta
+export type ComputeSpatialTilesetBaseUrl = (iModel: IModelConnection) => Promise<URL | undefined>;
+
+// @internal
+export function createGraphicRepresentationsQueryUrl(args: {
+    sourceId: string;
+    sourceType: string;
+    urlPrefix?: string;
+    changeId?: string;
+    enableCDN?: boolean;
+    numExports?: number;
+}): string;
+
+// @beta
+export interface DataSource {
+    changeId?: string;
+    id: string;
+    iTwinId: string;
+    type: string;
+}
+
+// @beta
+export interface FrontendTilesOptions {
+    computeSpatialTilesetBaseUrl?: ComputeSpatialTilesetBaseUrl;
+    enableCDN?: boolean;
+    // @internal
+    enableEdges?: boolean;
+    maxLevelsToSkip?: number;
+    // @internal
+    nopFallback?: boolean;
+    // @internal
+    useIndexedDBCache?: boolean;
+}
+
+// @internal
+export const frontendTilesOptions: {
+    maxLevelsToSkip: number;
+    enableEdges: boolean;
+    useIndexedDBCache: boolean;
+};
 
 // @alpha
+export interface GetGeoscienceTilesetArgs extends BaseGeoscienceArgs {
+    enableCDN?: boolean;
+    urlPrefix?: string;
+}
+
+// @alpha
+export function getGeoscienceTilesetUrl(args: GetGeoscienceTilesetArgs): Promise<string | undefined>;
+
+// @beta
+export interface GraphicRepresentation {
+    dataSource: DataSource;
+    displayName: string;
+    format: GraphicRepresentationFormat;
+    representationId: string;
+    status: GraphicRepresentationStatus;
+    url: string | undefined;
+}
+
+// @beta
+export type GraphicRepresentationFormat = "3DFT" | "3DTiles" | "CESIUM" | "IMODEL" | string;
+
+// @beta
+export type GraphicRepresentationStatus = "Complete" | "InProgress" | "Invalid" | "NotStarted";
+
+// @beta
 export function initializeFrontendTiles(options: FrontendTilesOptions): void;
+
+// @beta
+export interface MeshExport {
+    // (undocumented)
+    displayName: string;
+    // (undocumented)
+    id: string;
+    // (undocumented)
+    _links: {
+        mesh: {
+            href: string;
+        };
+    };
+    // (undocumented)
+    request: {
+        iModelId: string;
+        changesetId: string;
+        exportType: string;
+        geometryOptions: any;
+        viewDefinitionFilter: any;
+    };
+    // (undocumented)
+    status: string;
+}
+
+// @internal
+export interface MeshExports {
+    // (undocumented)
+    exports: MeshExport[];
+    // (undocumented)
+    _links: {
+        next?: {
+            href: string;
+        };
+    };
+}
+
+// @beta
+export function obtainGraphicRepresentationUrl(args: ObtainGraphicRepresentationUrlArgs): Promise<URL | undefined>;
+
+// @beta
+export interface ObtainGraphicRepresentationUrlArgs {
+    accessToken: AccessToken;
+    dataSource: DataSource;
+    enableCDN?: boolean;
+    format: GraphicRepresentationFormat;
+    requireExactVersion?: boolean;
+    sessionId: string;
+    urlPrefix?: string;
+}
+
+// @beta
+export function obtainIModelTilesetUrl(args: ObtainIModelTilesetUrlArgs): Promise<URL | undefined>;
+
+// @beta
+export interface ObtainIModelTilesetUrlArgs {
+    accessToken: AccessToken;
+    changesetId?: string;
+    enableCDN?: boolean;
+    iModelId?: string;
+    iTwinId?: string;
+    requireExactChangeset?: boolean;
+    urlPrefix?: string;
+}
+
+// @beta
+export function obtainMeshExportTilesetUrl(args: ObtainMeshExportTilesetUrlArgs): Promise<URL | undefined>;
+
+// @beta
+export type ObtainMeshExportTilesetUrlArgs = ObtainIModelTilesetUrlArgs;
+
+// @beta
+export function queryGraphicRepresentations(args: QueryGraphicRepresentationsArgs): AsyncIterableIterator<GraphicRepresentation>;
+
+// @beta
+export interface QueryGraphicRepresentationsArgs {
+    accessToken: AccessToken;
+    dataSource: DataSource;
+    enableCDN?: boolean;
+    format: GraphicRepresentationFormat;
+    includeIncomplete?: boolean;
+    numExports?: number;
+    sessionId: string;
+    urlPrefix?: string;
+}
+
+// @beta
+export function queryMeshExports(args: QueryMeshExportsArgs): AsyncIterableIterator<MeshExport>;
+
+// @beta
+export interface QueryMeshExportsArgs {
+    accessToken: AccessToken;
+    changesetId?: string;
+    enableCDN?: boolean;
+    iModelId: string;
+    includeIncomplete?: boolean;
+    iTwinId: string;
+    numExports?: number;
+    urlPrefix?: string;
+}
 
 // (No @packageDocumentation comment for this package)
 

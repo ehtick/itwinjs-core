@@ -27,7 +27,7 @@ import {
 } from "./tools/ViewportTools";
 import { AnimationIntervalTool } from "./tools/AnimationIntervalTool";
 import { ChangeUnitsTool } from "./tools/ChangeUnitsTool";
-import { ClipColorTool, TestClipStyleTool, ToggleSectionCutTool } from "./tools/ClipTools";
+import { ClipColorTool, ClipIntersectionTool, TestClipStyleTool, ToggleSectionCutTool } from "./tools/ClipTools";
 import {
   ApplyRenderingStyleTool, ChangeBackgroundColorTool, ChangeViewFlagsTool, OverrideSubCategoryTool, SaveRenderingStyleTool, SkyCubeTool,
   SkySphereTool, ToggleSkyboxTool, ToggleWiremeshTool, WoWIgnoreBackgroundTool,
@@ -40,7 +40,7 @@ import { ToggleFrustumSnapshotTool, ToggleSelectedViewFrustumTool, ToggleShadowF
 import { InspectElementTool } from "./tools/InspectElementTool";
 import {
   AttachArcGISFeatureMapLayerByUrlTool,
-  AttachArcGISMapLayerByUrlTool, AttachMapLayerTool, AttachMapOverlayTool, AttachModelMapLayerTool, AttachTileURLMapLayerByUrlTool, AttachWmsMapLayerByUrlTool,
+  AttachArcGISMapLayerByUrlTool, AttachMapLayerTool, AttachMapOverlayTool, AttachModelMapLayerTool, AttachOgcApiFeaturesMapLayerTool, AttachTileURLMapLayerByUrlTool, AttachWmsMapLayerByUrlTool,
   AttachWmtsMapLayerByUrlTool, DetachMapLayersTool, MapBaseColorTool, MapBaseTransparencyTool, MapBaseVisibilityTool, MapLayerSubLayerVisibilityTool,
   MapLayerTransparencyTool, MapLayerVisibilityTool, MapLayerZoomTool, ReorderMapLayers, SetMapBaseTool, ToggleTerrainTool,
 } from "./tools/MapLayerTool";
@@ -58,7 +58,7 @@ import {
 import { RealityTransitionTool } from "./tools/RealityTransitionTool";
 import { CompileShadersTool, LoseWebGLContextTool, ToggleDPIForLODTool } from "./tools/RenderSystemTools";
 import {
-  SetAASamplesTool, ToggleDrapeFrustumTool, ToggleNormalMaps, TogglePrimitiveVisibilityTool, ToggleReadPixelsTool, ToggleRealityTileBounds, ToggleRealityTileFreeze,
+  SetAASamplesTool, ToggleDrapeFrustumTool, ToggleMaskFrustumTool, ToggleNormalMaps, TogglePrimitiveVisibilityTool, ToggleReadPixelsTool, ToggleRealityTileBounds, ToggleRealityTileFreeze,
   ToggleRealityTileLogging, ToggleRealityTilePreload, ToggleVolClassIntersect,
 } from "./tools/RenderTargetTools";
 import { ReportWebGLCompatibilityTool } from "./tools/ReportWebGLCompatibilityTool";
@@ -101,6 +101,7 @@ export class FrontendDevTools {
       AttachModelMapLayerTool,
       AttachArcGISMapLayerByUrlTool,
       AttachArcGISFeatureMapLayerByUrlTool,
+      AttachOgcApiFeaturesMapLayerTool,
       AttachWmsMapLayerByUrlTool,
       AttachWmtsMapLayerByUrlTool,
       AttachTileURLMapLayerByUrlTool,
@@ -121,6 +122,7 @@ export class FrontendDevTools {
       ClearEmphasizedElementsTool,
       ClearIsolatedElementsTool,
       ClipColorTool,
+      ClipIntersectionTool,
       CompileShadersTool,
       DefaultTileSizeModifierTool,
       DetachMapLayersTool,
@@ -180,6 +182,7 @@ export class FrontendDevTools {
       ToggleDPIForLODTool,
       ToggleDrapeFrustumTool,
       ToggleFrustumSnapshotTool,
+      ToggleMaskFrustumTool,
       ToggleNormalMaps,
       TogglePrimitiveVisibilityTool,
       ToggleProjectExtentsTool,

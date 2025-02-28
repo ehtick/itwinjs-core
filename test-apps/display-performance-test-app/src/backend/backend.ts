@@ -6,11 +6,11 @@ import * as fs from "fs";
 import * as path from "path";
 import { ProcessDetector } from "@itwin/core-bentley";
 import { ElectronHost } from "@itwin/core-electron/lib/cjs/ElectronBackend";
-import { ElectronMainAuthorization } from "@itwin/electron-authorization/lib/cjs/ElectronMain";
+import { ElectronMainAuthorization } from "@itwin/electron-authorization/Main";
 import { IModelHost, IModelHostOptions } from "@itwin/core-backend";
 import { BackendIModelsAccess } from "@itwin/imodels-access-backend";
 import { IModelsClient } from "@itwin/imodels-client-authoring";
-import { AuthorizationClient, IModelReadRpcInterface, IModelTileRpcInterface, SnapshotIModelRpcInterface } from "@itwin/core-common";
+import { AuthorizationClient, IModelReadRpcInterface, IModelTileRpcInterface } from "@itwin/core-common";
 import { TestBrowserAuthorizationClient } from "@itwin/oidc-signin-tool";
 import DisplayPerfRpcInterface from "../common/DisplayPerfRpcInterface";
 import "./DisplayPerfRpcImpl"; // just to get the RPC implementation registered
@@ -20,8 +20,8 @@ function loadEnv(envFile: string) {
   if (!fs.existsSync(envFile))
     return;
 
-  const dotenv = require("dotenv"); // eslint-disable-line @typescript-eslint/no-var-requires
-  const dotenvExpand = require("dotenv-expand"); // eslint-disable-line @typescript-eslint/no-var-requires
+  const dotenv = require("dotenv"); // eslint-disable-line @typescript-eslint/no-require-imports
+  const dotenvExpand = require("dotenv-expand"); // eslint-disable-line @typescript-eslint/no-require-imports
   const envResult = dotenv.config({ path: envFile });
   if (envResult.error) {
     throw envResult.error;
@@ -33,17 +33,17 @@ function loadEnv(envFile: string) {
 export async function initializeBackend() {
   loadEnv(path.join(__dirname, "..", "..", ".env"));
 
-  const iModelHost: IModelHostOptions = {};
+  const iModelHost: IModelHostOptions = { profileName: "display-performance-test-app" };
   const iModelClient = new IModelsClient({ api: { baseUrl: `https://${process.env.IMJS_URL_PREFIX ?? ""}api.bentley.com/imodels` } });
   iModelHost.hubAccess = new BackendIModelsAccess(iModelClient);
   iModelHost.cacheDir = process.env.BRIEFCASE_CACHE_LOCATION;
   iModelHost.authorizationClient = await initializeAuthorizationClient();
 
   if (ProcessDetector.isElectronAppBackend) {
-    const rpcInterfaces = [DisplayPerfRpcInterface, IModelTileRpcInterface, SnapshotIModelRpcInterface, IModelReadRpcInterface];
+    const rpcInterfaces = [DisplayPerfRpcInterface, IModelTileRpcInterface, IModelReadRpcInterface];
     await ElectronHost.startup({
       electronHost: {
-        webResourcesPath: path.join(__dirname, "..", "..", "build"),
+        webResourcesPath: path.join(__dirname, "..", "..", "lib"),
         rpcInterfaces,
       },
       iModelHost,
@@ -61,7 +61,7 @@ async function initializeAuthorizationClient(): Promise<AuthorizationClient | un
       "IMJS_OIDC_REDIRECT_URI",
       "IMJS_OIDC_SCOPE",
       "IMJS_OIDC_EMAIL",
-      "IMJS_OIDC_PASSWORD"
+      "IMJS_OIDC_PASSWORD",
     ))
       return undefined;
     return new TestBrowserAuthorizationClient({
@@ -79,8 +79,8 @@ async function initializeAuthorizationClient(): Promise<AuthorizationClient | un
     if (ProcessDetector.isElectronAppBackend) {
       return new ElectronMainAuthorization({
         clientId: process.env.IMJS_OIDC_CLIENT_ID!,
-        scope: process.env.IMJS_OIDC_SCOPE!,
-        redirectUri: process.env.IMJS_OIDC_REDIRECT_URI,
+        scopes: process.env.IMJS_OIDC_SCOPE!,
+        redirectUris: process.env.IMJS_OIDC_REDIRECT_URI !== undefined ? [process.env.IMJS_OIDC_REDIRECT_URI] : ["http://localhost:3000/signin-callback"],
       });
     }
   }

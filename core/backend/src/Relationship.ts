@@ -6,11 +6,12 @@
  * @module Relationships
  */
 
-import { DbResult, Id64, Id64String } from "@itwin/core-bentley";
-import { EntityReferenceSet, IModelError, IModelStatus, RelationshipProps, SourceAndTarget } from "@itwin/core-common";
+import { DbResult, Id64, Id64String, IModelStatus } from "@itwin/core-bentley";
+import { EntityReferenceSet, IModelError, RelationshipProps, SourceAndTarget } from "@itwin/core-common";
 import { ECSqlStatement } from "./ECSqlStatement";
 import { Entity } from "./Entity";
 import { IModelDb } from "./IModelDb";
+import { _nativeDb } from "./internal/Symbols";
 
 export type { SourceAndTarget, RelationshipProps } from "@itwin/core-common"; // for backwards compatibility
 
@@ -18,19 +19,16 @@ export type { SourceAndTarget, RelationshipProps } from "@itwin/core-common"; //
  * @public
  */
 export class Relationship extends Entity {
-  /** @internal */
   public static override get className(): string { return "Relationship"; }
   public readonly sourceId: Id64String;
   public readonly targetId: Id64String;
 
-  /** @internal */
-  constructor(props: RelationshipProps, iModel: IModelDb) {
+  protected constructor(props: RelationshipProps, iModel: IModelDb) {
     super(props, iModel);
     this.sourceId = Id64.fromJSON(props.sourceId);
     this.targetId = Id64.fromJSON(props.targetId);
   }
 
-  /** @internal */
   public override toJSON(): RelationshipProps {
     const val = super.toJSON() as RelationshipProps;
     val.sourceId = this.sourceId;
@@ -69,7 +67,6 @@ export class Relationship extends Entity {
  * @public
  */
 export class ElementRefersToElements extends Relationship {
-  /** @internal */
   public static override get className(): string { return "ElementRefersToElements"; }
   /** Create an instance of the Relationship.
    * @param iModel The iModel that will contain the relationship
@@ -91,7 +88,7 @@ export class ElementRefersToElements extends Relationship {
     return iModel.relationships.insertInstance(relationship.toJSON());
   }
 
-  protected override collectReferenceIds(referenceIds: EntityReferenceSet,): void {
+  protected override collectReferenceIds(referenceIds: EntityReferenceSet): void {
     super.collectReferenceIds(referenceIds);
     referenceIds.addElement(this.sourceId);
     referenceIds.addElement(this.targetId);
@@ -102,7 +99,6 @@ export class ElementRefersToElements extends Relationship {
  * @public
  */
 export class DrawingGraphicRepresentsElement extends ElementRefersToElements {
-  /** @internal */
   public static override get className(): string { return "DrawingGraphicRepresentsElement"; }
 }
 
@@ -110,7 +106,6 @@ export class DrawingGraphicRepresentsElement extends ElementRefersToElements {
  * @public
  */
 export class GraphicalElement3dRepresentsElement extends ElementRefersToElements {
-  /** @internal */
   public static override get className(): string { return "GraphicalElement3dRepresentsElement"; }
 }
 
@@ -120,7 +115,6 @@ export class GraphicalElement3dRepresentsElement extends ElementRefersToElements
  * @beta
  */
 export class SynchronizationConfigProcessesSources extends ElementRefersToElements {
-  /** @internal */
   public static override get className(): string { return "SynchronizationConfigProcessesSources"; }
 }
 
@@ -129,7 +123,6 @@ export class SynchronizationConfigProcessesSources extends ElementRefersToElemen
  * @beta
  */
 export class SynchronizationConfigSpecifiesRootSources extends SynchronizationConfigProcessesSources {
-  /** @internal */
   public static override get className(): string { return "SynchronizationConfigSpecifiesRootSources"; }
 }
 
@@ -144,7 +137,6 @@ export interface ElementGroupsMembersProps extends RelationshipProps {
  * @public
  */
 export class ElementGroupsMembers extends ElementRefersToElements {
-  /** @internal */
   public static override get className(): string { return "ElementGroupsMembers"; }
   public memberPriority: number;
 
@@ -164,7 +156,6 @@ export class ElementGroupsMembers extends ElementRefersToElements {
  * @public
  */
 export class DefinitionGroupGroupsDefinitions extends ElementGroupsMembers {
-  /** @internal */
   public static override get className(): string { return "DefinitionGroupGroupsDefinitions"; }
 }
 
@@ -174,7 +165,6 @@ export class DefinitionGroupGroupsDefinitions extends ElementGroupsMembers {
  * @public
  */
 export class GroupImpartsToMembers extends ElementGroupsMembers {
-  /** @internal */
   public static override get className(): string { return "GroupImpartsToMembers"; }
 }
 
@@ -183,7 +173,6 @@ export class GroupImpartsToMembers extends ElementGroupsMembers {
  * @beta
  */
 export class ExternalSourceGroupGroupsSources extends ElementGroupsMembers {
-  /** @internal */
   public static override get className(): string { return "ExternalSourceGroupGroupsSources"; }
 }
 
@@ -380,7 +369,6 @@ export interface ElementDrivesElementProps extends RelationshipProps {
  * @beta
  */
 export class ElementDrivesElement extends Relationship {
-  /** @internal */
   public static override get className(): string { return "ElementDrivesElement"; }
   /** Relationship status
    * * 0 indicates no errors. Set after a successful evaluation.
@@ -391,8 +379,7 @@ export class ElementDrivesElement extends Relationship {
   /** Affects the order in which relationships are processed in the case where two relationships have the same output. */
   public priority: number;
 
-  /** @internal */
-  constructor(props: ElementDrivesElementProps, iModel: IModelDb) {
+  protected constructor(props: ElementDrivesElementProps, iModel: IModelDb) {
     super(props, iModel);
     this.status = props.status;
     this.priority = props.priority;
@@ -410,7 +397,7 @@ export class ElementDrivesElement extends Relationship {
     return props;
   }
 
-  protected override collectReferenceIds(referenceIds: EntityReferenceSet,): void {
+  protected override collectReferenceIds(referenceIds: EntityReferenceSet): void {
     super.collectReferenceIds(referenceIds);
     referenceIds.addElement(this.sourceId);
     referenceIds.addElement(this.targetId);
@@ -424,7 +411,6 @@ export class ElementDrivesElement extends Relationship {
  * @internal
  */
 export class ModelSelectorRefersToModels extends Relationship {
-  /** @internal */
   public static override get className(): string { return "ModelSelectorRefersToModels"; }
   protected override collectReferenceIds(referenceIds: EntityReferenceSet): void {
     super.collectReferenceIds(referenceIds);
@@ -440,7 +426,7 @@ export class Relationships {
   private _iModel: IModelDb;
 
   /** @internal */
-  constructor(iModel: IModelDb) { this._iModel = iModel; }
+  public constructor(iModel: IModelDb) { this._iModel = iModel; }
 
   /** Create a new instance of a Relationship.
    * @param props The properties of the new Relationship.
@@ -450,7 +436,7 @@ export class Relationships {
 
   /** Check classFullName to ensure it is a link table relationship class. */
   private checkRelationshipClass(classFullName: string) {
-    if (!this._iModel.nativeDb.isLinkTableRelationship(classFullName.replace(".", ":"))) {
+    if (!this._iModel[_nativeDb].isLinkTableRelationship(classFullName.replace(".", ":"))) {
       throw new IModelError(DbResult.BE_SQLITE_ERROR, `Class '${classFullName}' must be a relationship class and it should be subclass of BisCore:ElementRefersToElements or BisCore:ElementDrivesElement.`);
     }
   }
@@ -462,19 +448,19 @@ export class Relationships {
    */
   public insertInstance(props: RelationshipProps): Id64String {
     this.checkRelationshipClass(props.classFullName);
-    return props.id = this._iModel.nativeDb.insertLinkTableRelationship(props);
+    return props.id = this._iModel[_nativeDb].insertLinkTableRelationship(props);
   }
 
   /** Update the properties of an existing relationship instance in the iModel.
    * @param props the properties of the relationship instance to update. Any properties that are not present will be left unchanged.
    */
   public updateInstance(props: RelationshipProps): void {
-    this._iModel.nativeDb.updateLinkTableRelationship(props);
+    this._iModel[_nativeDb].updateLinkTableRelationship(props);
   }
 
   /** Delete an Relationship instance from this iModel. */
   public deleteInstance(props: RelationshipProps): void {
-    this._iModel.nativeDb.deleteLinkTableRelationship(props);
+    this._iModel[_nativeDb].deleteLinkTableRelationship(props);
   }
 
   /** Get the props of a Relationship instance

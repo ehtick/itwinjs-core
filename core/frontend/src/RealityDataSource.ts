@@ -7,7 +7,7 @@
  */
 import { BentleyError, GuidString, Logger, LoggingMetaData, RealityDataStatus } from "@itwin/core-bentley";
 import { Cartographic, EcefLocation, OrbitGtBlobProps, RealityData, RealityDataFormat, RealityDataProvider, RealityDataSourceKey } from "@itwin/core-common";
-import { FrontendLoggerCategory } from "./FrontendLoggerCategory";
+import { FrontendLoggerCategory } from "./common/FrontendLoggerCategory";
 import { CesiumIonAssetProvider, ContextShareProvider, getCesiumAssetUrl } from "./tile/internal";
 import { RealityDataSourceTilesetUrlImpl } from "./RealityDataSourceTilesetUrlImpl";
 import { RealityDataSourceContextShareImpl } from "./RealityDataSourceContextShareImpl";
@@ -117,6 +117,11 @@ export interface RealityDataSource {
    * @alpha
    */
   getPublisherProductInfo(): Promise<PublisherProductInfo | undefined>;
+  /** Optional, gets the tileset url associated with the reality data source
+   * @returns tileset url
+   * @internal
+   */
+  getTilesetUrl?(): string | undefined;
 }
 /** Utility functions for RealityDataSource
  * @beta

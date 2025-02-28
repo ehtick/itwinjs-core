@@ -20,7 +20,6 @@ import { BingLocationProvider } from "../BingLocation";
 import { CoordSystem } from "../CoordSystem";
 import { IModelApp } from "../IModelApp";
 import { LengthDescription } from "../properties/LengthDescription";
-import { GraphicType } from "../render/GraphicBuilder";
 import { Pixel } from "../render/Pixel";
 import { StandardViewId } from "../StandardView";
 import { Animator, MarginOptions, OnViewExtentsError, ViewChangeOptions } from "../ViewAnimation";
@@ -31,7 +30,7 @@ import {
 } from "../ViewGlobalLocation";
 import { DepthPointSource, ScreenViewport, Viewport } from "../Viewport";
 import { ViewPose } from "../ViewPose";
-import { ViewRect } from "../ViewRect";
+import { ViewRect } from "../common/ViewRect";
 import { ViewState3d } from "../ViewState";
 import { ViewStatus } from "../ViewStatus";
 import { EditManipulator } from "./EditManipulator";
@@ -41,6 +40,7 @@ import {
 } from "./Tool";
 import { ToolAssistance, ToolAssistanceImage, ToolAssistanceInputMethod, ToolAssistanceInstruction, ToolAssistanceSection } from "./ToolAssistance";
 import { ToolSettings } from "./ToolSettings";
+import { GraphicType } from "../common/render/GraphicType";
 
 // cspell:ignore wasd, arrowright, arrowleft, pagedown, pageup, arrowup, arrowdown
 /* eslint-disable no-restricted-syntax */
@@ -2000,7 +2000,7 @@ class ViewLookAndMove extends ViewNavigate {
     if (undefined === this._pointerLockClickEngagementListener) {
       this._pointerLockClickEngagementListener = () => {
         if (1 === this.viewTool.nPts && undefined !== IModelApp.toolAdmin.cursorView)
-          vp.canvas.requestPointerLock();
+          void vp.canvas.requestPointerLock();
       };
       document.addEventListener("click", this._pointerLockClickEngagementListener, false);
     }
@@ -2008,7 +2008,7 @@ class ViewLookAndMove extends ViewNavigate {
     if (undefined === this._pointerLockKeyEngagementListener) {
       this._pointerLockKeyEngagementListener = (ev: Event) => {
         if (0 === this.viewTool.nPts && undefined !== IModelApp.toolAdmin.cursorView && this.isNavigationKey(ev as KeyboardEvent))
-          vp.canvas.requestPointerLock();
+          void vp.canvas.requestPointerLock();
       };
       document.addEventListener("keydown", this._pointerLockKeyEngagementListener, false);
     }
@@ -3559,7 +3559,8 @@ export class WindowAreaTool extends ViewTool {
     if (currentDelta.x === 0 || delta.x === 0)
       return undefined;
 
-    const viewAspect = currentDelta.y / currentDelta.x;
+    const skew = vp.view.getAspectRatioSkew();
+    const viewAspect = skew * currentDelta.y / currentDelta.x;
     const aspectRatio = Math.abs(delta.y / delta.x);
 
     let halfDeltaX;

@@ -15,7 +15,12 @@ import { ECVersion, SchemaKey } from "./SchemaKey";
  * Loaded schemas are held in memory within  a schema context managed by SchemaLoader.
  * The SchemaLoader object should be held in memory if multiple calls to [[getSchema]] or [[tryGetSchema]]
  * is a possibility, thereby avoiding unnecessary schema retrievals from the function.
- * @alpha
+ *
+ * ** Example **
+ * ```ts
+ * [[include:IModelSchemas.loadFromDb]]
+ * ```
+ * @beta
  */
 export class SchemaLoader {
   private _context: SchemaContext;
@@ -30,22 +35,27 @@ export class SchemaLoader {
    * @param schemaName a string with the name of the schema to load.
    * @throws [ECObjectsError]($ecschema-metadata) if the schema is not found or cannot be loaded.
    */
-  public getSchema<T extends Schema>(schemaName: string): T {
+  public getSchema(schemaName: string): Schema {
     const schema = this.tryGetSchema(schemaName);
     if (!schema)
       throw new ECObjectsError(ECObjectsStatus.UnableToLocateSchema, `reading schema=${schemaName}`);
 
-    return schema as T;
+    return schema;
   }
 
   /** Attempts to get a schema by name
    * @param schemaName a string with the name of the schema to load.
    * @throws [ECObjectsError]($ecschema-metadata) if the schema exists, but cannot be loaded.
    */
-  public tryGetSchema<T extends Schema>(schemaName: string): T | undefined {
+  public tryGetSchema(schemaName: string): Schema | undefined {
     // SchemaKey version is not used when locating schema in an iModel, so the version is arbitrary.
     const key = new SchemaKey(schemaName, new ECVersion(1, 0, 0));
     const schema = this._context.getSchemaSync(key, SchemaMatchType.Latest);
-    return schema as T;
+    return schema;
+  }
+
+  /** Gets the SchemaContext used by the loader. */
+  public get context(): SchemaContext {
+    return this._context;
   }
 }

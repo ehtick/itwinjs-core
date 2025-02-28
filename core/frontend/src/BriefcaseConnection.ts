@@ -16,7 +16,6 @@ import { GraphicalEditingScope } from "./GraphicalEditingScope";
 import { IModelApp } from "./IModelApp";
 import { IModelConnection } from "./IModelConnection";
 import { IpcApp } from "./IpcApp";
-import { ProgressCallback } from "./request/Request";
 import { disposeTileTreesForGeometricModels } from "./tile/internal";
 import { Viewport } from "./Viewport";
 
@@ -54,11 +53,6 @@ export interface GenericAbortSignal {
  * @public
  */
 export interface PullChangesOptions {
-  /**
-   * Function called regularly to report progress of changes download.
-   * @deprecated in 3.6. Use [[downloadProgressCallback]] instead.
-   */
-  progressCallback?: ProgressCallback; // eslint-disable-line deprecation/deprecation
   /** Function called regularly to report progress of changes download. */
   downloadProgressCallback?: OnDownloadProgress;
   /** Interval for calling progress callback (in milliseconds). */
@@ -114,6 +108,7 @@ class ModelChangeMonitor {
     };
 
     this._removals.push(briefcase.txns.onCommitted.addListener(maybeProcess));
+    this._removals.push(briefcase.txns.onReplayedExternalTxns.addListener(maybeProcess));
     this._removals.push(briefcase.txns.onAfterUndoRedo.addListener(maybeProcess));
     this._removals.push(briefcase.txns.onChangesPulled.addListener(maybeProcess));
   }
@@ -202,7 +197,7 @@ class ModelChangeMonitor {
  * Specialized tools are free to ignore these settings.
  * @see [[BriefcaseConnection.editorToolSettings]] to query or modify the current settings for a briefcase.
  * @see [CreateElementTool]($editor-frontend) for an example of a tool that uses these settings.
- * @alpha
+ * @beta
  */
 export class BriefcaseEditorToolSettings {
   private _category?: Id64String;
@@ -233,7 +228,7 @@ export class BriefcaseEditorToolSettings {
   /** The [Model]($backend) into which new elements should be inserted by default.
    * Specialized tools are free to ignore this setting and instead use their own logic to select an appropriate model.
    * @see [[onModelChanged]] to be notified when this property is modified.
-   * @see [CreateElementTool.targetModel]($editor-frontend) for an example of a tool that uses this setting.
+   * @see [CreateElementTool.targetModelId]($editor-frontend) for an example of a tool that uses this setting.
    */
   public get model(): Id64String | undefined {
     return this._model;
@@ -255,14 +250,13 @@ export class BriefcaseConnection extends IModelConnection {
   protected _isClosed?: boolean;
   private readonly _modelsMonitor: ModelChangeMonitor;
   /** Default settings that can be used to control the behavior of [[Tool]]s that modify this briefcase.
-   * @alpha
+   * @beta
    */
   public readonly editorToolSettings = new BriefcaseEditorToolSettings();
 
   /** Manages local changes to the briefcase via [Txns]($docs/learning/InteractiveEditing.md). */
   public readonly txns: BriefcaseTxns;
 
-  /** @internal */
   public override isBriefcaseConnection(): this is BriefcaseConnection { return true; }
 
   /** The Guid that identifies the iTwin that owns this iModel. */
@@ -276,6 +270,8 @@ export class BriefcaseConnection extends IModelConnection {
     this._openMode = openMode;
     this.txns = new BriefcaseTxns(this);
     this._modelsMonitor = new ModelChangeMonitor(this);
+    if (OpenMode.ReadWrite === this._openMode)
+      this.txns.onAfterUndoRedo.addListener(async () => { await IModelApp.toolAdmin.restartPrimitiveTool(); });
   }
 
   /** Open a BriefcaseConnection to a [BriefcaseDb]($backend). */
@@ -310,7 +306,7 @@ export class BriefcaseConnection extends IModelConnection {
     await this._modelsMonitor.close();
 
     this.beforeClose();
-    this.txns.dispose();
+    this.txns[Symbol.dispose]();
 
     this._isClosed = true;
     await IpcApp.appFunctionIpc.closeIModel(this._fileKey);
@@ -333,6 +329,11 @@ export class BriefcaseConnection extends IModelConnection {
     await IpcApp.appFunctionIpc.saveChanges(this.key, description);
   }
 
+  /** Abandon pending changes to this briefcase. */
+  public async abandonChanges(): Promise<void> {
+    await IpcApp.appFunctionIpc.abandonChanges(this.key);
+  }
+
   /** Pull (and potentially merge if there are local changes) up to a specified changeset from iModelHub into this briefcase
    * @param toIndex The changeset index to pull changes to. If `undefined`, pull all changes.
    * @param options Options for pulling changes.
@@ -340,13 +341,10 @@ export class BriefcaseConnection extends IModelConnection {
    */
   public async pullChanges(toIndex?: ChangesetIndex, options?: PullChangesOptions): Promise<void> {
     const removeListeners: VoidFunction[] = [];
-    // eslint-disable-next-line deprecation/deprecation
-    const shouldReportProgress = !!options?.progressCallback || !!options?.downloadProgressCallback;
+    const shouldReportProgress = !!options?.downloadProgressCallback;
 
     if (shouldReportProgress) {
       const handleProgress = (_evt: Event, data: { loaded: number, total: number }) => {
-        // eslint-disable-next-line deprecation/deprecation
-        options?.progressCallback?.(data);
         options?.downloadProgressCallback?.(data);
       };
 

@@ -7,7 +7,8 @@ import { assert, Id64Array, Id64String } from "@itwin/core-bentley";
 import {
   BackgroundMapProps, ColorDef, Hilite, RenderMode, ViewFlags, ViewStateProps,
 } from "@itwin/core-common";
-import { RenderSystem, TileAdmin } from "@itwin/core-frontend";
+import { ModelDisplayTransformProvider, RenderSystem, TileAdmin } from "@itwin/core-frontend";
+import { TransformProps } from "@itwin/core-geometry";
 
 /** Dimensions of the Viewport for a TestConfig. */
 export interface ViewSize {
@@ -38,7 +39,7 @@ export type TestType = "timing" | "readPixels" | "image" | "both";
 /** Specifies symbology overrides to apply to elements in a TestConfig. */
 export interface ElementOverrideProps {
   /** The Id of the affected element, or "-default-" to apply to all elements not otherwise overridden. */
-  id: Id64String | "-default-";
+  id: Id64String | "-default-";  // eslint-disable-line @typescript-eslint/no-redundant-type-constituents
   /** The symbology overrides to apply. */
   fsa: string; // A stringified FeatureAppearanceProps. Why is all the JSON double-stringified???
 }
@@ -49,7 +50,16 @@ export interface ViewStateSpecProps {
   _viewStatePropsString: string; // eslint-disable-line @typescript-eslint/naming-convention
   _overrideElements?: string; // eslint-disable-line @typescript-eslint/naming-convention
   _selectedElements?: string; // eslint-disable-line @typescript-eslint/naming-convention
+  _displayTransforms?: string; // eslint-disable-line @typescript-eslint/naming-convention
 }
+
+export interface DisplayTransformProps {
+  modelId: Id64String;
+  transform: TransformProps;
+  premultiply?: boolean;
+}
+
+export type DisplayTransformProviderProps = DisplayTransformProps[];
 
 /** Parsed in-memory representation of a ViewStateSpecProps. */
 export interface ViewStateSpec {
@@ -57,6 +67,7 @@ export interface ViewStateSpec {
   viewProps: ViewStateProps;
   elementOverrides?: ElementOverrideProps[];
   selectedElements?: Id64String | Id64Array;
+  displayTransformProvider?: ModelDisplayTransformProvider;
 }
 
 /** Overrides aspects of the Hilite.Settings used for emphasis or hilite in a TestConfig. */
@@ -106,6 +117,17 @@ export interface TestConfigProps {
    * Default: d:\output\performanceData\
    */
   outputPath?: string;
+  /** The url template for @itwin/frontend-tiles to obtain tile trees for spatial views, served over localhost.
+   * The string can include special tokens: {iModel.key} or {iModel.filename}.
+   *   e.g.: http://localhost:8080{iModel.key}-tiles/3dft/ or http://localhost:8080/MshX/{iModel.filename}/
+   * These will get replaced by the value of iModel.key or just the filename of that (no path or extension), correspondingly.
+   * Note that the contents of iModel.key in DPTA is a GUID.
+   */
+  frontendTilesUrlTemplate?: string;
+  /** Should the frontendTile fallback to an empty tile tree.
+   * Default: "false"
+   */
+  frontendTilesNopFallback?: boolean;
   /** The location of the iModel file(s) used by the test.
    * Default: ""
    */
@@ -178,6 +200,9 @@ export class TestConfig {
   public readonly outputName: string;
   public readonly outputPath: string;
   public iModelName: string;
+  public frontendTilesUrlTemplate?: string;
+  public frontendTilesNopFallback?: boolean;
+  public urlStr?: string;
   public readonly iModelId?: string;
   public readonly iTwinId?: string;
   public viewName: string;
@@ -228,6 +253,8 @@ export class TestConfig {
     this.hyperModeling = props.hyperModeling ?? prevConfig?.hyperModeling;
     this.useDisjointTimer = props.useDisjointTimer ?? prevConfig?.useDisjointTimer ?? true;
     this.onException = props.onException ?? prevConfig?.onException;
+    this.frontendTilesUrlTemplate = props.frontendTilesUrlTemplate ?? prevConfig?.frontendTilesUrlTemplate;
+    this.frontendTilesNopFallback = props.frontendTilesNopFallback ?? prevConfig?.frontendTilesNopFallback;
 
     if (prevConfig) {
       if (prevConfig.viewStateSpec) {
@@ -312,12 +339,10 @@ export class TestConfigStack {
     return this._stack[this._stack.length - 1];
   }
 
-  // Push to the top of the stack and return true if the new config requires restarting IModelApp.
-  public push(props: TestConfigProps): boolean {
+  // Push to the top of the stack
+  public push(props: TestConfigProps): void {
     const config = new TestConfig(props, this.top);
-    const requiresRestart = this.top.requiresRestart(config);
     this._stack.push(config);
-    return requiresRestart;
   }
 
   public pop(): void {

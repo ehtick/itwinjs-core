@@ -4,19 +4,22 @@
 *--------------------------------------------------------------------------------------------*/
 
 import { assert, BeTimePoint, ByteStream, Logger } from "@itwin/core-bentley";
+import { Transform } from "@itwin/core-geometry";
 import { ColorDef, Tileset3dSchema } from "@itwin/core-common";
 import {
-  GltfReaderProps, GraphicBuilder, ImdlReader, IModelApp, RealityTileLoader, RenderSystem, Tile, TileBoundingBoxes, TileContent,
+  GraphicBranch, GraphicBuilder,  IModelApp, RealityTileLoader, RenderSystem, Tile, TileBoundingBoxes, TileContent,
   TileDrawArgs, TileParams, TileRequest, TileRequestChannel, TileTreeLoadStatus, TileUser, TileVisibility, Viewport,
 } from "@itwin/core-frontend";
 import { loggerCategory } from "./LoggerCategory";
 import { BatchedTileTree } from "./BatchedTileTree";
-import { BatchedTileContentReader } from "./BatchedTileContentReader";
-import { getMaxLevelsToSkip } from "./FrontendTiles";
+import { frontendTilesOptions } from "./FrontendTiles";
+import { IndexedDBCache, LocalCache, PassThroughCache } from "./IndexedDBCache";
 
 /** @internal */
 export interface BatchedTileParams extends TileParams {
   childrenProps: Tileset3dSchema.Tile[] | undefined;
+  /** See BatchedTile.transformToRoot. */
+  transformToRoot: Transform | undefined;
 }
 
 let channel: TileRequestChannel | undefined;
@@ -25,6 +28,9 @@ let channel: TileRequestChannel | undefined;
 export class BatchedTile extends Tile {
   private readonly _childrenProps?: Tileset3dSchema.Tile[];
   private readonly _unskippable: boolean;
+  /** Transform from the tile's local coordinate system to that of the tileset. */
+  public readonly transformToRoot?: Transform;
+  private readonly _localCache: LocalCache;
 
   public get batchedTree(): BatchedTileTree {
     return this.tree as BatchedTileTree;
@@ -34,7 +40,7 @@ export class BatchedTile extends Tile {
     super(params, tree);
 
     // The root tile never has content, so it doesn't count toward max levels to skip.
-    this._unskippable = 0 === (this.depth % getMaxLevelsToSkip());
+    this._unskippable = 0 === (this.depth % frontendTilesOptions.maxLevelsToSkip);
 
     if (params.childrenProps?.length)
       this._childrenProps = params.childrenProps;
@@ -44,6 +50,18 @@ export class BatchedTile extends Tile {
       // mark "undisplayable"
       this._maximumSize = 0;
     }
+
+    this._localCache = frontendTilesOptions.useIndexedDBCache ? new IndexedDBCache("BatchedTileCache") : new PassThroughCache();
+
+    if (!params.transformToRoot)
+      return;
+
+    this.transformToRoot = params.transformToRoot;
+    this.boundingSphere.transformBy(this.transformToRoot, this.boundingSphere);
+    this.transformToRoot.multiplyRange(this.range, this.range);
+    if (this._contentRange)
+      this.transformToRoot.multiplyRange(this._contentRange, this._contentRange);
+
   }
 
   private get _batchedChildren(): BatchedTile[] | undefined {
@@ -124,49 +142,43 @@ export class BatchedTile extends Tile {
   public override async requestContent(_isCanceled: () => boolean): Promise<TileRequest.Response> {
     const url = new URL(this.contentId, this.batchedTree.reader.baseUrl);
     url.search = this.batchedTree.reader.baseUrl.search;
-    const response = await fetch(url.toString());
-    return response.arrayBuffer();
+    const response = await this._localCache.fetch(url.pathname.toString(), fetch, url.toString());
+    return response;
   }
 
-  public override async readContent(data: TileRequest.ResponseData, system: RenderSystem, shouldAbort?: () => boolean): Promise<TileContent> {
+  public override async readContent(data: TileRequest.ResponseData, system: RenderSystem, isCanceled?: () => boolean): Promise<TileContent> {
     assert(data instanceof Uint8Array);
     if (!(data instanceof Uint8Array))
       return { };
 
-    let reader: ImdlReader | BatchedTileContentReader | undefined = ImdlReader.create({
-      stream: ByteStream.fromUint8Array(data),
-      iModel: this.tree.iModel,
-      modelId: this.tree.modelId,
-      is3d: true,
-      isLeaf: this.isLeaf,
-      system,
-      isCanceled: shouldAbort,
-      timeline: this.batchedTree.scheduleScript,
-      options: {
-        tileId: this.contentId,
-      },
-    });
+    try {
+      const modelGroups = this.batchedTree.modelGroups;
 
-    if (!reader) {
-      const gltfProps = GltfReaderProps.create(data, false, this.batchedTree.reader.baseUrl);
-      if (gltfProps) {
-        reader = new BatchedTileContentReader({
-          props: gltfProps,
-          iModel: this.tree.iModel,
-          system,
-          shouldAbort,
-          vertexTableRequired: true,
-          modelId: this.tree.modelId,
-          isLeaf: this.isLeaf,
-          range: this.range,
-        });
+      const content = await this.batchedTree.decoder.decode({
+        stream: ByteStream.fromUint8Array(data),
+        options: { tileId: this.contentId },
+        system,
+        isCanceled,
+        isLeaf: this.isLeaf,
+        // Don't waste time attempting to split based on model groupings if all models are in the same group.
+        modelGroups: modelGroups && modelGroups.length > 1 ? modelGroups : undefined,
+      });
+
+      if (this.transformToRoot) {
+        if (content.graphic) {
+          const branch = new GraphicBranch(true);
+          branch.add(content.graphic);
+          content.graphic = system.createBranch(branch, this.transformToRoot);
+        }
+
+        if (content.contentRange)
+          content.contentRange = this.transformToRoot.multiplyRange(content.contentRange);
       }
+
+      return content;
+    } catch {
+      return { isLeaf: true };
     }
-
-    if (!reader)
-      return { };
-
-    return reader.read();
   }
 
   protected override addRangeGraphic(builder: GraphicBuilder, type: TileBoundingBoxes): void {

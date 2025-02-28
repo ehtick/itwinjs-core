@@ -48,7 +48,7 @@ const argv = yargs
   .parseSync();
 
 (async () => { // eslint-disable-line @typescript-eslint/no-floating-promises
-  await IModelHost.startup();
+  await IModelHost.startup({ profileName: "imodel-from-geojson" });
   Logger.initializeToConsole();
 
   const geoJson = new GeoJson(argv.input);
@@ -60,7 +60,7 @@ const argv = yargs
     await importer.import();
     process.stdout.write(`IModel: ${argv.output} Created for GeoJson: ${argv.input}\n`);
     await IModelHost.shutdown();
-  } catch (_error) {
+  } catch {
     process.stdout.write("Error occurred\n");
   }
 })();

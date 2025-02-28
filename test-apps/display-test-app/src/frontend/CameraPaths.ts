@@ -53,7 +53,7 @@ class Keyframe {
       this.target.clone(),
       this.up.clone(),
       this.lensAngle?.clone(),
-      this.extents?.clone()
+      this.extents?.clone(),
     );
   }
 
@@ -233,7 +233,7 @@ class CameraPath {
     return new CameraPath(
       json.name,
       json.duration,
-      json.keyframes.map((keyframeProps) => Keyframe.fromJSON(keyframeProps))
+      json.keyframes.map((keyframeProps) => Keyframe.fromJSON(keyframeProps)),
     );
   }
 
@@ -493,7 +493,7 @@ export class CameraPathsMenu extends ToolBarDropDown {
 
     try {
       this._paths = JSON.parse(externalCameraPathsString).map((path: CameraPathProps) => CameraPath.fromJSON(path));
-    } catch (_e) {
+    } catch {
       this._paths = [];
     }
   }
@@ -509,7 +509,7 @@ export class CameraPathsMenu extends ToolBarDropDown {
 
   private findPath(name: string): CameraPath | undefined {
     const index = this._paths.findIndex((path) => name === path.name);
-    return -1 !== index ? this._paths[index]! : undefined;
+    return -1 !== index ? this._paths[index] : undefined;
 
   }
 
@@ -662,7 +662,7 @@ export class CameraPathsMenu extends ToolBarDropDown {
           targetPoint: keyframe.target,
           upVector: keyframe.up,
           lensAngle,
-        }
+        },
       );
 
     } else {
@@ -676,7 +676,7 @@ export class CameraPathsMenu extends ToolBarDropDown {
           viewDirection: (keyframe.target.minus(keyframe.location)),
           upVector: keyframe.up,
           newExtents: keyframe.extents,
-        }
+        },
       );
     }
 

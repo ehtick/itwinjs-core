@@ -18,7 +18,7 @@ export class TileStorage {
     changesetId: string,
     treeId: string,
     contentId: string,
-    guid?: string
+    guid?: string,
   ): Promise<Uint8Array | undefined> {
     const transferConfig = await this.getTransferConfig(tokenProps, iModelId);
     if(transferConfig === undefined)
@@ -31,7 +31,7 @@ export class TileStorage {
       });
 
       return new Uint8Array(buffer); // should always be Buffer because transferType === "buffer"
-    } catch (_) {
+    } catch {
       // @itwin/object-storage re-throws internal implementation-specific errors, so let's treat them all as 404 for now.
       return undefined;
     }

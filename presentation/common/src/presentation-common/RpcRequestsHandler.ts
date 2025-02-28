@@ -1,39 +1,48 @@
 /*---------------------------------------------------------------------------------------------
-* Copyright (c) Bentley Systems, Incorporated. All rights reserved.
-* See LICENSE.md in the project root for license terms and full copyright notice.
-*--------------------------------------------------------------------------------------------*/
+ * Copyright (c) Bentley Systems, Incorporated. All rights reserved.
+ * See LICENSE.md in the project root for license terms and full copyright notice.
+ *--------------------------------------------------------------------------------------------*/
 /** @packageDocumentation
  * @module RPC
  */
 
-import { BeDuration, BeTimePoint, Guid, Logger } from "@itwin/core-bentley";
-import { IModelRpcProps, RpcManager } from "@itwin/core-common";
+import { Guid, Logger } from "@itwin/core-bentley";
+import { IModelRpcProps, RpcManager, RpcRequest } from "@itwin/core-common";
 import { PresentationCommonLoggerCategory } from "./CommonLoggerCategory";
 import { DescriptorJSON, DescriptorOverrides } from "./content/Descriptor";
 import { ItemJSON } from "./content/Item";
-import { DisplayValueGroupJSON } from "./content/Value";
 import { ClientDiagnostics, ClientDiagnosticsAttribute, ClientDiagnosticsHandler } from "./Diagnostics";
 import { InstanceKey } from "./EC";
-import { ElementProperties } from "./ElementProperties";
 import { PresentationError, PresentationStatus } from "./Error";
 import { NodeKey } from "./hierarchy/Key";
-import { NodeJSON } from "./hierarchy/Node";
-import { NodePathElementJSON } from "./hierarchy/NodePathElement";
+import { Node } from "./hierarchy/Node";
 import { KeySetJSON } from "./KeySet";
 import { LabelDefinition } from "./LabelDefinition";
 import {
-  ComputeSelectionRequestOptions, ContentDescriptorRequestOptions, ContentInstanceKeysRequestOptions, ContentRequestOptions,
-  ContentSourcesRequestOptions, DisplayLabelRequestOptions, DisplayLabelsRequestOptions, DistinctValuesRequestOptions,
-  FilterByInstancePathsHierarchyRequestOptions, FilterByTextHierarchyRequestOptions, HierarchyLevelDescriptorRequestOptions, HierarchyRequestOptions,
-  Paged, RequestOptions, RequestOptionsWithRuleset, SelectionScopeRequestOptions, SingleElementPropertiesRequestOptions,
+  ComputeSelectionRequestOptions,
+  ContentDescriptorRequestOptions,
+  ContentInstanceKeysRequestOptions,
+  ContentRequestOptions,
+  ContentSourcesRequestOptions,
+  DisplayLabelRequestOptions,
+  DisplayLabelsRequestOptions,
+  DistinctValuesRequestOptions,
+  FilterByInstancePathsHierarchyRequestOptions,
+  FilterByTextHierarchyRequestOptions,
+  HierarchyLevelDescriptorRequestOptions,
+  HierarchyRequestOptions,
+  Paged,
+  RequestOptions,
+  RequestOptionsWithRuleset,
+  SelectionScopeRequestOptions,
 } from "./PresentationManagerOptions";
-import {
-  ContentSourcesRpcResult, PresentationRpcInterface, PresentationRpcRequestOptions, PresentationRpcResponse,
-} from "./PresentationRpcInterface";
+import { ContentSourcesRpcResult, PresentationRpcInterface, PresentationRpcRequestOptions, PresentationRpcResponse } from "./PresentationRpcInterface";
 import { Ruleset } from "./rules/Ruleset";
 import { RulesetVariableJSON } from "./RulesetVariables";
 import { SelectionScope } from "./selection/SelectionScope";
-import { PagedResponse } from "./Utils";
+import { createCancellableTimeoutPromise, PagedResponse } from "./Utils";
+import { NodePathElement } from "./hierarchy/NodePathElement";
+import { DisplayValueGroup } from "./content/Value";
 
 /**
  * Default timeout for how long we're going to wait for RPC request to be fulfilled before throwing
@@ -78,36 +87,44 @@ export class RpcRequestsHandler {
   }
 
   // eslint-disable-next-line @typescript-eslint/naming-convention
-  private get rpcClient(): PresentationRpcInterface { return RpcManager.getClientForInterface(PresentationRpcInterface); }
+  private get rpcClient(): PresentationRpcInterface {
+    return RpcManager.getClientForInterface(PresentationRpcInterface);
+  }
 
   private async requestWithTimeout<TResult>(func: () => PresentationRpcResponse<TResult>, diagnosticsHandler?: ClientDiagnosticsHandler): Promise<TResult> {
-    const start = BeTimePoint.now();
-    const timeout = BeDuration.fromMilliseconds(this.timeout);
-    let diagnostics: ClientDiagnostics | undefined;
-    while (start.plus(timeout).isInFuture) {
-      try {
-        const response = await func();
-        diagnostics = response.diagnostics;
-        switch (response.statusCode) {
-          case PresentationStatus.Success: return response.result!;
-          case PresentationStatus.BackendTimeout: break;
-          default: throw new PresentationError(response.statusCode, response.errorMessage);
+    const rpcResponsePromise = func();
+    const rpcRequest: RpcRequest | undefined = RpcRequest.current(this.rpcClient);
+    const timeout = createCancellableTimeoutPromise(this.timeout);
+    return Promise.race([
+      (async () => {
+        let diagnostics: ClientDiagnostics | undefined;
+        try {
+          const response = await rpcResponsePromise;
+          diagnostics = response.diagnostics;
+          switch (response.statusCode) {
+            case PresentationStatus.Success:
+              return response.result!;
+            default:
+              throw new PresentationError(response.statusCode, response.errorMessage);
+          }
+        } finally {
+          diagnosticsHandler && diagnostics && diagnosticsHandler(diagnostics);
         }
-      } finally {
-        diagnosticsHandler && diagnostics && diagnosticsHandler(diagnostics);
-      }
-    }
-    throw new PresentationError(PresentationStatus.BackendTimeout);
+      })(),
+      timeout.promise.then(() => {
+        throw new Error(`Processing the request took longer than the configured limit of ${this.timeout} ms`);
+      }),
+    ]).finally(() => {
+      rpcRequest?.cancel();
+      timeout.cancel();
+    });
   }
 
   /**
-   * Send the request to backend.
-   *
-   * If the backend responds with [[PresentationStatus.BackendTimeout]], the request is repeated until we hit `timeout` or get
-   * a response. If the response is other than [[PresentationStatus.BackendTimeout]] or [[PresentationStatus.Success]], a [[PresentationError]]
-   * is thrown with the details from the response.
+   * Send the request to backend. We'll wait for the response for `this.timeout` ms, and if we don't get the response by
+   * then, we'll throw an error.
    */
-  public async request<TResult, TOptions extends (RequestOptions<IModelRpcProps> & ClientDiagnosticsAttribute), TArg = any>(
+  public async request<TResult, TOptions extends RequestOptions<IModelRpcProps> & ClientDiagnosticsAttribute, TArg = any>(
     func: (token: IModelRpcProps, options: PresentationRpcRequestOptions<TOptions>, ...args: TArg[]) => PresentationRpcResponse<TResult>,
     options: TOptions,
     ...additionalOptions: TArg[]
@@ -125,101 +142,118 @@ export class RpcRequestsHandler {
       rpcOptions.diagnostics = diagnosticsOptions;
     }
     const doRequest = async () => func(imodel, rpcOptions, ...additionalOptions);
-    return this.requestWithTimeout(doRequest, diagnosticsHandler);
+    const result = await this.requestWithTimeout(doRequest, diagnosticsHandler);
+    return result;
   }
 
   public async getNodesCount(options: HierarchyRequestOptions<IModelRpcProps, NodeKey, RulesetVariableJSON> & ClientDiagnosticsAttribute): Promise<number> {
-    return this.request<number, typeof options>(
-      this.rpcClient.getNodesCount.bind(this.rpcClient), options);
-  }
-  // eslint-disable-next-line deprecation/deprecation
-  public async getPagedNodes(options: Paged<HierarchyRequestOptions<IModelRpcProps, NodeKey, RulesetVariableJSON>> & ClientDiagnosticsAttribute): Promise<PagedResponse<NodeJSON>> {
-    // eslint-disable-next-line deprecation/deprecation
-    return this.request<PagedResponse<NodeJSON>, typeof options>(
-      this.rpcClient.getPagedNodes.bind(this.rpcClient), options);
+    // eslint-disable-next-line @typescript-eslint/no-deprecated
+    return this.request<number, typeof options>(this.rpcClient.getNodesCount.bind(this.rpcClient), options);
   }
 
-  public async getNodesDescriptor(options: HierarchyLevelDescriptorRequestOptions<IModelRpcProps, NodeKey, RulesetVariableJSON> & ClientDiagnosticsAttribute): Promise<DescriptorJSON | undefined> {
-    const response = await this.request<string | DescriptorJSON | undefined, typeof options>(
-      this.rpcClient.getNodesDescriptor.bind(this.rpcClient), options);
-    if (typeof response === "string")
+  public async getPagedNodes(
+    options: Paged<HierarchyRequestOptions<IModelRpcProps, NodeKey, RulesetVariableJSON>> & ClientDiagnosticsAttribute,
+  ): Promise<PagedResponse<Node>> {
+    // eslint-disable-next-line @typescript-eslint/no-deprecated
+    return this.request<PagedResponse<Node>, typeof options>(this.rpcClient.getPagedNodes.bind(this.rpcClient), options);
+  }
+
+  public async getNodesDescriptor(
+    options: HierarchyLevelDescriptorRequestOptions<IModelRpcProps, NodeKey, RulesetVariableJSON> & ClientDiagnosticsAttribute,
+  ): Promise<DescriptorJSON | undefined> {
+    // eslint-disable-next-line @typescript-eslint/no-deprecated
+    const response = await this.request<string | DescriptorJSON | undefined, typeof options>(this.rpcClient.getNodesDescriptor.bind(this.rpcClient), options);
+    if (typeof response === "string") {
       return JSON.parse(response);
+    }
     return response;
   }
 
-  // eslint-disable-next-line deprecation/deprecation
-  public async getNodePaths(options: FilterByInstancePathsHierarchyRequestOptions<IModelRpcProps, RulesetVariableJSON> & ClientDiagnosticsAttribute): Promise<NodePathElementJSON[]> {
-    // eslint-disable-next-line deprecation/deprecation
-    return this.request<NodePathElementJSON[], typeof options>(
-      this.rpcClient.getNodePaths.bind(this.rpcClient), options);
+  public async getNodePaths(
+    options: FilterByInstancePathsHierarchyRequestOptions<IModelRpcProps, RulesetVariableJSON> & ClientDiagnosticsAttribute,
+  ): Promise<NodePathElement[]> {
+    // eslint-disable-next-line @typescript-eslint/no-deprecated
+    return this.request<NodePathElement[], typeof options>(this.rpcClient.getNodePaths.bind(this.rpcClient), options);
   }
-  // eslint-disable-next-line deprecation/deprecation
-  public async getFilteredNodePaths(options: FilterByTextHierarchyRequestOptions<IModelRpcProps, RulesetVariableJSON> & ClientDiagnosticsAttribute): Promise<NodePathElementJSON[]> {
-    // eslint-disable-next-line deprecation/deprecation
-    return this.request<NodePathElementJSON[], typeof options>(
-      this.rpcClient.getFilteredNodePaths.bind(this.rpcClient), options);
+
+  public async getFilteredNodePaths(
+    options: FilterByTextHierarchyRequestOptions<IModelRpcProps, RulesetVariableJSON> & ClientDiagnosticsAttribute,
+  ): Promise<NodePathElement[]> {
+    // eslint-disable-next-line @typescript-eslint/no-deprecated
+    return this.request<NodePathElement[], typeof options>(this.rpcClient.getFilteredNodePaths.bind(this.rpcClient), options);
   }
 
   public async getContentSources(options: ContentSourcesRequestOptions<IModelRpcProps> & ClientDiagnosticsAttribute): Promise<ContentSourcesRpcResult> {
-    return this.request<ContentSourcesRpcResult, typeof options>(
-      this.rpcClient.getContentSources.bind(this.rpcClient), options);
+    // eslint-disable-next-line @typescript-eslint/no-deprecated
+    return this.request<ContentSourcesRpcResult, typeof options>(this.rpcClient.getContentSources.bind(this.rpcClient), options);
   }
-  public async getContentDescriptor(options: ContentDescriptorRequestOptions<IModelRpcProps, KeySetJSON, RulesetVariableJSON> & ClientDiagnosticsAttribute): Promise<DescriptorJSON | undefined> {
-    return this.request<DescriptorJSON | undefined, typeof options>(
-      this.rpcClient.getContentDescriptor.bind(this.rpcClient), options);
+  public async getContentDescriptor(
+    options: ContentDescriptorRequestOptions<IModelRpcProps, KeySetJSON, RulesetVariableJSON> & ClientDiagnosticsAttribute,
+  ): Promise<DescriptorJSON | undefined> {
+    // eslint-disable-next-line @typescript-eslint/no-deprecated
+    return this.request<DescriptorJSON | undefined, typeof options>(this.rpcClient.getContentDescriptor.bind(this.rpcClient), options);
   }
-  public async getContentSetSize(options: ContentRequestOptions<IModelRpcProps, DescriptorOverrides, KeySetJSON, RulesetVariableJSON> & ClientDiagnosticsAttribute): Promise<number> {
-    return this.request<number, typeof options>(
-      this.rpcClient.getContentSetSize.bind(this.rpcClient), options);
+  public async getContentSetSize(
+    options: ContentRequestOptions<IModelRpcProps, DescriptorOverrides, KeySetJSON, RulesetVariableJSON> & ClientDiagnosticsAttribute,
+  ): Promise<number> {
+    // eslint-disable-next-line @typescript-eslint/no-deprecated
+    return this.request<number, typeof options>(this.rpcClient.getContentSetSize.bind(this.rpcClient), options);
   }
-  public async getPagedContent(options: Paged<ContentRequestOptions<IModelRpcProps, DescriptorOverrides, KeySetJSON, RulesetVariableJSON> & ClientDiagnosticsAttribute>) {
-    return this.request<{ descriptor: DescriptorJSON, contentSet: PagedResponse<ItemJSON> } | undefined, typeof options>(
-      this.rpcClient.getPagedContent.bind(this.rpcClient), options);
+  public async getPagedContent(
+    options: Paged<ContentRequestOptions<IModelRpcProps, DescriptorOverrides, KeySetJSON, RulesetVariableJSON> & ClientDiagnosticsAttribute>,
+  ) {
+    return this.request<{ descriptor: DescriptorJSON; contentSet: PagedResponse<ItemJSON> } | undefined, typeof options>(
+      // eslint-disable-next-line @typescript-eslint/no-deprecated
+      this.rpcClient.getPagedContent.bind(this.rpcClient),
+      options,
+    );
   }
-  public async getPagedContentSet(options: Paged<ContentRequestOptions<IModelRpcProps, DescriptorOverrides, KeySetJSON, RulesetVariableJSON> & ClientDiagnosticsAttribute>) {
-    return this.request<PagedResponse<ItemJSON>, typeof options>(
-      this.rpcClient.getPagedContentSet.bind(this.rpcClient), options);
-  }
-
-  // eslint-disable-next-line deprecation/deprecation
-  public async getPagedDistinctValues(options: DistinctValuesRequestOptions<IModelRpcProps, DescriptorOverrides, KeySetJSON, RulesetVariableJSON> & ClientDiagnosticsAttribute): Promise<PagedResponse<DisplayValueGroupJSON>> {
-    // eslint-disable-next-line deprecation/deprecation
-    return this.request<PagedResponse<DisplayValueGroupJSON>, typeof options>(
-      this.rpcClient.getPagedDistinctValues.bind(this.rpcClient), options);
-  }
-
-  public async getElementProperties(options: SingleElementPropertiesRequestOptions<IModelRpcProps> & ClientDiagnosticsAttribute): Promise<ElementProperties | undefined> {
-    return this.request<ElementProperties | undefined, typeof options>(
-      this.rpcClient.getElementProperties.bind(this.rpcClient), options);
-  }
-
-  public async getContentInstanceKeys(options: ContentInstanceKeysRequestOptions<IModelRpcProps, KeySetJSON, RulesetVariableJSON> & ClientDiagnosticsAttribute): Promise<{ total: number, items: KeySetJSON }> {
-    return this.request<{ total: number, items: KeySetJSON }, typeof options>(
-      this.rpcClient.getContentInstanceKeys.bind(this.rpcClient), options);
+  public async getPagedContentSet(
+    options: Paged<ContentRequestOptions<IModelRpcProps, DescriptorOverrides, KeySetJSON, RulesetVariableJSON> & ClientDiagnosticsAttribute>,
+  ) {
+    // eslint-disable-next-line @typescript-eslint/no-deprecated
+    return this.request<PagedResponse<ItemJSON>, typeof options>(this.rpcClient.getPagedContentSet.bind(this.rpcClient), options);
   }
 
-  public async getDisplayLabelDefinition(options: DisplayLabelRequestOptions<IModelRpcProps, InstanceKey> & ClientDiagnosticsAttribute): Promise<LabelDefinition> {
-    return this.request<LabelDefinition, typeof options>(
-      this.rpcClient.getDisplayLabelDefinition.bind(this.rpcClient), options);
-  }
-  public async getPagedDisplayLabelDefinitions(options: DisplayLabelsRequestOptions<IModelRpcProps, InstanceKey> & ClientDiagnosticsAttribute): Promise<PagedResponse<LabelDefinition>> {
-    return this.request<PagedResponse<LabelDefinition>, typeof options>(
-      this.rpcClient.getPagedDisplayLabelDefinitions.bind(this.rpcClient), options);
+  public async getPagedDistinctValues(
+    options: DistinctValuesRequestOptions<IModelRpcProps, DescriptorOverrides, KeySetJSON, RulesetVariableJSON> & ClientDiagnosticsAttribute,
+  ): Promise<PagedResponse<DisplayValueGroup>> {
+    // eslint-disable-next-line @typescript-eslint/no-deprecated
+    return this.request<PagedResponse<DisplayValueGroup>, typeof options>(this.rpcClient.getPagedDistinctValues.bind(this.rpcClient), options);
   }
 
+  public async getContentInstanceKeys(
+    options: ContentInstanceKeysRequestOptions<IModelRpcProps, KeySetJSON, RulesetVariableJSON> & ClientDiagnosticsAttribute,
+  ): Promise<{ total: number; items: KeySetJSON }> {
+    // eslint-disable-next-line @typescript-eslint/no-deprecated
+    return this.request<{ total: number; items: KeySetJSON }, typeof options>(this.rpcClient.getContentInstanceKeys.bind(this.rpcClient), options);
+  }
+
+  public async getDisplayLabelDefinition(
+    options: DisplayLabelRequestOptions<IModelRpcProps, InstanceKey> & ClientDiagnosticsAttribute,
+  ): Promise<LabelDefinition> {
+    // eslint-disable-next-line @typescript-eslint/no-deprecated
+    return this.request<LabelDefinition, typeof options>(this.rpcClient.getDisplayLabelDefinition.bind(this.rpcClient), options);
+  }
+  public async getPagedDisplayLabelDefinitions(
+    options: DisplayLabelsRequestOptions<IModelRpcProps, InstanceKey> & ClientDiagnosticsAttribute,
+  ): Promise<PagedResponse<LabelDefinition>> {
+    // eslint-disable-next-line @typescript-eslint/no-deprecated
+    return this.request<PagedResponse<LabelDefinition>, typeof options>(this.rpcClient.getPagedDisplayLabelDefinitions.bind(this.rpcClient), options);
+  }
+
+  /* eslint-disable @typescript-eslint/no-deprecated */
   public async getSelectionScopes(options: SelectionScopeRequestOptions<IModelRpcProps> & ClientDiagnosticsAttribute): Promise<SelectionScope[]> {
-    return this.request<SelectionScope[], typeof options>(
-      this.rpcClient.getSelectionScopes.bind(this.rpcClient), options);
+    return this.request<SelectionScope[], typeof options>(this.rpcClient.getSelectionScopes.bind(this.rpcClient), options);
   }
   public async computeSelection(options: ComputeSelectionRequestOptions<IModelRpcProps> & ClientDiagnosticsAttribute): Promise<KeySetJSON> {
-    return this.request<KeySetJSON, typeof options>(
-      // eslint-disable-next-line deprecation/deprecation
-      this.rpcClient.computeSelection.bind(this.rpcClient), options);
+    return this.request<KeySetJSON, typeof options>(this.rpcClient.computeSelection.bind(this.rpcClient), options);
   }
+  /* eslint-enable @typescript-eslint/no-deprecated */
 }
 
-function isOptionsWithRuleset(options: Object): options is { rulesetOrId: Ruleset } {
-  return (typeof (options as RequestOptionsWithRuleset<any, any>).rulesetOrId === "object");
+function isOptionsWithRuleset(options: object): options is { rulesetOrId: Ruleset } {
+  return typeof (options as RequestOptionsWithRuleset<any, any>).rulesetOrId === "object";
 }
 
 type RulesetWithRequiredProperties = {
@@ -240,10 +274,14 @@ function cleanupRuleset(ruleset: Ruleset): Ruleset {
 
   for (const propertyKey of Object.keys(cleanedUpRuleset)) {
     if (!RULESET_SUPPORTED_PROPERTIES_OBJ.hasOwnProperty(propertyKey)) {
-      if (propertyKey === "$schema")
+      if (propertyKey === "$schema") {
         delete (cleanedUpRuleset as any)[propertyKey];
-      else
-        Logger.logWarning(PresentationCommonLoggerCategory.Package, `Provided ruleset contains unrecognized attribute '${propertyKey}'. It either doesn't exist or may be no longer supported.`);
+      } else {
+        Logger.logWarning(
+          PresentationCommonLoggerCategory.Package,
+          `Provided ruleset contains unrecognized attribute '${propertyKey}'. It either doesn't exist or may be no longer supported.`,
+        );
+      }
     }
   }
 

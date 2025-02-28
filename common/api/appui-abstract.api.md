@@ -4,12 +4,10 @@
 
 ```ts
 
-import { BeEvent } from '@itwin/core-bentley';
 import { BentleyError } from '@itwin/core-bentley';
 import { BeUiEvent } from '@itwin/core-bentley';
 import { GetMetaDataFunction } from '@itwin/core-bentley';
 import { Id64String } from '@itwin/core-bentley';
-import { MarkRequired } from '@itwin/core-bentley';
 
 // @public
 export interface AbstractActionItemProps extends CommonItemProps, CommandHandler {
@@ -23,100 +21,10 @@ export interface AbstractMenuItemProps extends CommonItemProps {
     submenu?: AbstractMenuItemProps[];
 }
 
-// @public @deprecated
-export interface AbstractStatusBarActionItem extends AbstractStatusBarItem {
-    readonly execute: () => void;
-    readonly icon?: string | ConditionalStringValue;
-    readonly label?: string | ConditionalStringValue;
-    readonly tooltip?: string | ConditionalStringValue;
-}
-
-// @public @deprecated
-export interface AbstractStatusBarCustomItem extends AbstractStatusBarItem {
-    // (undocumented)
-    readonly isCustom: true;
-}
-
-// @public @deprecated
-export interface AbstractStatusBarItem extends ProvidedItem {
-    applicationData?: any;
-    readonly badgeType?: BadgeType;
-    readonly id: string;
-    readonly internalData?: Map<string, any>;
-    readonly isDisabled?: boolean | ConditionalBooleanValue;
-    readonly isHidden?: boolean | ConditionalBooleanValue;
-    readonly itemPriority: number;
-    readonly section: StatusBarSection;
-}
-
-// @public @deprecated
-export class AbstractStatusBarItemUtilities {
-    static createActionItem: (id: string, section: StatusBarSection, itemPriority: number, icon: string | ConditionalStringValue, tooltip: string | ConditionalStringValue, execute: () => void, overrides?: Partial<AbstractStatusBarCustomItem>) => AbstractStatusBarActionItem;
-    static createLabelItem: (id: string, section: StatusBarSection, itemPriority: number, icon: string | ConditionalStringValue, label: string | ConditionalStringValue, labelSide?: StatusBarLabelSide, overrides?: Partial<AbstractStatusBarLabelItem>) => AbstractStatusBarLabelItem;
-}
-
-// @public @deprecated
-export interface AbstractStatusBarLabelItem extends AbstractStatusBarItem {
-    readonly icon?: string | ConditionalStringValue;
-    readonly label: string | ConditionalStringValue;
-    readonly labelSide?: StatusBarLabelSide;
-}
-
 // @public
 export interface AbstractToolbarProps {
     items: CommonToolbarItem[];
     toolbarId?: string;
-}
-
-// @public @deprecated
-export interface AbstractWidgetProps extends ProvidedItem {
-    readonly allowedPanelTargets?: ReadonlyArray<"left" | "right" | "bottom" | "top">;
-    readonly applicationData?: any;
-    readonly badgeType?: BadgeType;
-    readonly canPopout?: boolean;
-    readonly defaultFloatingPosition?: {
-        x: number;
-        y: number;
-    };
-    defaultFloatingSize?: {
-        width: number;
-        height: number;
-    };
-    readonly defaultState?: WidgetState;
-    readonly fillZone?: boolean;
-    readonly floatingContainerId?: string;
-    readonly getWidgetContent: () => any;
-    hideWithUiWhenFloating?: boolean;
-    readonly icon?: string | ConditionalStringValue;
-    readonly id?: string;
-    readonly internalData?: Map<string, any>;
-    readonly isFloatingStateSupported?: boolean;
-    readonly isFloatingStateWindowResizable?: boolean;
-    // @deprecated
-    readonly isFreeform?: boolean;
-    readonly isStatusBar?: boolean;
-    readonly isToolSettings?: boolean;
-    readonly label?: string | ConditionalStringValue;
-    readonly onWidgetStateChanged?: () => void;
-    readonly priority?: number;
-    readonly restoreTransientState?: () => boolean;
-    readonly saveTransientState?: () => void;
-    // @deprecated
-    readonly stateFunc?: (state: Readonly<WidgetState>) => WidgetState;
-    readonly syncEventIds?: string[];
-    readonly tooltip?: string | ConditionalStringValue;
-}
-
-// @public @deprecated
-export enum AbstractZoneLocation {
-    // (undocumented)
-    BottomLeft = 7,
-    // (undocumented)
-    BottomRight = 9,
-    // (undocumented)
-    CenterLeft = 4,
-    // (undocumented)
-    CenterRight = 6
 }
 
 // @public
@@ -124,16 +32,6 @@ export interface ActionButton extends ToolbarItem {
     readonly execute: () => void;
     readonly icon: string | ConditionalStringValue;
     readonly label: string | ConditionalStringValue;
-}
-
-// @public @deprecated
-export interface AllowedUiItemProviderOverrides {
-    // @beta
-    providerId?: string;
-    // @beta
-    stageIds?: string[];
-    // @beta
-    stageUsages?: string[];
 }
 
 // @public
@@ -162,57 +60,6 @@ export interface ArrayValue extends BasePropertyValue {
     itemsTypeName: string;
     // (undocumented)
     valueFormat: PropertyValueFormat.Array;
-}
-
-// @public @deprecated
-export interface BackstageActionItem extends CommonBackstageItem {
-    // (undocumented)
-    readonly execute: () => void;
-}
-
-// @public @deprecated
-export type BackstageItem = BackstageActionItem | BackstageStageLauncher;
-
-// @internal
-export interface BackstageItemsChangedArgs {
-    // (undocumented)
-    readonly items: ReadonlyArray<BackstageItem>;
-}
-
-// @internal
-export class BackstageItemsManager {
-    constructor(items?: ReadonlyArray<BackstageItem>);
-    // (undocumented)
-    add(itemOrItems: BackstageItem | ReadonlyArray<BackstageItem>): void;
-    // (undocumented)
-    static getSyncIdsOfInterest(items: readonly BackstageItem[]): string[];
-    // (undocumented)
-    get items(): ReadonlyArray<BackstageItem>;
-    set items(items: ReadonlyArray<BackstageItem>);
-    loadItems(items: ReadonlyArray<BackstageItem>): void;
-    readonly onItemsChanged: BeEvent<(args: BackstageItemsChangedArgs) => void>;
-    // (undocumented)
-    refreshAffectedItems(eventIds: Set<string>): void;
-    // (undocumented)
-    remove(itemIdOrItemIds: BackstageItem["id"] | ReadonlyArray<BackstageItem["id"]>): void;
-}
-
-// @public @deprecated
-export enum BackstageItemType {
-    ActionItem = 1,
-    StageLauncher = 2
-}
-
-// @public @deprecated
-export class BackstageItemUtilities {
-    static createActionItem: (itemId: string, groupPriority: number, itemPriority: number, execute: () => void, label: string | ConditionalStringValue, subtitle?: string | ConditionalStringValue, icon?: string | ConditionalStringValue, overrides?: Partial<BackstageActionItem>) => BackstageActionItem;
-    static createStageLauncher: (frontstageId: string, groupPriority: number, itemPriority: number, label: string | ConditionalStringValue, subtitle?: string | ConditionalStringValue, icon?: string | ConditionalStringValue, overrides?: Partial<BackstageStageLauncher>) => BackstageStageLauncher;
-}
-
-// @public @deprecated
-export interface BackstageStageLauncher extends CommonBackstageItem {
-    // (undocumented)
-    readonly stageId: string;
 }
 
 // @public
@@ -269,572 +116,12 @@ export abstract class BaseQuantityDescription implements PropertyDescription {
     typename: string;
 }
 
-// @public @deprecated
-export class BaseUiItemsProvider implements UiItemsProvider {
-    constructor(_providerId: string, isSupportedStage?: ((stageId: string, stageUsage: string, stageAppData?: any, provider?: UiItemsProvider) => boolean) | undefined);
-    // (undocumented)
-    get id(): string;
-    // (undocumented)
-    isSupportedStage?: ((stageId: string, stageUsage: string, stageAppData?: any, provider?: UiItemsProvider) => boolean) | undefined;
-    // (undocumented)
-    onUnregister(): void;
-    provideBackstageItems(): BackstageItem[];
-    // (undocumented)
-    protected _providerId: string;
-    // (undocumented)
-    provideStatusBarItems(stageId: string, stageUsage: string, stageAppData?: any): CommonStatusBarItem[];
-    // (undocumented)
-    provideStatusBarItemsInternal(_stageId: string, _stageUsage: string, _stageAppData?: any): CommonStatusBarItem[];
-    // (undocumented)
-    provideToolbarButtonItems(stageId: string, stageUsage: string, toolbarUsage: ToolbarUsage, toolbarOrientation: ToolbarOrientation, stageAppData?: any): CommonToolbarItem[];
-    // (undocumented)
-    provideToolbarButtonItemsInternal(_stageId: string, _stageUsage: string, _toolbarUsage: ToolbarUsage, _toolbarOrientation: ToolbarOrientation, _stageAppData?: any): CommonToolbarItem[];
-    // (undocumented)
-    provideWidgets(stageId: string, stageUsage: string, location: StagePanelLocation, section?: StagePanelSection, _zoneLocation?: AbstractZoneLocation, stageAppData?: any): ReadonlyArray<AbstractWidgetProps>;
-    // (undocumented)
-    provideWidgetsInternal(_stageId: string, _stageUsage: string, _location: StagePanelLocation, _section?: StagePanelSection, _zoneLocation?: AbstractZoneLocation, _stageAppData?: any): AbstractWidgetProps[];
-    // (undocumented)
-    unregister(): void;
-}
-
 // @public
 export interface ButtonGroupEditorParams extends BasePropertyEditorParams {
     // (undocumented)
     buttons: IconDefinition[];
     // (undocumented)
     type: PropertyEditorParamTypes.ButtonGroupData;
-}
-
-// @internal
-export const enum CharCode {
-    // (undocumented)
-    A = 65,
-    // (undocumented)
-    a = 97,
-    Ampersand = 38,
-    Asterisk = 42,
-    AtSign = 64,
-    // (undocumented)
-    B = 66,
-    // (undocumented)
-    b = 98,
-    Backslash = 92,
-    Backspace = 8,
-    BackTick = 96,
-    // (undocumented)
-    C = 67,
-    // (undocumented)
-    c = 99,
-    Caret = 94,
-    CarriageReturn = 13,
-    CloseCurlyBrace = 125,
-    CloseParen = 41,
-    CloseSquareBracket = 93,
-    Colon = 58,
-    Comma = 44,
-    // (undocumented)
-    D = 68,
-    // (undocumented)
-    d = 100,
-    Dash = 45,
-    // (undocumented)
-    Digit0 = 48,
-    // (undocumented)
-    Digit1 = 49,
-    // (undocumented)
-    Digit2 = 50,
-    // (undocumented)
-    Digit3 = 51,
-    // (undocumented)
-    Digit4 = 52,
-    // (undocumented)
-    Digit5 = 53,
-    // (undocumented)
-    Digit6 = 54,
-    // (undocumented)
-    Digit7 = 55,
-    // (undocumented)
-    Digit8 = 56,
-    // (undocumented)
-    Digit9 = 57,
-    DollarSign = 36,
-    DoubleQuote = 34,
-    // (undocumented)
-    E = 69,
-    // (undocumented)
-    e = 101,
-    Equals = 61,
-    ExclamationMark = 33,
-    // (undocumented)
-    F = 70,
-    // (undocumented)
-    f = 102,
-    // (undocumented)
-    G = 71,
-    // (undocumented)
-    g = 103,
-    GreaterThan = 62,
-    // (undocumented)
-    H = 72,
-    // (undocumented)
-    h = 104,
-    Hash = 35,
-    // (undocumented)
-    I = 73,
-    // (undocumented)
-    i = 105,
-    // (undocumented)
-    J = 74,
-    // (undocumented)
-    j = 106,
-    // (undocumented)
-    K = 75,
-    // (undocumented)
-    k = 107,
-    // (undocumented)
-    L = 76,
-    // (undocumented)
-    l = 108,
-    LessThan = 60,
-    LINE_SEPARATOR = 8232,
-    LineFeed = 10,
-    // (undocumented)
-    M = 77,
-    // (undocumented)
-    m = 109,
-    // (undocumented)
-    N = 78,
-    // (undocumented)
-    n = 110,
-    NEXT_LINE = 133,
-    // (undocumented)
-    Null = 0,
-    // (undocumented)
-    O = 79,
-    // (undocumented)
-    o = 111,
-    OpenCurlyBrace = 123,
-    OpenParen = 40,
-    OpenSquareBracket = 91,
-    // (undocumented)
-    P = 80,
-    // (undocumented)
-    p = 112,
-    PARAGRAPH_SEPARATOR = 8233,
-    PercentSign = 37,
-    Period = 46,
-    Pipe = 124,
-    Plus = 43,
-    // (undocumented)
-    Q = 81,
-    // (undocumented)
-    q = 113,
-    QuestionMark = 63,
-    // (undocumented)
-    R = 82,
-    // (undocumented)
-    r = 114,
-    // (undocumented)
-    S = 83,
-    // (undocumented)
-    s = 115,
-    Semicolon = 59,
-    SingleQuote = 39,
-    Slash = 47,
-    // (undocumented)
-    Space = 32,
-    // (undocumented)
-    T = 84,
-    // (undocumented)
-    t = 116,
-    Tab = 9,
-    Tilde = 126,
-    // (undocumented)
-    U = 85,
-    // (undocumented)
-    u = 117,
-    // (undocumented)
-    U_ACUTE_ACCENT = 180,
-    // (undocumented)
-    U_BREVE = 728,
-    // (undocumented)
-    U_CEDILLA = 184,
-    // (undocumented)
-    U_CIRCUMFLEX = 94,
-    // (undocumented)
-    U_Combining_Acute_Accent = 769,
-    // (undocumented)
-    U_Combining_Acute_Accent_Below = 791,
-    // (undocumented)
-    U_Combining_Acute_Tone_Mark = 833,
-    // (undocumented)
-    U_Combining_Almost_Equal_To_Above = 844,
-    // (undocumented)
-    U_Combining_Asterisk_Below = 857,
-    // (undocumented)
-    U_Combining_Breve = 774,
-    // (undocumented)
-    U_Combining_Breve_Below = 814,
-    // (undocumented)
-    U_Combining_Bridge_Above = 838,
-    // (undocumented)
-    U_Combining_Bridge_Below = 810,
-    // (undocumented)
-    U_Combining_Candrabindu = 784,
-    // (undocumented)
-    U_Combining_Caron = 780,
-    // (undocumented)
-    U_Combining_Caron_Below = 812,
-    // (undocumented)
-    U_Combining_Cedilla = 807,
-    // (undocumented)
-    U_Combining_Circumflex_Accent = 770,
-    // (undocumented)
-    U_Combining_Circumflex_Accent_Below = 813,
-    // (undocumented)
-    U_Combining_Comma_Above = 787,
-    // (undocumented)
-    U_Combining_Comma_Above_Right = 789,
-    // (undocumented)
-    U_Combining_Comma_Below = 806,
-    // (undocumented)
-    U_Combining_Diaeresis = 776,
-    // (undocumented)
-    U_Combining_Diaeresis_Below = 804,
-    // (undocumented)
-    U_Combining_Dot_Above = 775,
-    // (undocumented)
-    U_Combining_Dot_Above_Right = 856,
-    // (undocumented)
-    U_Combining_Dot_Below = 803,
-    // (undocumented)
-    U_Combining_Double_Acute_Accent = 779,
-    // (undocumented)
-    U_Combining_Double_Breve = 861,
-    // (undocumented)
-    U_Combining_Double_Breve_Below = 860,
-    // (undocumented)
-    U_Combining_Double_Grave_Accent = 783,
-    // (undocumented)
-    U_Combining_Double_Inverted_Breve = 865,
-    // (undocumented)
-    U_Combining_Double_Low_Line = 819,
-    // (undocumented)
-    U_Combining_Double_Macron = 862,
-    // (undocumented)
-    U_Combining_Double_Macron_Below = 863,
-    // (undocumented)
-    U_Combining_Double_Overline = 831,
-    // (undocumented)
-    U_Combining_Double_Rightwards_Arrow_Below = 866,
-    // (undocumented)
-    U_Combining_Double_Ring_Below = 858,
-    // (undocumented)
-    U_Combining_Double_Tilde = 864,
-    // (undocumented)
-    U_Combining_Double_Vertical_Line_Above = 782,
-    // (undocumented)
-    U_Combining_Double_Vertical_Line_Below = 840,
-    // (undocumented)
-    U_Combining_Down_Tack_Below = 798,
-    // (undocumented)
-    U_Combining_Equals_Sign_Below = 839,
-    // (undocumented)
-    U_Combining_Fermata = 850,
-    // (undocumented)
-    U_Combining_Grapheme_Joiner = 847,
-    // (undocumented)
-    U_Combining_Grave_Accent = 768,
-    // (undocumented)
-    U_Combining_Grave_Accent_Below = 790,
-    // (undocumented)
-    U_Combining_Grave_Tone_Mark = 832,
-    // (undocumented)
-    U_Combining_Greek_Dialytika_Tonos = 836,
-    // (undocumented)
-    U_Combining_Greek_Koronis = 835,
-    // (undocumented)
-    U_Combining_Greek_Perispomeni = 834,
-    // (undocumented)
-    U_Combining_Greek_Ypogegrammeni = 837,
-    // (undocumented)
-    U_Combining_Homothetic_Above = 843,
-    // (undocumented)
-    U_Combining_Hook_Above = 777,
-    // (undocumented)
-    U_Combining_Horn = 795,
-    // (undocumented)
-    U_Combining_Inverted_Breve = 785,
-    // (undocumented)
-    U_Combining_Inverted_Breve_Below = 815,
-    // (undocumented)
-    U_Combining_Inverted_Bridge_Below = 826,
-    // (undocumented)
-    U_Combining_Inverted_Double_Arch_Below = 811,
-    // (undocumented)
-    U_Combining_Latin_Small_Letter_A = 867,
-    // (undocumented)
-    U_Combining_Latin_Small_Letter_C = 872,
-    // (undocumented)
-    U_Combining_Latin_Small_Letter_D = 873,
-    // (undocumented)
-    U_Combining_Latin_Small_Letter_E = 868,
-    // (undocumented)
-    U_Combining_Latin_Small_Letter_H = 874,
-    // (undocumented)
-    U_Combining_Latin_Small_Letter_I = 869,
-    // (undocumented)
-    U_Combining_Latin_Small_Letter_M = 875,
-    // (undocumented)
-    U_Combining_Latin_Small_Letter_O = 870,
-    // (undocumented)
-    U_Combining_Latin_Small_Letter_R = 876,
-    // (undocumented)
-    U_Combining_Latin_Small_Letter_T = 877,
-    // (undocumented)
-    U_Combining_Latin_Small_Letter_U = 871,
-    // (undocumented)
-    U_Combining_Latin_Small_Letter_V = 878,
-    // (undocumented)
-    U_Combining_Latin_Small_Letter_X = 879,
-    // (undocumented)
-    U_Combining_Left_Angle_Above = 794,
-    // (undocumented)
-    U_Combining_Left_Angle_Below = 841,
-    // (undocumented)
-    U_Combining_Left_Arrowhead_Below = 852,
-    // (undocumented)
-    U_Combining_Left_Half_Ring_Above = 849,
-    // (undocumented)
-    U_Combining_Left_Half_Ring_Below = 796,
-    // (undocumented)
-    U_Combining_Left_Right_Arrow_Below = 845,
-    // (undocumented)
-    U_Combining_Left_Tack_Below = 792,
-    // (undocumented)
-    U_Combining_Long_Solidus_Overlay = 824,
-    // (undocumented)
-    U_Combining_Long_Stroke_Overlay = 822,
-    // (undocumented)
-    U_Combining_Low_Line = 818,
-    // (undocumented)
-    U_Combining_Macron = 772,
-    // (undocumented)
-    U_Combining_Macron_Below = 817,
-    // (undocumented)
-    U_Combining_Minus_Sign_Below = 800,
-    // (undocumented)
-    U_Combining_Not_Tilde_Above = 842,
-    // (undocumented)
-    U_Combining_Ogonek = 808,
-    // (undocumented)
-    U_Combining_Overline = 773,
-    // (undocumented)
-    U_Combining_Palatalized_Hook_Below = 801,
-    // (undocumented)
-    U_Combining_Plus_Sign_Below = 799,
-    // (undocumented)
-    U_Combining_Retroflex_Hook_Below = 802,
-    // (undocumented)
-    U_Combining_Reversed_Comma_Above = 788,
-    // (undocumented)
-    U_Combining_Right_Arrowhead_Above = 848,
-    // (undocumented)
-    U_Combining_Right_Arrowhead_And_Up_Arrowhead_Below = 854,
-    // (undocumented)
-    U_Combining_Right_Arrowhead_Below = 853,
-    // (undocumented)
-    U_Combining_Right_Half_Ring_Above = 855,
-    // (undocumented)
-    U_Combining_Right_Half_Ring_Below = 825,
-    // (undocumented)
-    U_Combining_Right_Tack_Below = 793,
-    // (undocumented)
-    U_Combining_Ring_Above = 778,
-    // (undocumented)
-    U_Combining_Ring_Below = 805,
-    // (undocumented)
-    U_Combining_Seagull_Below = 828,
-    // (undocumented)
-    U_Combining_Short_Solidus_Overlay = 823,
-    // (undocumented)
-    U_Combining_Short_Stroke_Overlay = 821,
-    // (undocumented)
-    U_Combining_Square_Below = 827,
-    // (undocumented)
-    U_Combining_Tilde = 771,
-    // (undocumented)
-    U_Combining_Tilde_Below = 816,
-    // (undocumented)
-    U_Combining_Tilde_Overlay = 820,
-    // (undocumented)
-    U_Combining_Turned_Comma_Above = 786,
-    // (undocumented)
-    U_Combining_Up_Tack_Below = 797,
-    // (undocumented)
-    U_Combining_Upwards_Arrow_Below = 846,
-    // (undocumented)
-    U_Combining_Vertical_Line_Above = 781,
-    // (undocumented)
-    U_Combining_Vertical_Line_Below = 809,
-    // (undocumented)
-    U_Combining_Vertical_Tilde = 830,
-    // (undocumented)
-    U_Combining_X_Above = 829,
-    // (undocumented)
-    U_Combining_X_Below = 851,
-    // (undocumented)
-    U_Combining_Zigzag_Above = 859,
-    // (undocumented)
-    U_DIAERESIS = 168,
-    // (undocumented)
-    U_DOT_ABOVE = 729,
-    // (undocumented)
-    U_DOUBLE_ACUTE_ACCENT = 733,
-    // (undocumented)
-    U_GRAVE_ACCENT = 96,
-    // (undocumented)
-    U_GREEK_DASIA = 8190,
-    // (undocumented)
-    U_GREEK_DASIA_AND_OXIA = 8158,
-    // (undocumented)
-    U_GREEK_DASIA_AND_PERISPOMENI = 8159,
-    // (undocumented)
-    U_GREEK_DASIA_AND_VARIA = 8157,
-    // (undocumented)
-    U_GREEK_DIALYTIKA_AND_OXIA = 8174,
-    // (undocumented)
-    U_GREEK_DIALYTIKA_AND_PERISPOMENI = 8129,
-    // (undocumented)
-    U_GREEK_DIALYTIKA_AND_VARIA = 8173,
-    // (undocumented)
-    U_GREEK_DIALYTIKA_TONOS = 901,
-    // (undocumented)
-    U_GREEK_KORONIS = 8125,
-    // (undocumented)
-    U_GREEK_LOWER_NUMERAL_SIGN = 885,
-    // (undocumented)
-    U_GREEK_OXIA = 8189,
-    // (undocumented)
-    U_GREEK_PERISPOMENI = 8128,
-    // (undocumented)
-    U_GREEK_PSILI = 8127,
-    // (undocumented)
-    U_GREEK_PSILI_AND_OXIA = 8142,
-    // (undocumented)
-    U_GREEK_PSILI_AND_PERISPOMENI = 8143,
-    // (undocumented)
-    U_GREEK_PSILI_AND_VARIA = 8141,
-    // (undocumented)
-    U_GREEK_TONOS = 900,
-    // (undocumented)
-    U_GREEK_VARIA = 8175,
-    // (undocumented)
-    U_MACRON = 175,
-    // (undocumented)
-    U_MODIFIER_LETTER_BEGIN_HIGH_TONE = 761,
-    // (undocumented)
-    U_MODIFIER_LETTER_BEGIN_LOW_TONE = 763,
-    // (undocumented)
-    U_MODIFIER_LETTER_CENTRED_LEFT_HALF_RING = 723,
-    // (undocumented)
-    U_MODIFIER_LETTER_CENTRED_RIGHT_HALF_RING = 722,
-    // (undocumented)
-    U_MODIFIER_LETTER_CROSS_ACCENT = 735,
-    // (undocumented)
-    U_MODIFIER_LETTER_DOWN_ARROWHEAD = 709,
-    // (undocumented)
-    U_MODIFIER_LETTER_DOWN_TACK = 725,
-    // (undocumented)
-    U_MODIFIER_LETTER_END_HIGH_TONE = 762,
-    // (undocumented)
-    U_MODIFIER_LETTER_END_LOW_TONE = 764,
-    // (undocumented)
-    U_MODIFIER_LETTER_EXTRA_HIGH_TONE_BAR = 741,
-    // (undocumented)
-    U_MODIFIER_LETTER_EXTRA_LOW_TONE_BAR = 745,
-    // (undocumented)
-    U_MODIFIER_LETTER_HIGH_TONE_BAR = 742,
-    // (undocumented)
-    U_MODIFIER_LETTER_LEFT_ARROWHEAD = 706,
-    // (undocumented)
-    U_MODIFIER_LETTER_LOW_DOWN_ARROWHEAD = 751,
-    // (undocumented)
-    U_MODIFIER_LETTER_LOW_LEFT_ARROW = 767,
-    // (undocumented)
-    U_MODIFIER_LETTER_LOW_LEFT_ARROWHEAD = 753,
-    // (undocumented)
-    U_MODIFIER_LETTER_LOW_RIGHT_ARROWHEAD = 754,
-    // (undocumented)
-    U_MODIFIER_LETTER_LOW_RING = 755,
-    // (undocumented)
-    U_MODIFIER_LETTER_LOW_TILDE = 759,
-    // (undocumented)
-    U_MODIFIER_LETTER_LOW_TONE_BAR = 744,
-    // (undocumented)
-    U_MODIFIER_LETTER_LOW_UP_ARROWHEAD = 752,
-    // (undocumented)
-    U_MODIFIER_LETTER_MID_TONE_BAR = 743,
-    // (undocumented)
-    U_MODIFIER_LETTER_MIDDLE_DOUBLE_ACUTE_ACCENT = 758,
-    // (undocumented)
-    U_MODIFIER_LETTER_MIDDLE_DOUBLE_GRAVE_ACCENT = 757,
-    // (undocumented)
-    U_MODIFIER_LETTER_MIDDLE_GRAVE_ACCENT = 756,
-    // (undocumented)
-    U_MODIFIER_LETTER_MINUS_SIGN = 727,
-    // (undocumented)
-    U_MODIFIER_LETTER_OPEN_SHELF = 766,
-    // (undocumented)
-    U_MODIFIER_LETTER_PLUS_SIGN = 726,
-    // (undocumented)
-    U_MODIFIER_LETTER_RAISED_COLON = 760,
-    // (undocumented)
-    U_MODIFIER_LETTER_RHOTIC_HOOK = 734,
-    // (undocumented)
-    U_MODIFIER_LETTER_RIGHT_ARROWHEAD = 707,
-    // (undocumented)
-    U_MODIFIER_LETTER_SHELF = 765,
-    // (undocumented)
-    U_MODIFIER_LETTER_UNASPIRATED = 749,
-    // (undocumented)
-    U_MODIFIER_LETTER_UP_ARROWHEAD = 708,
-    // (undocumented)
-    U_MODIFIER_LETTER_UP_TACK = 724,
-    // (undocumented)
-    U_MODIFIER_LETTER_YANG_DEPARTING_TONE_MARK = 747,
-    // (undocumented)
-    U_MODIFIER_LETTER_YIN_DEPARTING_TONE_MARK = 746,
-    // (undocumented)
-    U_OGONEK = 731,
-    // (undocumented)
-    U_OVERLINE = 8254,
-    // (undocumented)
-    U_RING_ABOVE = 730,
-    // (undocumented)
-    U_SMALL_TILDE = 732,
-    Underline = 95,
-    UTF8_BOM = 65279,
-    // (undocumented)
-    V = 86,
-    // (undocumented)
-    v = 118,
-    // (undocumented)
-    W = 87,
-    // (undocumented)
-    w = 119,
-    // (undocumented)
-    X = 88,
-    // (undocumented)
-    x = 120,
-    // (undocumented)
-    Y = 89,
-    // (undocumented)
-    y = 121,
-    // (undocumented)
-    Z = 90,
-    // (undocumented)
-    z = 122
 }
 
 // @public
@@ -852,23 +139,6 @@ export interface CommandHandler {
     parameters?: any;
 }
 
-// @public @deprecated
-export interface CommonBackstageItem extends ProvidedItem {
-    applicationData?: any;
-    readonly badgeType?: BadgeType;
-    readonly groupPriority: number;
-    readonly icon?: string | ConditionalStringValue;
-    readonly id: string;
-    readonly internalData?: Map<string, any>;
-    readonly isActive?: boolean | ConditionalBooleanValue;
-    readonly isDisabled?: boolean | ConditionalBooleanValue;
-    readonly isHidden?: boolean | ConditionalBooleanValue;
-    readonly itemPriority: number;
-    readonly label: string | ConditionalStringValue;
-    readonly subtitle?: string | ConditionalStringValue;
-    readonly tooltip?: string | ConditionalStringValue;
-}
-
 // @public
 export interface CommonItemProps {
     applicationData?: any;
@@ -883,9 +153,6 @@ export interface CommonItemProps {
     label?: string | ConditionalStringValue;
     tooltip?: string | ConditionalStringValue;
 }
-
-// @public @deprecated
-export type CommonStatusBarItem = AbstractStatusBarActionItem | AbstractStatusBarLabelItem | AbstractStatusBarCustomItem;
 
 // @public
 export type CommonToolbarItem = ActionButton | GroupButton | CustomButtonDefinition;
@@ -916,17 +183,11 @@ export class ConditionalStringValue {
     get value(): string;
 }
 
-// @public
+// @public @deprecated
 export interface ContentLayoutProps extends LayoutFragmentProps {
     description?: string;
     id: string;
 }
-
-// @internal (undocumented)
-export function convertSimple2RegExpPattern(pattern: string): string;
-
-// @internal (undocumented)
-export function createMatches(score: undefined | FuzzyScore): IMatch[];
 
 // @public
 export interface CustomButtonDefinition extends ToolbarItem {
@@ -1096,8 +357,6 @@ export enum DisplayMessageType {
 // @public
 export interface EditorPosition {
     columnIndex: number;
-    // @deprecated
-    columnSpan?: number;
     rowPriority: number;
 }
 
@@ -1119,10 +378,7 @@ export interface EnumerationChoicesInfo {
     maxDisplayedRows?: number;
 }
 
-// @internal (undocumented)
-export function equalsIgnoreCase(a: string, b: string): boolean;
-
-// @public
+// @public @deprecated
 export enum FunctionKey {
     // (undocumented)
     F1 = "F1",
@@ -1150,28 +406,6 @@ export enum FunctionKey {
     F9 = "F9"
 }
 
-// @internal
-export type FuzzyScore = [number, number, number];
-
-// @internal (undocumented)
-export namespace FuzzyScore {
-    const Default: [-100, 0, 0];
-    // (undocumented)
-    export function isDefault(score?: FuzzyScore): score is [-100, 0, 0];
-}
-
-// @internal (undocumented)
-export function fuzzyScore(pattern: string, patternLow: string, patternStart: number, word: string, wordLow: string, wordStart: number, firstMatchCanBeWeak: boolean): FuzzyScore | undefined;
-
-// @internal (undocumented)
-export function fuzzyScoreGraceful(pattern: string, lowPattern: string, patternPos: number, word: string, lowWord: string, wordPos: number, firstMatchCanBeWeak: boolean): FuzzyScore | undefined;
-
-// @internal (undocumented)
-export function fuzzyScoreGracefulAggressive(pattern: string, lowPattern: string, patternPos: number, word: string, lowWord: string, wordPos: number, firstMatchCanBeWeak: boolean): FuzzyScore | undefined;
-
-// @internal (undocumented)
-export type FuzzyScorer = (pattern: string, lowPattern: string, patternPos: number, word: string, lowWord: string, wordPos: number, firstMatchCanBeWeak: boolean) => FuzzyScore | undefined;
-
 // @public
 export class GenericUiEvent extends BeUiEvent<GenericUiEventArgs> {
 }
@@ -1182,7 +416,7 @@ export interface GenericUiEventArgs {
     uiComponentId: string;
 }
 
-// @internal
+// @internal @deprecated
 export const getClassName: (obj: any) => string;
 
 // @public
@@ -1216,21 +450,16 @@ export interface IconListEditorParams extends BasePropertyEditorParams {
     type: PropertyEditorParamTypes.IconListData;
 }
 
-// @public
+// @public @deprecated
 export class IconSpecUtilities {
     // @deprecated
-    static createSvgIconSpec(svgSrc: string): string;
     static createWebComponentIconSpec(srcString: string): string;
     // @deprecated
-    static getSvgSource(iconSpec: string): string | undefined;
     static getWebComponentSource(iconSpec: string): string | undefined;
     static readonly SVG_PREFIX = "svg:";
     // (undocumented)
     static readonly WEB_COMPONENT_PREFIX = "webSvg:";
 }
-
-// @internal
-export type IFilter = (word: string, wordToMatchAgainst: string) => IMatch[] | null;
 
 // @public
 export interface ImageCheckBoxParams extends BasePropertyEditorParams {
@@ -1242,7 +471,7 @@ export interface ImageCheckBoxParams extends BasePropertyEditorParams {
     type: PropertyEditorParamTypes.CheckBoxImages;
 }
 
-// @public
+// @public @deprecated
 export interface IMatch {
     // (undocumented)
     end: number;
@@ -1259,18 +488,6 @@ export interface InputEditorSizeParams extends BasePropertyEditorParams {
 }
 
 // @public @deprecated
-export const isAbstractStatusBarActionItem: (item: CommonStatusBarItem) => item is AbstractStatusBarActionItem;
-
-// @public @deprecated
-export const isAbstractStatusBarCustomItem: (item: CommonStatusBarItem) => item is AbstractStatusBarCustomItem;
-
-// @public @deprecated
-export const isAbstractStatusBarLabelItem: (item: CommonStatusBarItem) => item is AbstractStatusBarLabelItem;
-
-// @public @deprecated
-export const isActionItem: (item: BackstageItem) => item is BackstageActionItem;
-
-// @public
 export function isArrowKey(key: string): boolean;
 
 // @public
@@ -1288,31 +505,16 @@ export const isIconListEditorParams: (item: BasePropertyEditorParams) => item is
 // @public
 export const isInputEditorSizeParams: (item: BasePropertyEditorParams) => item is InputEditorSizeParams;
 
-// @alpha
-export function isLetter(char: string): boolean;
-
-// @internal (undocumented)
-export function isLowerAsciiLetter(code: number): boolean;
-
-// @internal (undocumented)
-export function isPatternInWord(patternLow: string, patternPos: number, patternLen: number, wordLow: string, wordPos: number, wordLen: number): boolean;
-
-// @public @deprecated
-export const isStageLauncher: (item: BackstageItem) => item is BackstageStageLauncher;
-
 // @public
 export const isSuppressLabelEditorParams: (item: BasePropertyEditorParams) => item is SuppressLabelEditorParams;
 
-// @internal (undocumented)
-export function isUpperAsciiLetter(code: number): boolean;
-
-// @public
+// @public @deprecated
 export interface LayoutFragmentProps {
     horizontalSplit?: LayoutHorizontalSplitProps;
     verticalSplit?: LayoutVerticalSplitProps;
 }
 
-// @public
+// @public @deprecated
 export interface LayoutHorizontalSplitProps extends LayoutSplitPropsBase {
     bottom: LayoutFragmentProps | number;
     minSizeBottom?: number;
@@ -1320,14 +522,14 @@ export interface LayoutHorizontalSplitProps extends LayoutSplitPropsBase {
     top: LayoutFragmentProps | number;
 }
 
-// @public
+// @public @deprecated
 export interface LayoutSplitPropsBase {
     id: string;
     lock?: boolean;
     percentage: number;
 }
 
-// @public
+// @public @deprecated
 export interface LayoutVerticalSplitProps extends LayoutSplitPropsBase {
     left: LayoutFragmentProps | number;
     minSizeLeft?: number;
@@ -1344,31 +546,7 @@ export interface LinkElementsInfo {
     onClick: (text: string) => void;
 }
 
-// @internal
-export const loggerCategory: (obj: any) => string;
-
-// @internal
-export function matchesCamelCase(word: string, camelCaseWord: string): IMatch[] | null;
-
-// @internal (undocumented)
-export function matchesContiguousSubString(word: string, wordToMatchAgainst: string): IMatch[] | null;
-
-// @internal
-export function matchesFuzzy(word: string, wordToMatchAgainst: string, enableSeparateSubstringMatching?: boolean): IMatch[] | null;
-
-// @internal
-export function matchesFuzzy2(pattern: string, word: string): IMatch[] | null;
-
-// @internal (undocumented)
-export const matchesPrefix: IFilter;
-
-// @internal (undocumented)
-export const matchesStrictPrefix: IFilter;
-
-// @internal
-export function matchesSubString(word: string, wordToMatchAgainst: string): IMatch[] | null;
-
-// @internal
+// @internal @deprecated
 export function matchesWords(word: string, target: string, contiguous?: boolean): IMatch[] | null;
 
 // @public
@@ -1416,18 +594,15 @@ export type OnNumberCommitFunc = (value: number) => void;
 // @public
 export type OnValueCommitFunc = (value: Primitives.Value) => void;
 
-// @internal (undocumented)
-export function or(...filter: IFilter[]): IFilter;
-
 // @public
 export interface ParseResults {
     // (undocumented)
     parseError?: string;
     // (undocumented)
-    value?: string | number | boolean | {} | string[] | Date | [] | undefined;
+    value?: string | number | boolean | object | string[] | Date | [] | undefined;
 }
 
-// @public
+// @public @deprecated
 export interface PointProps {
     // (undocumented)
     readonly x: number;
@@ -1437,7 +612,7 @@ export interface PointProps {
 
 // @public
 export namespace Primitives {
-    export type Boolean = boolean | string | {} | [];
+    export type Boolean = boolean | string | object | [];
     export interface Composite {
         // (undocumented)
         parts: CompositePart[];
@@ -1484,6 +659,7 @@ export namespace Primitives {
 export interface PrimitiveValue extends BasePropertyValue {
     // (undocumented)
     displayValue?: string;
+    roundingError?: number;
     // (undocumented)
     value?: Primitives.Value;
     // (undocumented)
@@ -1616,11 +792,6 @@ export enum PropertyValueFormat {
     Struct = 2
 }
 
-// @public @deprecated
-export interface ProvidedItem {
-    readonly providerId?: string;
-}
-
 // @public
 export interface RangeEditorParams extends BasePropertyEditorParams {
     maximum?: number;
@@ -1678,7 +849,7 @@ export interface SliderEditorParams extends BasePropertyEditorParams {
     type: PropertyEditorParamTypes.Slider;
 }
 
-// @public
+// @public @deprecated
 export enum SpecialKey {
     // (undocumented)
     Add = "Add",
@@ -1727,48 +898,6 @@ export enum SpecialKey {
 }
 
 // @public @deprecated
-export enum StagePanelLocation {
-    // (undocumented)
-    Bottom = 105,
-    // @deprecated (undocumented)
-    BottomMost = 106,
-    // (undocumented)
-    Left = 103,
-    // (undocumented)
-    Right = 104,
-    // (undocumented)
-    Top = 101,
-    // @deprecated (undocumented)
-    TopMost = 102
-}
-
-// @public @deprecated
-export enum StagePanelSection {
-    // (undocumented)
-    End = 2,
-    // @deprecated (undocumented)
-    Middle = 1,
-    // (undocumented)
-    Start = 0
-}
-
-// @public @deprecated
-export enum StageUsage {
-    // (undocumented)
-    Edit = "Edit",
-    // (undocumented)
-    General = "General",
-    // (undocumented)
-    Private = "Private",
-    // (undocumented)
-    Redline = "Redline",
-    // (undocumented)
-    Settings = "Settings",
-    // (undocumented)
-    ViewOnly = "ViewOnly"
-}
-
-// @public
 export class StandardContentLayouts {
     // (undocumented)
     static readonly availableLayouts: ContentLayoutProps[];
@@ -1827,9 +956,9 @@ export enum StandardTypeNames {
     // (undocumented)
     Bool = "bool",
     // (undocumented)
-    Boolean = "boolean",
+    Boolean = "boolean",// locale specific
     // (undocumented)
-    Composite = "composite",
+    Composite = "composite",// locale specific
     // (undocumented)
     DateTime = "dateTime",
     // (undocumented)
@@ -1864,53 +993,6 @@ export enum StandardTypeNames {
     Text = "text",
     // (undocumented)
     URL = "url"
-}
-
-// @internal (undocumented)
-export function startsWithIgnoreCase(str: string, candidate: string): boolean;
-
-// @public @deprecated
-export type StatusBarItemId = CommonStatusBarItem["id"];
-
-// @internal
-export interface StatusBarItemsChangedArgs {
-    // (undocumented)
-    readonly items: ReadonlyArray<CommonStatusBarItem>;
-}
-
-// @internal
-export class StatusBarItemsManager {
-    constructor(items?: ReadonlyArray<CommonStatusBarItem>);
-    // (undocumented)
-    add(itemOrItems: CommonStatusBarItem | ReadonlyArray<CommonStatusBarItem>): void;
-    // (undocumented)
-    static getSyncIdsOfInterest(items: readonly CommonStatusBarItem[]): string[];
-    get items(): ReadonlyArray<CommonStatusBarItem>;
-    set items(items: ReadonlyArray<CommonStatusBarItem>);
-    loadItems(items: ReadonlyArray<CommonStatusBarItem>): void;
-    readonly onItemsChanged: BeEvent<(args: StatusBarItemsChangedArgs) => void>;
-    // (undocumented)
-    refreshAffectedItems(eventIds: Set<string>): void;
-    remove(itemIdOrItemIds: StatusBarItemId | ReadonlyArray<StatusBarItemId>): void;
-    // (undocumented)
-    removeAll(): void;
-}
-
-// @public @deprecated
-export enum StatusBarLabelSide {
-    Left = 0,
-    Right = 1
-}
-
-// @public @deprecated
-export enum StatusBarSection {
-    Center = 1,
-    Context = 3,
-    Left = 0,
-    Message = 0,
-    Right = 2,
-    Selection = 2,
-    Stage = 1
 }
 
 // @public
@@ -1956,7 +1038,7 @@ export enum TimeDisplay {
 }
 
 // @public
-export interface ToolbarItem extends ProvidedItem {
+export interface ToolbarItem {
     readonly applicationData?: any;
     readonly badgeType?: BadgeType;
     readonly description?: string | ConditionalStringValue;
@@ -1969,37 +1051,7 @@ export interface ToolbarItem extends ProvidedItem {
     readonly isPressed?: boolean;
     readonly itemPriority: number;
     readonly parentToolGroupId?: string;
-}
-
-// @public @deprecated
-export type ToolbarItemId = CommonToolbarItem["id"];
-
-// @internal
-export interface ToolbarItemsChangedArgs {
-    // (undocumented)
-    readonly items: ReadonlyArray<CommonToolbarItem>;
-}
-
-// @internal
-export class ToolbarItemsManager {
-    constructor(items?: ReadonlyArray<CommonToolbarItem>);
-    // (undocumented)
-    add(itemOrItems: CommonToolbarItem | ReadonlyArray<CommonToolbarItem>): void;
-    // (undocumented)
-    static getSyncIdsOfInterest(items: readonly CommonToolbarItem[]): string[];
-    get items(): ReadonlyArray<CommonToolbarItem>;
-    set items(items: ReadonlyArray<CommonToolbarItem>);
-    // (undocumented)
-    protected _items: ReadonlyArray<CommonToolbarItem>;
-    loadItems(items: ReadonlyArray<CommonToolbarItem>): void;
-    readonly onItemsChanged: BeEvent<(args: ToolbarItemsChangedArgs) => void>;
-    // (undocumented)
-    refreshAffectedItems(eventIds: Set<string>): void;
-    remove(itemIdOrItemIds: ToolbarItemId | ReadonlyArray<ToolbarItemId>): void;
-    // (undocumented)
-    removeAll(): void;
-    // (undocumented)
-    setActiveToolId(toolId: string): void;
+    readonly providerId?: string;
 }
 
 // @public
@@ -2011,24 +1063,13 @@ export class ToolbarItemUtilities {
     static isGroupButton(item: CommonToolbarItem): item is GroupButton;
 }
 
-// @public @deprecated
-export enum ToolbarOrientation {
-    Horizontal = 0,
-    Vertical = 1
-}
-
-// @public @deprecated
-export enum ToolbarUsage {
-    ContentManipulation = 0,
-    ViewNavigation = 1
-}
-
 // @public
 export class UiAdmin {
     closeDialog(_dialogId: string): boolean;
     closeToolSettingsPopup(): boolean;
-    createXAndY(x: number, y: number): PointProps;
-    get cursorPosition(): PointProps;
+    // @deprecated
+    createXAndY(x: number, y: number): XAndY;
+    get cursorPosition(): XAndY;
     // (undocumented)
     get featureFlags(): UiFlags;
     hideCalculator(): boolean;
@@ -2045,20 +1086,20 @@ export class UiAdmin {
     // @internal (undocumented)
     onInitialized(): void;
     openDialog(_uiDataProvider: DialogLayoutDataProvider, _title: string, _isModal: boolean, _id: string, _optionalProps?: DialogProps): boolean;
-    openToolSettingsPopup(_dataProvider: UiDataProvider, _location: PointProps, _offset: PointProps, _onCancel: OnCancelFunc, _relativePosition?: RelativePosition, _anchorElement?: HTMLElement): boolean;
+    openToolSettingsPopup(_dataProvider: UiDataProvider, _location: XAndY, _offset: XAndY, _onCancel: OnCancelFunc, _relativePosition?: RelativePosition, _anchorElement?: HTMLElement): boolean;
     static sendUiEvent(args: GenericUiEventArgs): void;
     setFocusToHome(): void;
-    showAngleEditor(_initialValue: number, _location: PointProps, _onCommit: OnNumberCommitFunc, _onCancel: OnCancelFunc, _htmlElement?: HTMLElement): boolean;
-    showCalculator(_initialValue: number, _resultIcon: string, _location: PointProps, _onCommit: OnNumberCommitFunc, _onCancel: OnCancelFunc, _htmlElement?: HTMLElement): boolean;
-    showCard(_content: HTMLElement, _title: string | PropertyRecord | undefined, _toolbarProps: AbstractToolbarProps | undefined, _location: PointProps, _offset: PointProps, _onItemExecuted: OnItemExecutedFunc, _onCancel: OnCancelFunc, _relativePosition?: RelativePosition, _anchorElement?: HTMLElement): boolean;
-    showContextMenu(_menuItemsProps: AbstractMenuItemProps[], _location: PointProps, _htmlElement?: HTMLElement): boolean;
-    showHeightEditor(_initialValue: number, _location: PointProps, _onCommit: OnNumberCommitFunc, _onCancel: OnCancelFunc, _htmlElement?: HTMLElement): boolean;
-    showHTMLElement(_displayElement: HTMLElement, _location: PointProps, _offset: PointProps, _onCancel: OnCancelFunc, _relativePosition?: RelativePosition, _anchorElement?: HTMLElement): boolean;
-    showInputEditor(_initialValue: Primitives.Value, _propertyDescription: PropertyDescription, _location: PointProps, _onCommit: OnValueCommitFunc, _onCancel: OnCancelFunc, _htmlElement?: HTMLElement): boolean;
+    showAngleEditor(_initialValue: number, _location: XAndY, _onCommit: OnNumberCommitFunc, _onCancel: OnCancelFunc, _htmlElement?: HTMLElement): boolean;
+    showCalculator(_initialValue: number, _resultIcon: string, _location: XAndY, _onCommit: OnNumberCommitFunc, _onCancel: OnCancelFunc, _htmlElement?: HTMLElement): boolean;
+    showCard(_content: HTMLElement, _title: string | PropertyRecord | undefined, _toolbarProps: AbstractToolbarProps | undefined, _location: XAndY, _offset: XAndY, _onItemExecuted: OnItemExecutedFunc, _onCancel: OnCancelFunc, _relativePosition?: RelativePosition, _anchorElement?: HTMLElement): boolean;
+    showContextMenu(_menuItemsProps: AbstractMenuItemProps[], _location: XAndY, _htmlElement?: HTMLElement): boolean;
+    showHeightEditor(_initialValue: number, _location: XAndY, _onCommit: OnNumberCommitFunc, _onCancel: OnCancelFunc, _htmlElement?: HTMLElement): boolean;
+    showHTMLElement(_displayElement: HTMLElement, _location: XAndY, _offset: XAndY, _onCancel: OnCancelFunc, _relativePosition?: RelativePosition, _anchorElement?: HTMLElement): boolean;
+    showInputEditor(_initialValue: Primitives.Value, _propertyDescription: PropertyDescription, _location: XAndY, _onCommit: OnValueCommitFunc, _onCancel: OnCancelFunc, _htmlElement?: HTMLElement): boolean;
     showKeyinPalette(_htmlElement?: HTMLElement): boolean;
-    showLengthEditor(_initialValue: number, _location: PointProps, _onCommit: OnNumberCommitFunc, _onCancel: OnCancelFunc, _htmlElement?: HTMLElement): boolean;
-    showMenuButton(_id: string, _menuItemsProps: AbstractMenuItemProps[], _location: PointProps, _htmlElement?: HTMLElement): boolean;
-    showToolbar(_toolbarProps: AbstractToolbarProps, _location: PointProps, _offset: PointProps, _onItemExecuted: OnItemExecutedFunc, _onCancel: OnCancelFunc, _relativePosition?: RelativePosition, _htmlElement?: HTMLElement): boolean;
+    showLengthEditor(_initialValue: number, _location: XAndY, _onCommit: OnNumberCommitFunc, _onCancel: OnCancelFunc, _htmlElement?: HTMLElement): boolean;
+    showMenuButton(_id: string, _menuItemsProps: AbstractMenuItemProps[], _location: XAndY, _htmlElement?: HTMLElement): boolean;
+    showToolbar(_toolbarProps: AbstractToolbarProps, _location: XAndY, _offset: XAndY, _onItemExecuted: OnItemExecutedFunc, _onCancel: OnCancelFunc, _relativePosition?: RelativePosition, _htmlElement?: HTMLElement): boolean;
     // (undocumented)
     updateFeatureFlags(uiFlags: UiFlags): void;
 }
@@ -2076,18 +1117,18 @@ export abstract class UiDataProvider {
     validateProperty(_item: DialogPropertyItem): PropertyChangeResult;
 }
 
-// @public
+// @public @deprecated
 export class UiError extends BentleyError {
     constructor(category: string, message: string, errorNumber?: number, getMetaData?: GetMetaDataFunction);
     // (undocumented)
     category: string;
 }
 
-// @public
+// @public @deprecated
 export class UiEvent<TEventArgs> extends BeUiEvent<TEventArgs> {
 }
 
-// @public
+// @public @deprecated
 export class UiEventDispatcher {
     constructor();
     checkForAdditionalIds(): void;
@@ -2105,52 +1146,6 @@ export class UiEventDispatcher {
 // @public
 export interface UiFlags {
     allowKeyinPalette?: boolean;
-}
-
-// @public @deprecated
-export type UiItemProviderOverrides = MarkRequired<AllowedUiItemProviderOverrides, "providerId" | "stageUsages"> | MarkRequired<AllowedUiItemProviderOverrides, "providerId" | "stageIds"> | // eslint-disable-line @typescript-eslint/indent
-MarkRequired<AllowedUiItemProviderOverrides, "stageIds"> | // eslint-disable-line @typescript-eslint/indent
-MarkRequired<AllowedUiItemProviderOverrides, "stageUsages"> | // eslint-disable-line @typescript-eslint/indent
-MarkRequired<AllowedUiItemProviderOverrides, "providerId" | "stageUsages" | "stageIds">;
-
-// @public @deprecated
-export interface UiItemProviderRegisteredEventArgs {
-    // (undocumented)
-    providerId: string;
-}
-
-// @public @deprecated
-export enum UiItemsApplicationAction {
-    Allow = 0,
-    Disallow = 1,
-    Update = 2
-}
-
-// @public @deprecated
-export class UiItemsManager {
-    // @internal
-    static clearAllProviders(): void;
-    static getBackstageItems(): BackstageItem[];
-    static getStatusBarItems(stageId: string, stageUsage: string, stageAppData?: any): CommonStatusBarItem[];
-    static getToolbarButtonItems(stageId: string, stageUsage: string, toolbarUsage: ToolbarUsage, toolbarOrientation: ToolbarOrientation, stageAppData?: any): CommonToolbarItem[];
-    static getUiItemsProvider(providerId: string): UiItemsProvider | undefined;
-    static getWidgets(stageId: string, stageUsage: string, location: StagePanelLocation, section?: StagePanelSection, zoneLocation?: AbstractZoneLocation, stageAppData?: any): ReadonlyArray<AbstractWidgetProps>;
-    static get hasRegisteredProviders(): boolean;
-    static readonly onUiProviderRegisteredEvent: BeEvent<(ev: UiItemProviderRegisteredEventArgs) => void>;
-    static register(uiProvider: UiItemsProvider, overrides?: UiItemProviderOverrides): void;
-    static get registeredProviderIds(): string[];
-    static unregister(uiProviderId: string): void;
-}
-
-// @public @deprecated
-export interface UiItemsProvider {
-    readonly id: string;
-    onUnregister?: () => void;
-    provideBackstageItems?: () => BackstageItem[];
-    provideStatusBarItems?: (stageId: string, stageUsage: string, stageAppData?: any) => CommonStatusBarItem[];
-    provideToolbarButtonItems?: (stageId: string, stageUsage: string, toolbarUsage: ToolbarUsage, toolbarOrientation: ToolbarOrientation, stageAppData?: any) => CommonToolbarItem[];
-    provideWidgets?: (stageId: string, stageUsage: string, location: StagePanelLocation, section?: StagePanelSection, // eslint-disable-line deprecation/deprecation
-    zoneLocation?: AbstractZoneLocation, stageAppData?: any) => ReadonlyArray<AbstractWidgetProps>;
 }
 
 // @public (undocumented)
@@ -2173,23 +1168,14 @@ export abstract class UiLayoutDataProvider extends UiDataProvider {
     supplyDialogItems(): DialogItem[] | undefined;
 }
 
-// @public
-export class UiSyncEvent extends UiEvent<UiSyncEventArgs> {
-}
-
-// @public
-export interface UiSyncEventArgs {
-    // (undocumented)
-    eventIds: Set<string>;
+// @public @deprecated
+export class UiSyncEvent extends BeUiEvent<UiSyncEventArgs> {
 }
 
 // @public @deprecated
-export enum WidgetState {
-    Closed = 1,
-    Floating = 3,
-    Hidden = 2,
-    Open = 0,
-    Unloaded = 4
+export interface UiSyncEventArgs {
+    // (undocumented)
+    eventIds: Set<string>;
 }
 
 // (No @packageDocumentation comment for this package)

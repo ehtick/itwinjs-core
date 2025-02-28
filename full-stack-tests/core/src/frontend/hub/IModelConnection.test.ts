@@ -3,8 +3,8 @@
 * See LICENSE.md in the project root for license terms and full copyright notice.
 *--------------------------------------------------------------------------------------------*/
 import { assert, expect } from "chai";
-import { Id64, Logger, LogLevel } from "@itwin/core-bentley";
-import { BisCodeSpec, CodeSpec, IModelVersion, QueryBinder, QueryRowFormat, RelatedElement } from "@itwin/core-common";
+import { Id64, Logger, LogLevel, ProcessDetector } from "@itwin/core-bentley";
+import { BisCodeSpec, IModelVersion, QueryBinder, QueryRowFormat, RelatedElement } from "@itwin/core-common";
 import {
   CategorySelectorState, CheckpointConnection, DisplayStyle2dState, DisplayStyle3dState, DrawingViewState, IModelApp, IModelConnection,
   ModelSelectorState, OrthographicViewState, ViewState,
@@ -73,16 +73,16 @@ describe("IModelConnection (#integration)", () => {
     assert.equal(modelProps[0].id, iModel.models.repositoryModelId);
     assert.equal(iModel.models.repositoryModelId, modelProps[0].id);
 
-    const rows: any[] = await executeQuery(iModel, "SELECT CodeValue AS code FROM BisCore.Category LIMIT 20");
+    const rows = await executeQuery(iModel, "SELECT CodeValue AS code FROM BisCore.Category LIMIT 20");
     assert.isAtLeast(rows.length, 1);
     assert.exists(rows[0].code);
     assert.equal(rows.length, queryElementIds.size);
 
-    const codeSpecByName: CodeSpec = await iModel.codeSpecs.getByName(BisCodeSpec.spatialCategory);
+    const codeSpecByName = await iModel.codeSpecs.getByName(BisCodeSpec.spatialCategory);
     assert.exists(codeSpecByName);
-    const codeSpecById: CodeSpec = await iModel.codeSpecs.getById(codeSpecByName.id);
+    const codeSpecById = await iModel.codeSpecs.getById(codeSpecByName.id);
     assert.exists(codeSpecById);
-    const codeSpecByNewId: CodeSpec = await iModel.codeSpecs.getById(Id64.fromJSON(codeSpecByName.id));
+    const codeSpecByNewId = await iModel.codeSpecs.getById(Id64.fromJSON(codeSpecByName.id));
     assert.exists(codeSpecByNewId);
 
     let viewDefinitions = await iModel.views.getViewList({ from: "BisCore.OrthographicViewDefinition" });
@@ -109,7 +109,6 @@ describe("IModelConnection (#integration)", () => {
     assert.instanceOf(viewState.categorySelector, CategorySelectorState);
     assert.instanceOf(viewState.displayStyle, DisplayStyle2dState);
     assert.exists(iModel.projectExtents);
-
   });
 
   it("should be able to open an IModel with no versions", async () => {
@@ -117,40 +116,44 @@ describe("IModelConnection (#integration)", () => {
     const iModelId = await TestUtility.queryIModelIdByName(iTwinId, TestUtility.testIModelNames.noVersions);
     const noVersionsIModel = await CheckpointConnection.openRemote(iTwinId, iModelId);
     assert.isNotNull(noVersionsIModel);
+    await noVersionsIModel.close();
 
     const noVersionsIModel2 = await CheckpointConnection.openRemote(iTwinId, iModelId);
     assert.isNotNull(noVersionsIModel2);
+    await noVersionsIModel2.close();
 
     const noVersionsIModel3 = await CheckpointConnection.openRemote(iTwinId, iModelId, IModelVersion.asOfChangeSet(""));
     assert.isNotNull(noVersionsIModel3);
+    await noVersionsIModel3.close();
   });
 
-  it("should be able to open the same IModel many times", async () => {
-    const iTwinId = await TestUtility.queryITwinIdByName(TestUtility.testITwinName);
-    const iModelId = await TestUtility.queryIModelIdByName(iTwinId, "ReadOnlyTest");
+  // this test isn't correct under IPC. It shouldn't really be true for RPC, but i guess this attempts to simulate
+  // multiple frontend processes by using a single process. I guess it works because "close" doesn't really close the file for web backends.
+  // I think it should be eliminated.
+  if (!ProcessDetector.isElectronAppFrontend) {
+    it("should be able to open the same IModel many times", async () => {
+      const iTwinId = await TestUtility.queryITwinIdByName(TestUtility.testITwinName);
+      const iModelId = await TestUtility.queryIModelIdByName(iTwinId, "ReadOnlyTest");
 
-    const readOnlyTest = await CheckpointConnection.openRemote(iTwinId, iModelId, IModelVersion.latest());
-    assert.isNotNull(readOnlyTest);
+      const readOnlyTest = await CheckpointConnection.openRemote(iTwinId, iModelId, IModelVersion.latest());
+      assert.isNotNull(readOnlyTest);
 
-    const promises = new Array<Promise<void>>();
-    let n = 0;
-    while (++n < 25) {
-      const promise = CheckpointConnection.openRemote(iTwinId, iModelId)
-        .then((readOnlyTest2: IModelConnection) => {
-          assert.isNotNull(readOnlyTest2);
-          assert.isTrue(readOnlyTest.key === readOnlyTest2.key);
-        });
-      promises.push(promise);
-    }
+      const promises = new Array<Promise<void>>();
+      let n = 0;
+      while (++n < 25) {
+        const promise = CheckpointConnection.openRemote(iTwinId, iModelId)
+          .then((readOnlyTest2: IModelConnection) => {
+            assert.isNotNull(readOnlyTest2);
+            assert.isTrue(readOnlyTest.key === readOnlyTest2.key);
+          });
+        promises.push(promise);
+      }
 
-    await Promise.all(promises);
-  });
+      await Promise.all(promises);
+    });
+  }
 
   it("should be able to request tiles from an IModelConnection", async () => {
-    const testITwinId = await TestUtility.queryITwinIdByName(TestUtility.testITwinName);
-    const testIModelId = await TestUtility.queryIModelIdByName(testITwinId, "ConnectionReadTest");
-    iModel = await CheckpointConnection.openRemote(testITwinId, testIModelId);
-
     const modelProps = await iModel.models.queryProps({ from: "BisCore.PhysicalModel" });
     expect(modelProps.length).to.equal(1);
 

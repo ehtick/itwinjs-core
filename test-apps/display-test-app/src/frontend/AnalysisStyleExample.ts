@@ -21,6 +21,8 @@ interface AnalysisMesh {
   readonly styles: Map<string, AnalysisStyle | undefined>;
 }
 
+const seaMountain = [[0.0, 0, 255, 0, 0], [0.2, 72, 96, 160, 0x3f], [0.4, 152, 96, 160, 0x7f], [0.6, 128, 32, 104, 0xbf], [0.7, 148, 180, 128, 0xff], [1.0, 240, 240, 240, 0]];
+
 function populateAnalysisStyles(mesh: AnalysisMesh, displacementScale: number): void {
   const auxdata = mesh.polyface.data.auxData;
   if (!auxdata)
@@ -34,8 +36,11 @@ function populateAnalysisStyles(mesh: AnalysisMesh, displacementScale: number): 
     const displacementChannel = auxdata.channels.find((x) => x.inputName === channel.inputName && x.dataType === AuxChannelDataType.Vector);
     const thematicSettings: ThematicGradientSettingsProps = {};
     if (channel.name.endsWith("Height")) {
-      thematicSettings.colorScheme = ThematicGradientColorScheme.SeaMountain;
       thematicSettings.mode = ThematicGradientMode.SteppedWithDelimiter;
+      thematicSettings.colorScheme = ThematicGradientColorScheme.Custom;
+      thematicSettings.customKeys = seaMountain.map((x) => {
+        return { value: x[0], color: ColorDef.computeTbgrFromComponents(x[1], x[2], x[3], x[4]) };
+      });
     }
 
     assert(undefined !== channel.scalarRange);
@@ -61,7 +66,7 @@ function populateAnalysisStyles(mesh: AnalysisMesh, displacementScale: number): 
 async function createCantilever(): Promise<Polyface> {
   const { cantileverJsonString } = await import("./Cantilever");
   const polyface = IModelJson.Reader.parse(
-    JSON.parse(cantileverJsonString)
+    JSON.parse(cantileverJsonString),
   ) as Polyface;
   assert(polyface instanceof Polyface);
 
@@ -191,7 +196,7 @@ class AnalysisDecorator {
     this.mesh = mesh;
     this._id = viewport.iModel.transientIds.getNext();
 
-    const removeDisposalListener = viewport.onDisposed.addOnce(() => this.dispose());
+    const removeDisposalListener = viewport.onDisposed.addOnce(() => this[Symbol.dispose]());
     const removeAnalysisStyleListener = viewport.addOnAnalysisStyleChangedListener(() => {
       this._graphic?.disposeGraphic();
       this._graphic = undefined;
@@ -205,7 +210,7 @@ class AnalysisDecorator {
     IModelApp.viewManager.addDecorator(this);
   }
 
-  public dispose(): void {
+  public [Symbol.dispose](): void {
     if (!this._dispose) {
       assert(undefined === this._graphic);
       return;
@@ -252,7 +257,7 @@ export async function openAnalysisStyleExample(viewer: Viewer): Promise<void> {
   meshPicker.onchange = () => {
     const type = meshPicker.value as AnalysisMeshType;
     if (type !== decorator.mesh.type) {
-      decorator.dispose();
+      decorator[Symbol.dispose]();
       decorator = new AnalysisDecorator(viewer.viewport, meshes[meshPicker.selectedIndex]);
       populateStylePicker();
     }

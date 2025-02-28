@@ -2,7 +2,7 @@
 * Copyright (c) Bentley Systems, Incorporated. All rights reserved.
 * See LICENSE.md in the project root for license terms and full copyright notice.
 *--------------------------------------------------------------------------------------------*/
-import { assert, expect } from "chai";
+import { assert, describe, expect, it } from "vitest";
 
 import { AxisOrder } from "../../Geometry";
 import { Matrix3d } from "../../geometry3d/Matrix3d";
@@ -11,6 +11,7 @@ import { Point3d, Vector3d } from "../../geometry3d/Point3dVector3d";
 import { Transform } from "../../geometry3d/Transform";
 import { Sample } from "../../serialization/GeometrySamples";
 import { Checker } from "../Checker";
+import { GeometryCoreTestIO } from "../GeometryCoreTestIO";
 
 describe("Transform.Inverse", () => {
   it("Transform.Inverse", () => {
@@ -58,7 +59,7 @@ describe("Transform.Inverse", () => {
         ck.testCoordinate(xyz.y, point2dB[i].y);
       }
     }
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
 });
 
@@ -101,7 +102,7 @@ describe("Transform.InitFromRange", () => {
     ck.testPoint3d(worldToNpc.origin as Point3d, Point3d.create(-xyz0.x, -xyz0.y, -xyz0.z));
     ck.testTrue(npcToWorld.matrix.isIdentity);
     ck.testPoint3d(npcToWorld.origin as Point3d, xyz0);
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
 });
 
@@ -125,13 +126,13 @@ describe("Transform.CreateOriginAndMatrix", () => {
           transformA.matrix.columnX(),
           transformA.matrix.columnY(),
           transformA.matrix.columnZ(),
-          transformB
+          transformB,
         );
         const transformB2 = Transform.createOriginAndMatrixColumns(
           transformA.getOrigin(),
           transformA.matrix.columnX(),
           transformA.matrix.columnY(),
-          transformA.matrix.columnZ()
+          transformA.matrix.columnZ(),
         );
         ck.testTrue(transformB === transformB1, "input result and returned result are the same");
         ck.testTransform(transformA, transformB1);
@@ -142,7 +143,7 @@ describe("Transform.CreateOriginAndMatrix", () => {
         ck.testTrue(transformA.isIdentity);
       }
     }
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
 });
 
@@ -158,14 +159,14 @@ describe("Transform.Singular", () => {
       const transform = Transform.createRefs(origin, matrix);
       ck.testUndefined(
         transform.inverse(),
-        "Inverse of a transform is undefined if the transform has singular matrix part"
+        "Inverse of a transform is undefined if the transform has singular matrix part",
       );
       const pointB = transform.multiplyInverseXYZ(pointA.x, pointA.y, pointA.z);
       ck.testUndefined(pointB);
       const pointC = transform.multiplyInversePoint3dArray([]);
       ck.testUndefined(pointC);
     }
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
 });
 
@@ -175,7 +176,7 @@ describe("Transform.MultiplyTransformMatrix3d", () => {
     const points = Sample.createPoint3dLattice(-2, 1, 2);
     const transformA = Transform.createOriginAndMatrix(
       Point3d.create(1, 2, 3),
-      Matrix3d.createRowValues(3, 4, 5, 6, 7, 8, 9, 10, 11)
+      Matrix3d.createRowValues(3, 4, 5, 6, 7, 8, 9, 10, 11),
     ); // [A a]
     const matrixB = Matrix3d.createRowValues(-2, 3, -1, 6, 2, 4, -2, -3, 5);
     const transformB = Transform.createOriginAndMatrix(undefined, matrixB); // [B 0]
@@ -194,7 +195,7 @@ describe("Transform.MultiplyTransformMatrix3d", () => {
     transformA1.multiplyTransformMatrix3d(matrixB, transformA1); // A1 = [AB a]
     ck.testFalse(transformA.isAlmostEqual(transformA1));
     ck.testTransform(transformA1, transformE);
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
 });
 
@@ -206,7 +207,7 @@ describe("Transform.MultiplyMatrix3dTransform", () => {
     const transformA = Transform.createOriginAndMatrix(undefined, matrixA); // [A 0]
     const transformB = Transform.createOriginAndMatrix(
       Point3d.create(1, 2, 3),
-      Matrix3d.createRowValues(3, 4, 5, 6, 7, 8, 9, 10, 11)
+      Matrix3d.createRowValues(3, 4, 5, 6, 7, 8, 9, 10, 11),
     ); // [B b]
     const transformC = matrixA.multiplyMatrixTransform(transformB); // [AB Ab]
     const transformD = matrixA.multiplyMatrixTransform(transformB, Transform.createIdentity()); // [AB Ab]
@@ -225,7 +226,7 @@ describe("Transform.MultiplyMatrix3dTransform", () => {
     matrixA.multiplyMatrixTransform(transformB1, transformB1); // B1 = [AB Ab]
     ck.testFalse(transformA.isAlmostEqual(transformB1));
     ck.testTransform(transformB1, transformE);
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
 });
 
@@ -242,7 +243,7 @@ describe("Transform.Identity", () => {
     ck.testFalse(myIdentity0 === myIdentity1, "createIdentity makes distinct objects for user identity");
     ck.testFalse(systemIdentity0 === myIdentity0, "system identity object is different then user identity object");
     ck.testFalse(systemIdentity0 === myIdentity1, "system identity object is different then user identity object");
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
 });
 
@@ -273,13 +274,13 @@ describe("Transform.CloneRigid", () => {
     const singularTransformA = Transform.createRowValues(
       1, 2, 4, 0,
       2, 4, 3, 1,
-      3, 6, -10, 1
+      3, 6, -10, 1,
     ); // columns X and Y (or 0 and 1) are dependent so matrix part is singular
     const points = [Point3d.create(1, 2, 3), Point3d.create(3, 2, 9)];
     ck.testFalse(singularTransformA.multiplyInversePoint3dArrayInPlace(points));
     ck.testUndefined(
       singularTransformA.cloneRigid(AxisOrder.XYZ),
-      "cloneRigid fail because column X and Y are dependent"
+      "cloneRigid fail because column X and Y are dependent",
     );
 
     const rigidTransformA = singularTransformA.cloneRigid(AxisOrder.ZXY);
@@ -297,7 +298,7 @@ describe("Transform.CloneRigid", () => {
     const translateA = Transform.createTranslation(shift);
     const translateB = Transform.createOriginAndMatrix(shift, undefined);
     ck.testTransform(translateA, translateB);
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
 });
 
@@ -322,7 +323,7 @@ describe("Transform.CreateRigidFromOriginAndColumns", () => {
 
     }
     ck.testUndefined(Transform.createRigidFromOriginAndColumns(origin, vectorU, vectorU, AxisOrder.XYZ));
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
 });
 
@@ -334,6 +335,7 @@ describe("Transform.GetMatrix", () => {
     ck.testTransform(transform0, transform1);
     const matrix = transform1.getMatrix();
     ck.testMatrix3d(matrix, Matrix3d.identity);
+    expect(ck.getNumErrors()).toBe(0);
   });
 });
 
@@ -346,5 +348,33 @@ describe("Transform.CreateMatrixPickupPutdown", () => {
     const transform = Transform.createMatrixPickupPutdown(matrix, a, b);
     const c = transform.multiplyPoint3d(a);
     ck.testPoint3d(b, c);
+    expect(ck.getNumErrors()).toBe(0);
+  });
+});
+
+describe("Transform.createFlattenAlongVectorToPlane", () => {
+  it("Transform.createFlattenAlongVectorToPlane", () => {
+    const ck = new Checker();
+    const spacePoints = Sample.point3d;
+    for (const planeOrigin of spacePoints) {
+      for (const planeNormal of [Vector3d.create(0, 0, 1), Vector3d.create(2, 3, -1)]) {
+        for (const sweepDirection of ([Vector3d.create(0, 0, 1), Vector3d.create(-2, 3, 1)])) {
+          const transform = Transform.createFlattenAlongVectorToPlane(sweepDirection, planeOrigin, planeNormal);
+          if (ck.testDefined(transform, "expect good transform")) {
+            for (const pointA of spacePoints) {
+              const pointB = transform.multiplyPoint3d(pointA);
+              const dotB = planeNormal.dotProductStartEnd(planeOrigin, pointB);
+              if (!ck.testCoordinate(0.0, dotB, "ProjectedPoint on plane")) {
+                GeometryCoreTestIO.consoleLog({ planeOrigin, planeNormal, sweepDirection, trans: transform.toJSON() });
+                GeometryCoreTestIO.consoleLog({ pointA, pointB });
+                Transform.createFlattenAlongVectorToPlane(sweepDirection, planeOrigin, planeNormal);
+                break;
+              }
+            }
+          }
+        }
+      }
+    }
+    expect(ck.getNumErrors()).toBe(0);
   });
 });

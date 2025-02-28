@@ -8,11 +8,11 @@
 
 import { GuidString, Id64String, IModelStatus, LogLevel, OpenMode } from "@itwin/core-bentley";
 import { Range3dProps, XYZProps } from "@itwin/core-geometry";
-import { OpenBriefcaseProps } from "./BriefcaseTypes";
+import { OpenBriefcaseProps, OpenCheckpointArgs } from "./BriefcaseTypes";
 import { ChangedEntities } from "./ChangedEntities";
 import { ChangesetIndex, ChangesetIndexAndId } from "./ChangesetProps";
 import { GeographicCRSProps } from "./geometry/CoordinateReferenceSystem";
-import { EcefLocationProps, IModelConnectionProps, IModelRpcProps, RootSubjectProps, StandaloneOpenOptions } from "./IModel";
+import { EcefLocationProps, IModelConnectionProps, IModelRpcProps, RootSubjectProps, SnapshotOpenOptions, StandaloneOpenOptions } from "./IModel";
 import { ModelGeometryChangesProps } from "./ModelGeometryChanges";
 
 /** Options for pulling changes into iModel.
@@ -30,7 +30,7 @@ export interface PullChangesOptions {
 /** Get IPC channel name used for reporting progress of pulling changes into iModel.
  * @internal
  */
-export const getPullChangesIpcChannel = (iModelId: string) => `${IpcAppChannel.Functions}.pullChanges-progress-${iModelId}`;
+export const getPullChangesIpcChannel = (iModelId: string) => `${ipcAppChannels.functions}/pullChanges/${iModelId}`;
 
 /** Identifies a list of tile content Ids belonging to a single tile tree.
  * @internal
@@ -55,12 +55,12 @@ export interface ModelIdAndGeometryGuid {
 }
 
 /** @internal */
-export enum IpcAppChannel {
-  Functions = "ipc-app",
-  AppNotify = "ipcApp-notify",
-  Txns = "txns",
-  EditingScope = "editing-scope",
-}
+export const ipcAppChannels = {
+  functions: "itwinjs-core/ipc-app",
+  appNotify: "itwinjs-core/ipcApp-notify",
+  txns: "itwinjs-core/txns",
+  editingScope: "itwinjs-core/editing-scope",
+} as const;
 
 /**
  * Interface implemented by the frontend [NotificationHandler]($common) to be notified of events from IpcApp backend.
@@ -70,17 +70,44 @@ export interface IpcAppNotifications {
   notifyApp: () => void;
 }
 
+/** @internal */
+export interface NotifyEntitiesChangedMetadata {
+  /** Class full name ("Schema:Class") */
+  name: string;
+  /** The indices in [[NotifyEntitiesChangedArgs.meta]] of each of this class's **direct** base classes. */
+  bases: number[];
+}
+
+/** Arguments supplied to [[TxnNotifications.notifyElementsChanged]] and [[TxnNotifications.notifyModelsChanged]].
+ * @internal
+ */
+export interface NotifyEntitiesChangedArgs extends ChangedEntities {
+  /** An array of the same length as [[ChangedEntities.inserted]] (or empty if that array is undefined), containing the index in the [[meta]] array at which the
+   * metadata for each entity's class is located.
+   */
+  insertedMeta: number[];
+  /** See insertedMeta. */
+  updatedMeta: number[];
+  /** See insertedMeta. */
+  deletedMeta: number[];
+
+  /** Metadata describing each unique class of entity in this set of changes, followed by each unique direct or indirect base class of those classes. */
+  meta: NotifyEntitiesChangedMetadata[];
+}
+
 /** Interface implemented by the frontend [NotificationHandler]($common) to be notified of changes to an iModel.
  * @see [TxnManager]($backend) for the source of these events.
  * @see [BriefcaseTxns]($frontend) for the frontend implementation.
  * @internal
  */
 export interface TxnNotifications {
-  notifyElementsChanged: (changes: ChangedEntities) => void;
-  notifyModelsChanged: (changes: ChangedEntities) => void;
+  notifyElementsChanged: (changes: NotifyEntitiesChangedArgs) => void;
+  notifyModelsChanged: (changes: NotifyEntitiesChangedArgs) => void;
   notifyGeometryGuidsChanged: (changes: ModelIdAndGeometryGuid[]) => void;
   notifyCommit: () => void;
   notifyCommitted: (hasPendingTxns: boolean, time: number) => void;
+  notifyReplayExternalTxns: () => void;
+  notifyReplayedExternalTxns: () => void;
   notifyChangesApplied: () => void;
   notifyBeforeUndoRedo: (isUndo: boolean) => void;
   notifyAfterUndoRedo: (isUndo: boolean) => void;
@@ -117,13 +144,19 @@ export interface IpcAppFunctions {
   log: (_timestamp: number, _level: LogLevel, _category: string, _message: string, _metaData?: any) => Promise<void>;
 
   /** see BriefcaseConnection.openFile */
-  openBriefcase: (_args: OpenBriefcaseProps) => Promise<IModelConnectionProps>;
+  openBriefcase: (args: OpenBriefcaseProps) => Promise<IModelConnectionProps>;
   /** see BriefcaseConnection.openStandalone */
-  openStandalone: (_filePath: string, _openMode: OpenMode, _opts?: StandaloneOpenOptions) => Promise<IModelConnectionProps>;
+  openCheckpoint: (args: OpenCheckpointArgs) => Promise<IModelConnectionProps>;
+  /** see BriefcaseConnection.openStandalone */
+  openStandalone: (filePath: string, openMode: OpenMode, opts?: StandaloneOpenOptions) => Promise<IModelConnectionProps>;
+  /** see SnapshotConnection.openFile */
+  openSnapshot: (filePath: string, opts?: SnapshotOpenOptions) => Promise<IModelConnectionProps>;
   /** see BriefcaseConnection.close */
   closeIModel: (key: string) => Promise<void>;
   /** see BriefcaseConnection.saveChanges */
   saveChanges: (key: string, description?: string) => Promise<void>;
+  /** see BriefcaseConnection.abandonChanges */
+  abandonChanges: (key: string) => Promise<void>;
   /** see BriefcaseTxns.hasPendingTxns */
   hasPendingTxns: (key: string) => Promise<boolean>;
   /** see BriefcaseTxns.isUndoPossible */

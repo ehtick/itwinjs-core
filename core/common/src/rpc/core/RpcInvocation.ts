@@ -20,7 +20,7 @@ import { RpcOperation } from "./RpcOperation";
 import { RpcManagedStatus, RpcProtocol, RpcProtocolVersion, RpcRequestFulfillment, SerializedRpcRequest } from "./RpcProtocol";
 import { CURRENT_INVOCATION, RpcRegistry } from "./RpcRegistry";
 
-/* eslint-disable deprecation/deprecation */
+/* eslint-disable @typescript-eslint/no-deprecated */
 
 /** The properties of an RpcActivity.
  * @public
@@ -35,6 +35,8 @@ export interface RpcActivity extends SessionProps {
 
   /** the name of the current rpc method */
   readonly rpcMethod?: string;
+
+  readonly user?: string;
 }
 
 /** Serialized format for sending the request across the RPC layer
@@ -46,6 +48,7 @@ export interface SerializedRpcActivity {
   applicationVersion: string;
   sessionId: string;
   authorization: string;
+  user?: string;
   csrfToken?: { headerName: string, headerValue: string };
 }
 
@@ -152,6 +155,7 @@ export class RpcInvocation {
       applicationId: request.applicationId,
       applicationVersion: request.applicationVersion,
       sessionId: request.sessionId,
+      user: request.user,
       accessToken: request.authorization,
       rpcMethod: request.operation.operationName,
     };
@@ -170,7 +174,7 @@ export class RpcInvocation {
           // this catch block is intentionally placed inside `runActivity` to attach the right logging metadata and use the correct openTelemetry span.
           if (!(error instanceof RpcPendingResponse)) {
             Logger.logError(CommonLoggerCategory.RpcInterfaceBackend, "Error in RPC operation", { error: BentleyError.getErrorProps(error) });
-            Tracing.setAttributes({ error: true });
+            Tracing.recordException(error);
           }
           throw error;
         }));
@@ -216,7 +220,7 @@ export class RpcInvocation {
   private async fulfillResolved(value: any): Promise<RpcRequestFulfillment> {
     this._timeOut = new Date().getTime();
     this.protocol.events.raiseEvent(RpcProtocolEvent.BackendResponseCreated, this);
-    const result = await RpcMarshaling.serialize(this.protocol, value);
+    const result = RpcMarshaling.serialize(this.protocol, value);
     return this.fulfill(result, value);
   }
 
@@ -225,7 +229,7 @@ export class RpcInvocation {
     if (!RpcConfiguration.developmentMode)
       reason.stack = undefined;
 
-    const result = await RpcMarshaling.serialize(this.protocol, reason);
+    const result = RpcMarshaling.serialize(this.protocol, reason);
 
     if (reason instanceof RpcPendingResponse) {
       this._pending = true;
@@ -275,7 +279,7 @@ export class RpcInvocation {
       status: this.protocol.getCode(this.status),
       id: this.request.id,
       interfaceName: (typeof (this.operation) === "undefined") ? "" : this.operation.interfaceDefinition.interfaceName,
-      allowCompression: this.operation?.policy.allowResponseCompression || false,
+      allowCompression: this.operation ? this.operation.policy.allowResponseCompression : true,
     };
 
     this.transformResponseStatus(fulfillment, rawResult);
@@ -285,7 +289,7 @@ export class RpcInvocation {
       if (impl[CURRENT_INVOCATION] === this) {
         impl[CURRENT_INVOCATION] = undefined;
       }
-    } catch (_err) { }
+    } catch { }
 
     return fulfillment;
   }
@@ -320,7 +324,7 @@ export class RpcInvocation {
       fulfillment.rawResult = status;
     }
 
-    if (rawResult instanceof BentleyError) {
+    if (rawResult instanceof Error) {
       fulfillment.status = StatusCategory.for(rawResult).code;
     }
   }

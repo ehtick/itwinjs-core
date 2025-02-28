@@ -1,227 +1,180 @@
-# 3.6.0 Change Notes
+
+# 4.10.0 Change Notes
 
 Table of contents:
 
-- [API support policies](#api-support-policies)
-- [Electron 22 support](#electron-22-support)
-- [Display system](#display-system)
-  - [Point cloud shading](#point-cloud-shading)
-  - [Normal mapping](#normal-mapping)
-  - [Smooth viewport resizing](#smooth-viewport-resizing)
-  - [Pickable view overlays](#pickable-view-overlays)
-  - [Element clipping example](#element-clipping-example)
-  - [Support larger terrain meshes](#support-larger-terrain-meshes)
-- [Geometry](#geometry)
-  - [Query mesh convexity](#query-mesh-convexity)
-- [Write-ahead logging](#write-ahead-logging)
+- [Revert timeline changes](#revert-timeline-changes)
+- [Display](#display)
+  - [Instancing](#instancing)
+  - [Overriding line color](#overriding-line-color)
+  - [Context Reality model visibility](#context-reality-model-visibility)
+  - [Contour Display](#contour-display)
+- [Interactive Tools](#interactive-tools)
+  - [Element Locate](#element-locate)
+  - [Snapping within section drawings](#snapping-within-section-drawings)
 - [Presentation](#presentation)
-  - [Hierarchy levels filtering](#hierarchy-levels-filtering)
-  - [Grouping nodes HiliteSet](#grouping-nodes-hiliteset)
-- [API promotions](#api-promotions)
+  - [Calculated properties specification enhancements](#calculated-properties-specification-enhancements)
+- [Quantity](#quantity)
+- [Node 22 support](#node-22-support)
+- [Electron 33 support](#electron-33-support)
 - [API deprecations](#api-deprecations)
+  - [@itwin/appui-abstract](#itwinappui-abstract)
+  - [@itwin/core-backend](#itwincore-backend)
+  - [@itwin/core-frontend](#itwincore-frontend)
+  - [@itwin/core-quantity](#itwincore-quantity)
+  - [@itwin/presentation-common](#itwinpresentation-common)
 
-## API support policies
+## Revert timeline changes
 
-iTwin.js now documents the [official policies](../learning/api-support-policies.md) defining the level of stability and support afforded to its public APIs and each major release.
+At present, the sole method to reverse a defective changeset is to remove it from the iModel hub, which can lead to numerous side effects. A preferable approach would be to reverse the changeset in the timeline and introduce it as a new changeset. Although this method remains intrusive and necessitates a schema lock, it is safer because it allows for the reversal to restore previous changes, ensuring that nothing is permanently lost from the timeline.
 
-## Electron 22 support
+[BriefcaseDb.revertAndPushChanges]($backend) Allow to push a single changeset that undo all changeset from tip to specified changeset in history.
 
-In addition to already supported Electron versions, iTwin.js now supports [Electron 22](https://www.electronjs.org/blog/electron-22-0).
+Some detail and requirements are as following.
 
-## Display system
+- When invoking the iModel, it must not have any local modifications.
+- The operation is atomic; if it fails, the database will revert to its previous state.
+- The revert operation necessitates a schema lock (an exclusive lock on the iModel) because it does not lock each individual element affected by the revert.
+- If no description is provided after a revert, a default description for the changeset will be created and pushed, which releases the schema lock.
+- Schema changes are not reverted during SchemaSync, or they can be optionally skipped when SchemaSync is not utilized.
 
-### Point cloud shading
+## Display
 
-Point clouds can provide valuable real-world context when visualizing an iTwin, but it can often be difficult to discern individual features within the cloud of points - especially when the point cloud lacks color data. You can now accentuate the depth, shape, and surface of a point cloud using a technique called "eye-dome lighting" that uses the relative depths of the points to compute a lighting effect.
+### Instancing
 
-Point cloud shading is specified by several properties of [RealityModelDisplaySettings.pointCloud]($common), all with names prefixed with `edl` (short for "eye-dome lighting"):
+Some scenarios involve displaying the same basic graphic repeatedly. For example, imagine you are writing a [Decorator]($frontend) that displays stop signs at many intersections along a road network. You might create one [RenderGraphic]($frontend) for each individual stop sign and draw them all, but doing so would waste a lot of memory by duplicating the same geometry many times, and negatively impact your frame rate by invoking many draw calls.
 
-- [PointCloudDisplaySettings.edlMode]($common) enables the effect if set to "on" or "full".
-- [PointCloudDisplaySettings.edlStrength]($common) specifies the intensity of the effect.
-- [PointCloudDisplaySettings.edlRadius]($common) specifies the radius in pixels around each point that should be sampled to detect differences in depth.
-- [PointCloudDisplaySettings.edlFilter]($common) specifies whether to apply a filtering pass to smooth out the effect, when `edlMode` is set to "full".
+WebGL provides [instanced rendering](https://webglfundamentals.org/webgl/lessons/webgl-instanced-drawing.html) to more efficiently support this kind of use case. You can define a single representation of the stop sign graphic, and then tell the renderer to draw it many times at different locations, orientations, and scales. iTwin.js now provides APIs that make it easy for you to create instanced graphics:
 
-Each point cloud in a view can have its own independent EDL settings. You can configure those settings via [ContextRealityModel.displaySettings]($common) for context reality models, and [DisplayStyleSettings.setRealityModelDisplaySettings]($common) for persistent reality models. Adjusting related settings like [PointCloudDisplaySettings.sizeMode]($common) and [PointCloudDisplaySettings.shape]($common) can influence the shading effect.
+- [GraphicTemplate]($frontend) defines what the graphic should look like. You can obtain a template from [GraphicBuilder.finishTemplate]($frontend), [RenderSystem.createTemplateFromDescription]($frontend), or [readGltfTemplate]($frontend).
+- [RenderInstances]($frontend) defines the set of instances of the template to draw. In addition to a [Transform]($geometry), each instance can also override aspects of the template's appearance like color and line width, along with a unique [Feature]($common) to permit each instance to behave as a discrete entity. You can create a `RenderInstances` using [RenderInstancesParamsBuilder]($frontend).
+- [RenderSystem.createGraphicFromTemplate]($frontend) produces a [RenderGraphic]($frontend) from a graphic template and a set of instances.
 
-A monochrome point cloud with (bottom) and without (top) shading:
+`GraphicTemplate` and `RenderInstances` are both reusable - you can produce multiple sets of instances of a given template, and use the same set of instances with multiple different templates.
 
-![Monochrome point cloud shading](./assets/edl-mono.jpg)
+For the stop sign example described above, you might have a [glTF model](https://en.wikipedia.org/wiki/GlTF) representing a stop sign and an array containing the position of each stop sign. You could then use a function like the following to produce a graphic that draws the stop sign at each of those positions.
 
-A colorized point cloud with (bottom) and without (top) shading:
+```ts
+[[include:Gltf_Instancing]]
+```
 
-![Colorized point cloud shading](./assets/edl-color.jpg)
+### Overriding line color
 
-### Normal mapping
+iTwin.js allows you to [dynamically override](https://www.itwinjs.org/learning/display/symbologyoverrides/) aspects of the appearance of geometry at display time. However, unlike [SubCategoryAppearance]($common) and [GeometryParams]($common), which can distinguish between "line color" and "fill color", [FeatureAppearance]($common) only provides a single color override that applies to both types of geometry.
 
-[Normal mapping](https://en.wikipedia.org/wiki/Normal_mapping) is a technique that simulates additional surface details by mapping a texture containing normal vectors onto a surface. [RenderMaterial]($common)s now support applying normal maps.
+To address this discrepancy, we've [added](https://github.com/iTwin/itwinjs-core/pull/7251) a way to dynamically override the color and transparency of linear geometry independently from the rest of the geometry. Linear geometry includes open curves, line strings, point strings, and the outlines of planar regions. [FeatureAppearance.lineRgb]($common) controls the color of linear geometry, and [FeatureAppearance.lineTransparency]($common) controls the transparency. Both of these properties can be `undefined`, in which case the existing `rgb` or `transparency` property affects linear geometry - just as it always has. Or, they can be `false`, indicating that no color/transparency override is applied to linear geometry. Or, they can specify a transparency value or `RgbColor` that applies only to linear geometry.
 
-You can create a [RenderMaterial]($common) with a normal map on the frontend via [RenderSystem.createRenderMaterial]($frontend). The normal map is specified by the [MaterialTextureMappingProps.normalMapParams]($frontend) in your [CreateRenderMaterialArgs.textureMapping]($frontend).
+### Context Reality model visibility
 
-To create a [RenderMaterialElement]($backend) with a normal map on the backend, use [RenderMaterialElement.insert]($backend) or [RenderMaterialElement.create]($backend). Pass the normal map in [RenderMaterialElementParams.normalMap]($backend).
+Context reality models that have been attached using `DisplayStyleState.attachRealityModel`, can now be hidden by turning ON the `ContextRealityModel.invisible` flag. Previous implementation requiered context reality models to be detached in order to hide it from the scene.
 
-The image below illustrates the effects of normal mapping. The cubes in the top row have no normal maps, while the cubes in the bottom row are normal mapped.
+### Contour Display
 
-![Normal mapping](./assets/normal-maps.jpg)
+A new rendering technique has been added to iTwin.js which allows a user to apply specific contour line renderings to subcategories within a scene.
 
-### Smooth viewport resizing
+iTwin.js now provides the following API to use this feature:
 
-Previously, when a [Viewport]($frontend)'s canvas was resized there would be a delay of up to one second during which the viewport's contents would appear stretched or squished, before they were redrawn to match the new canvas dimensions. This was due to the unavailability of [ResizeObserver](https://developer.mozilla.org/en-US/docs/Web/API/ResizeObserver) in some browsers. Now that `ResizeObserver` is supported by all major browsers, we are able to use it to make the contents of the viewport update smoothly during a resize operation.
+- [DisplayStyle3dSettings]($common) now has a `contours` property which contains all of the subcategories-to-styling association data necessary to enable this feature. That object is of type [ContourDisplay]($common).
+- [ContourDisplay]($common) defines how contours are displayed in the iModel based on a list of [ContourGroup]($common) objects in the `groups` property. Whether or not contours will be displayed in the viewport is controlled by this object's `displayContours` property, which defaults to false.
+- [ContourGroup]($common) describes an association of subcategories to contour styling. It contains a set of subcategory IDs titled `subCategories`. Those subcategories will have the contour styling within the same group's [Contour]($common) `contourDef` object applied to them.
+- [Contour]($common) describes the rendering settings that apply to a specific set of subcategories within a [ContourGroup]($common). This actually describes stylings for two sets of contours: major and minor. These stylings are separate from each other. The minor contour occurs at a defined interval in meters. These intervals draw at a fixed height; they are not dependent on the range of the geometry to which they are applied. The major contour is dependent on the minor contour. The interval of its occurence is not measured directly in meters; rather its occurence is determined by the major interval count thusly: every nth contour will be styled as a major contour where n = the major interval count. For example, if you set this number to 1, every contour will be styled as a major contour. When it is 2, every other contour will be styled as a major contour, and so on. The properties describing how major and minor contours are styled are listed here:
+  - `majorStyle` is the style that a major contour line will use. Defaults to an instantation of [ContourStyle]($common) using `pixelWidth` of 2 and default values for the other properties.
+  - `minorStyle` is the style that a minor contour line will use. Defaults to an instantation of [ContourStyle]($common) using default values for the properties.
+  - `minorInterval` is the interval for the minor contour occurrence in meters; these can be specified as fractional. Defaults to 1. If a value <= 0 is specified, this will be treated as 1 meter.
+  - `majorIntervalCount` is the count of minor contour intervals that define a major interval (integer > 0). A value of 1 means no minor contours will be shown, only major contours. Defaults to 5. If a value < 1 is specified, this will be treated as 1. If a non-integer value is specified, it will be treated as if it were rounded to the nearest integer.
+  - `showGeometry`, if true, shows underlying geometry along with the associated contours. If false, only shows the contours, not the underlying geometry. Defaults to true.
+- [ContourStyle]($common) describes the style settings used by either a major or minor contour. It contains the following properties:
+  - `color` is a color used by the major or minor contour of type [RgbColor]($common). Defaults to black.
+  - `pixelWidth` is the width in pixels of a major or minor contour line, using range 1 to 8.5 in 0.5 increments. Defaults to 1.
+  - `pattern` is the line pattern applied to a major or minor contour line of type [LinePixels]($common). Defaults to [LinePixels.Solid]($common).
 
-### Pickable view overlays
+Consult the following code for an example of enabling and configuring contour display in iTwin.js:
 
-A bug preventing users from interacting with [pickable decorations](../learning/frontend/ViewDecorations.md#pickable-view-graphic-decorations) defined as [GraphicType.ViewOverlay]($frontend) has been fixed.
+```ts
+[[include:Setup_ContourDisplay]]
+```
 
-### Element clipping example
+Here is a sample screenshot of applying some contour display settings to a terrain iModel:
 
-In some cases it is useful to apply a [clipping volume](https://www.itwinjs.org/reference/core-common/views/viewdetails/clipvector/) to a view that mimics the shape of one or more elements. For example, you may have a view displaying a reality mesh captured from a real-world asset like a factory, and a design model representing the same asset, and wish to isolate the portions of the reality mesh corresponding to a series of pipe elements in the design model.
+![contour display example](./assets/contour-display.png "Example of applying contour line settings to an iModel of some terrain")
 
-display-test-app now provides an [example tool](https://github.com/iTwin/itwinjs-core/blob/master/test-apps/display-test-app/src/frontend/ViewClipByElementGeometryTool.ts) demonstrating how this can be achieved. It uses [IModelConnection.generateElementMeshes]($frontend) to produce [Polyface]($core-geometry)s from one or more elements; decomposes them into a set of convex hulls using [VHACD.js](https://www.npmjs.com/package/vhacd-js); and creates a clipping volume from the hulls via [ConvexClipPlaneSet.createConvexPolyface]($core-geometry). The example tool can be accessed in display-test-app using the keyin `dta clip element geometry`.
+## Interactive Tools
 
-### Support larger terrain meshes
+### Element Locate
 
-Previously, [RealityMeshParams]($frontend) only supported 16-bit vertex indices, which limited the number of vertices that could be produced by a [TerrainMeshProvider]($frontend). That limit has been extended to 32 bits (the maximum supported by WebGL). The code has also been optimized to allocate only as many bytes per vertex index as required. For example, if a mesh contains fewer than 256 vertices, only one byte will be allocated per vertex index.
+After calling [ElementLocateManager.doLocate]($frontend), Reset may now be used to accept some elements that were obscured by another element. Previously Reset would only choose between visible elements within the locate aperture.
 
-## Geometry
+![locate example](./element-locate.png "Example of using reset to accept obscured element")
 
-### Query mesh convexity
+### Snapping within section drawings
 
-A new method [PolyfaceQuery.isConvexByDihedralAngleCount]($core-geometry) permits testing the convexity of a mesh by inspecting the dihedral angles of all of its edges. For an example of its usage, see the [element clipping example](#element-clipping-example).
+A [SectionDrawing]($backend) view renders the contents of a [SpatialViewDefinition]($backend) in the context of a [DrawingViewDefinition]($backend). Tools that operate on the drawing view may want to be able to snap to geometry within the "attached" spatial view. For example, you may wish to attach an annotation to a spatial element. [AccuSnap]($frontend) [now automatically snaps](https://github.com/iTwin/itwinjs-core/pull/7291) to the geometry based on the current snap settings when mousing over geometry within the section drawing attachment. This works when viewing the drawing directly, or indirectly through a [ViewAttachment]($backend) on a sheet.
 
-## Write-ahead logging
-
-Previously, iTwin.js used [DELETE](https://www.sqlite.org/pragma.html#pragma_journal_mode) journal mode for writes to local briefcase files. It now uses [write-ahead logging](https://www.sqlite.org/wal.html) (WAL) mode. This change should be invisible to applications, other than performance of [IModelDb.saveChanges]($backend) should improve in most cases. However, there are a few subtle implications of this change that may affect existing applications:
-
-- Attempting to open more than one simultaneous writeable connections to the same briefcase will now fail on open. Previously, both opens would succeed, followed by a failure on the first attempted write by one or the other connection.
-- Failure to close a writeable briefcase may leave a "-wal" file. Previously, if a program crashed or exited with an open briefcase, it would leave the briefcase file as-of its last call to `IModelDb.saveChanges`. Now, there will be another file with the name of the briefcase with "-wal" appended. This is not a problem and the briefcase is completely intact, except that the briefcase file itself is not sufficient for copying (it will not include recent changes.) The "-wal" file will be used by future connections and will be deleted the next time the briefcase is successfully closed.
-- Attempting to copy an open-for-write briefcase file may not include recent changes. This scenario generally only arises for tests. If you wish to copy an open-for-write briefcase file, you must now call [IModelDb.performCheckpoint]($backend) first.
+You can access the [HitPath]($frontend) describing the [ViewAttachment]($backend) and/or [SectionDrawing]($backend) through which a hit was obtained via [[HitDetail.path]].
 
 ## Presentation
 
-### Hierarchy levels filtering
+### Calculated properties specification enhancements
 
-Ability to filter individual hierarchy levels was added for tree components that use [PresentationTreeDataProvider]($presentation-components). To enable this, [PresentationTreeRenderer]($presentation-components) should be passed to [ControlledTree]($components-react) through [ControlledTreeProps.treeRenderer]($components-react):
+A new optional [`extendedData`]($docs/presentation/content/CalculatedPropertiesSpecification.md#attribute-extendeddata) attribute has been added to [calculated properties specification]($docs/presentation/content/CalculatedPropertiesSpecification.md). The attribute allows associating resulting calculated properties field with some extra information, which may be especially useful for dynamically created calculated properties.
+
+## Quantity
+
+- Add support for 'Ratio' format type (e.g. "1:2")
+  - Example: Formatting a Ratio
+  - Assuming that a `UnitsProvider` has been registered and initialized, here's how to format a ratio:
 
 ```ts
-return <ControlledTree
-  // other props
-  treeRenderer={(treeProps) => <PresentationTreeRenderer {...treeProps} imodel={imodel} modelSource={modelSource} />}
-/>;
+const ratioFormatProps: FormatProps = {
+    type: "Ratio",
+    ratioType: "OneToN",  // Formats the ratio in "1:N" form
+    composite: {
+        includeZero: true,
+        units: [
+            { name: "Units.HORIZONTAL_PER_VERTICAL" },
+        ],
+    },
+};
+
+const ratioFormat = new Format("Ratio");
+ratioFormat.fromJSON(unitsProvider, ratioFormatProps).catch(() => {});
 ```
 
-[PresentationTreeRenderer]($presentation-components) renders nodes with action buttons for applying and clearing filters. Some hierarchy levels might not be filterable depending on the presentation rules used to build them. In that case, action buttons for those hierarchy levels are not rendered. If applied filter does not produce any nodes, `There are no child nodes matching current filter` message is rendered in that hierarchy level.
+- Add support for unit inversion during unit conversion
 
-![Filtered Tree](./assets/filtered-tree.jpg)
+- Change azimuth and bearing logic from working with east-based counterclockwise persisted values to working with north-based clockwise values.
+- The previous applies to azimuthBase as well, if provided.
 
-Dialog component for creating hierarchy level filter is opened when node's `Filter` button is clicked. This dialog allows to create complex filters with multiple conditions based on properties from instances that are represented by the nodes in that hierarchy level.
+## Node 22 support
 
-![Filter Builder Dialog](./assets/filter-builder-dialog.jpg)
+iTwin.js now officially supports Node 22 starting with LTS version of 22.11.0. Node 22 support is in addition to Node 18 and 20, not a replacement.
 
-### Grouping nodes HiliteSet
+## Electron 33 support
 
-[HiliteSetProvider.getHiliteSet]($presentation-frontend) now supports getting [HiliteSet]($presentation-frontend) for grouping nodes. Previously, [HiliteSetProvider.getHiliteSet]($presentation-frontend) used to return empty [HiliteSet]($presentation-frontend) if called with key of the grouping node. Now it returns [HiliteSet]($presentation-frontend) for all the instances that are grouped under grouping node. This also means that now elements will be hilited in viewport using [Unified Selection](../presentation/unified-selection/index.md) when grouping node is selected in the tree.
-
-## API promotions
-
-The following APIs have been promoted to `@public`, indicating they are now part of their respective packages' [stability contract](../learning/api-support-policies.md).
-
-### @itwin/core-bentley
-
-- [AccessToken]($bentley)
-
-### @itwin/core-common
-
-- [AuthorizationClient]($common)
-- [FrustumPlanes]($common)
-
-### @itwin/core-frontend
-
-- [Viewport.queryVisibleFeatures]($frontend)
-- [ViewState3d.lookAt]($frontend)
-
-### @itwin/presentation-common
-
-- Presentation rules:
-  - [InstanceLabelOverridePropertyValueSpecification.propertySource]($presentation-common)
-  - [ChildNodeSpecificationBase.suppressSimilarAncestorsCheck]($presentation-common)
-  - [RequiredSchemaSpecification]($presentation-common) and its usages:
-    - [SubCondition.requiredSchemas]($presentation-common)
-    - [RuleBase.requiredSchemas]($presentation-common)
-    - [Ruleset.requiredSchemas]($presentation-common)
-- Content traversal - related APIs:
-  - [traverseContent]($presentation-common)
-  - [IContentVisitor]($presentation-common)
-- Selection scope computation - related APIs:
-  - [SelectionScopeProps]($presentation-common)
-  - [ComputeSelectionRequestOptions]($presentation-common)
-  - [PresentationRpcInterface.getElementProperties]($presentation-common)
-- Element properties request - related APIs:
-  - [ElementProperties]($presentation-common)
-  - [ElementPropertiesRequestOptions]($presentation-common)
-  - [PresentationRpcInterface.computeSelection]($presentation-common)
-- Content sources request - related APIs:
-  - [ContentSourcesRequestOptions]($presentation-common)
-  - [PresentationRpcInterface.getContentSources]($presentation-common)
-- Content instance keys request - related APIs:
-  - [ContentInstanceKeysRequestOptions]($presentation-common)
-  - [PresentationRpcInterface.getContentInstanceKeys]($presentation-common)
-- [NestedContentField.relationshipMeaning]($presentation-common)
-- [ContentFlags.IncludeInputKeys]($presentation-common) and [Item.inputKeys]($presentation-common)
-
-### @itwin/presentation-backend
-
-- Presentation manager's caching related APIs:
-  - [HierarchyCacheMode]($presentation-backend)
-  - [HierarchyCacheConfig]($presentation-backend)
-  - [PresentationManagerCachingConfig.hierarchies]($presentation-backend) and [PresentationManagerCachingConfig.workerConnectionCacheSize]($presentation-backend)
-- [PresentationManager.getElementProperties]($presentation-backend) and [MultiElementPropertiesResponse]($presentation-backend)
-- [PresentationManager.getContentSources]($presentation-backend)
-- [PresentationManager.computeSelection]($presentation-backend)
-- [RulesetEmbedder]($presentation-backend) and related APIs
-
-### @itwin/presentation-frontend
-
-- [PresentationManager.getContentSources]($presentation-frontend)
-- [PresentationManager.getElementProperties]($presentation-frontend)
-- [PresentationManager.getContentInstanceKeys]($presentation-frontend)
-
-### @itwin/presentation-components
-
-- [FavoritePropertiesDataFilterer]($presentation-components)
-- [PresentationPropertyDataProvider.getPropertyRecordInstanceKeys]($presentation-components)
-- [PresentationTreeDataProviderProps.customizeTreeNodeItem]($presentation-components)
-- [PresentationTreeNodeLoaderProps.seedTreeModel]($presentation-components)
+In addition to [already supported Electron versions](../learning/SupportedPlatforms.md#electron), iTwin.js now supports [Electron 33](https://www.electronjs.org/blog/electron-33-0).
 
 ## API deprecations
 
-### @itwin/core-bentley
+### @itwin/appui-abstract
 
-[ByteStream]($bentley)'s `next` property getters like [ByteStream.nextUint32]($bentley) and [ByteStream.nextFloat64]($bentley) have been deprecated and replaced with corresponding `read` methods like [ByteStream.readUint32]($bentley) and [ByteStream.readFloat64]($bentley). The property getters have the side effect of incrementing the stream's current read position, which can result in surprising behavior and may [trip up code optimizers](https://github.com/angular/angular-cli/issues/12128#issuecomment-472309593) that assume property access is free of side effects.
+- `LayoutFragmentProps`, `ContentLayoutProps`, `LayoutSplitPropsBase`, `LayoutHorizontalSplitProps`, `LayoutVerticalSplitProps`, and `StandardContentLayouts` have been deprecated. Use the same APIs from `@itwin/appui-react` instead.
 
-Similarly, [TransientIdSequence.next]($bentley) returns a new Id each time it is called. Code optimizers like [Angular](https://github.com/angular/angular-cli/issues/12128#issuecomment-472309593)'s may elide repeated calls to `next` assuming it will return the same value each time. Prefer to use the new [TransientIdSequence.getNext]($bentley) method instead.
-
-### @itwin/core-frontend
-
-[ScreenViewport.setEventController]($frontend) was only ever intended to be used by [ViewManager]($frontend). In the unlikely event that you are using it for some (probably misguided) purpose, it will continue to behave as before, but it will be removed in a future major version.
-
-[NativeApp.requestDownloadBriefcase]($frontend) parameter `progress` is deprecated in favor of `progressCallback` in [DownloadBriefcaseOptions]($frontend). Similarly, `progressCallback` in [PullChangesOptions]($frontend) is now deprecated and should be replaced with `downloadProgressCallback` in [PullChangesOptions]($frontend). Both new variables are of type [OnDownloadProgress]($frontend), which more accurately represents information reported during downloads.
-
-[IModelConnection.displayedExtents]($frontend) and [IModelConnection.expandDisplayedExtents]($frontend) are deprecated. The displayed extents are expanded every time a [ContextRealityModel]($common) is added to any view in the iModel, and never shrink. They were previously used to compute the viewed extents of every [SpatialViewState]($frontend), which could produce an unnecessarily large frustum resulting in graphical artifacts. Now each spatial view computes its extents based on the extents of the models it is currently displaying. `displayedExtents` is still computed as before to support existing users of the API, but its use is not recommended.
+- `BackendItemsManager` is internal and should never have been consumed. It has been deprecated and will be removed in 5.0.0. Use `UiFramework.backstage` from `@itwin/appui-react` instead.
 
 ### @itwin/core-backend
 
-[RenderMaterialElement.Params]($backend) is defined as a class, which makes it unwieldy to use. You can now use the interface [RenderMaterialElementParams]($backend) instead.
+- [IModelHost.snapshotFileNameResolver]($backend) and [FileNameResolver]($backend) have been deprecated. Make sure to provide resolved file path to [SnapshotConnection.openFile]($frontend).
 
-### @itwin/appui-abstract
+### @itwin/core-frontend
 
-`UiItemsProvider` and other AppUI specific types and APIs are deprecated and moved to `@itwin/appui-react` package.
-For a replacement in case of API rename consult @deprecated tag in the documentation.
+- [SnapshotConnection.openRemote]($frontend) has been deprecated. Use [CheckpointConnection.openRemote]($frontend) to open a connection to an iModel within web application.
 
-### @itwin/appui-react
+### @itwin/core-quantity
 
-`ModelsTree` and `CategoryTree` were moved to [@itwin/tree-widget-react](https://github.com/iTwin/viewer-components-react/tree/master/packages/itwin/tree-widget) package and deprecated in `@itwin/appui-react` packages. They will be removed from `@itwin/appui-react` in future major version.
+- Refactored `FormatType`, `ScientificType`, `ShowSignOption` from int enums to string enums and added `RatioType` as a string enum. Relevant toString functions, including [formatTypeToString]($quantity), [scientificTypeToString]($quantity), and [showSignOptionToString]($quantity), have been deprecated because they don't need serialization methods.
 
-`SpatialContainmentTree` were deprecated in favor of `SpatialContainmentTree` from [@itwin/breakdown-trees-react](https://github.com/iTwin/viewer-components-react/tree/master/packages/itwin/breakdown-trees) package. `SpatialContainmentTree` will be removed in future major version.
+- [Parser.parseToQuantityValue]($quantity) have been deprecated. Use the existing method [Parser.parseQuantityString]($quantity) instead.
 
 ### @itwin/presentation-common
 
-A bunch of `{api_name}JSON` interfaces, completely matching their sibling `{api_name}` definition, thus having no real benefit, have been forcing us to map back and forth between `{api_name}` and `{api_name}JSON` with `{api_name}.toJSON` and `{api_name}.fromJSON` helper functions. Majority of them are marked public as they're part of public RPC interface, but are generally not expected to be directly used by consumer code. They have been deprecated with the recommendation to use `{api_name}`.
+- All public methods of [PresentationRpcInterface]($presentation-common) have been deprecated. Going forward, RPC interfaces should not be called directly. Public wrappers such as [PresentationManager]($presentation-frontend) should be used instead.

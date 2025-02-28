@@ -4,23 +4,54 @@
 *--------------------------------------------------------------------------------------------*/
 import { ProcessDetector } from "@itwin/core-bentley";
 import {
-  BentleyCloudRpcManager, IModelReadRpcInterface, IModelTileRpcInterface, RpcConfiguration, SnapshotIModelRpcInterface,
+  BentleyCloudRpcManager, IModelReadRpcInterface, IModelTileRpcInterface, RpcConfiguration,
 } from "@itwin/core-common";
 import { ElectronApp } from "@itwin/core-electron/lib/cjs/ElectronFrontend";
-import { ElectronRendererAuthorization } from "@itwin/electron-authorization/lib/cjs/ElectronRenderer";
+import { ElectronRendererAuthorization } from "@itwin/electron-authorization/Renderer";
 import { BrowserAuthorizationClient } from "@itwin/browser-authorization/lib/cjs/Client";
 import { IModelApp, IModelAppOptions } from "@itwin/core-frontend";
+import { initializeFrontendTiles } from "@itwin/frontend-tiles";
 import { HyperModeling, SectionMarker, SectionMarkerHandler } from "@itwin/hypermodeling-frontend";
 import { FrontendIModelsAccess } from "@itwin/imodels-access-frontend";
 import { IModelsClient } from "@itwin/imodels-client-management";
 import DisplayPerfRpcInterface from "../common/DisplayPerfRpcInterface";
 import { TestRunner, TestSetsProps } from "./TestRunner";
+import { DptaEnvConfig } from "../common/DisplayPerfEnvConfig";
+
+export const envConfiguration: DptaEnvConfig = {};
+let runner: TestRunner;
 
 /** Prevents the hypermodeling markers from displaying in the viewport and obscuring the image. */
 class MarkerHandler extends SectionMarkerHandler {
   public override isMarkerVisible(_marker: SectionMarker) {
     return false;
   }
+}
+
+// simple function to extract file name, without path or extension, on Windows or Linux
+function getFileName(path: string): string {
+  let strs = path.split("/");
+  let str = strs[strs.length - 1];
+  strs = str.split("\\");
+  str = strs[strs.length - 1];
+  const ndx = str.lastIndexOf(".");
+  if (ndx > 0) // allow files starting with .
+    str = str.substring(0, ndx);
+  return str;
+}
+
+// simple function to extract the file extension, including '.', on Windows or Linux
+function getFileExt(path: string): string {
+  let strs = path.split("/");
+  let str = strs[strs.length - 1];
+  strs = str.split("\\");
+  str = strs[strs.length - 1];
+  const ndx = str.lastIndexOf(".");
+  if (ndx > 0) // allow files starting with .
+    str = str.substring(ndx);
+  else
+    str = "";
+  return str;
 }
 
 export class DisplayPerfTestApp {
@@ -47,24 +78,66 @@ export class DisplayPerfTestApp {
       ? new FrontendIModelsAccess(new IModelsClient({ api: { baseUrl: `https://${process.env.IMJS_URL_PREFIX}api.bentley.com/imodels` } }))
       : new FrontendIModelsAccess();
 
-    iModelApp.rpcInterfaces = [DisplayPerfRpcInterface, IModelTileRpcInterface, SnapshotIModelRpcInterface, IModelReadRpcInterface]; // eslint-disable-line deprecation/deprecation
+    iModelApp.rpcInterfaces = [DisplayPerfRpcInterface, IModelTileRpcInterface, IModelReadRpcInterface]; // eslint-disable-line @typescript-eslint/no-deprecated
     if (ProcessDetector.isElectronAppFrontend)
       await ElectronApp.startup({ iModelApp });
     else
       await IModelApp.startup(iModelApp);
+
+    const config = await DisplayPerfRpcInterface.getClient().getEnvConfig();
+    Object.assign(envConfiguration, config);
+
+    const frontendTilesNopFallback = (runner && runner.curConfig && runner.curConfig.frontendTilesNopFallback) ? runner.curConfig.frontendTilesNopFallback : false;
+
+    if (frontendTilesNopFallback) {
+      await DisplayPerfRpcInterface.getClient().consoleLog("Nop fallback enabled for frontend tiles.");
+    }
+
+    initializeFrontendTiles({
+      enableEdges: true,
+      computeSpatialTilesetBaseUrl: async (iModel) => {
+        if (runner.curConfig.frontendTilesUrlTemplate === undefined)
+          return undefined;
+        // Note: iModel.key in DPTA is just a GUID string (not path and filename)
+        let urlStr = runner.curConfig.frontendTilesUrlTemplate.replace("{iModel.key}", iModel.key);
+        urlStr = urlStr.replace("{iModel.filename}", getFileName(runner.curConfig.iModelName));
+        urlStr = urlStr.replace("{iModel.extension}", getFileExt(runner.curConfig.iModelName));
+        const url = new URL(urlStr);
+        const tilesetUrl = new URL("tileset.json", url);
+        tilesetUrl.search = url.search;
+
+        // Check if a tileset has been published for this iModel.
+        try {
+          console.log(`Checking for tileset at ${tilesetUrl.toString()}`); // eslint-disable-line no-console
+          const response = await fetch(tilesetUrl);
+          await response.json();
+          runner.curConfig.urlStr = urlStr;
+          return url;
+        } catch {
+          runner.curConfig.urlStr = `${tilesetUrl.toString()} - Not found`;
+          // No tileset available.
+          return undefined;
+        }
+      },
+      nopFallback: frontendTilesNopFallback,
+    });
 
     await HyperModeling.initialize({ markerHandler: new MarkerHandler() });
 
     IModelApp.animationInterval = undefined;
   }
 
-  public static async logException(ex: any, logFile?: { dir: string, name: string }): Promise<void> {
+  public static async logException(ex: any, logFile?: { dir: string, name: string }): Promise<boolean> {
     const errMsg = ex.stack ?? (ex.toString ? ex.toString() : "unknown error type");
     const msg = `DPTA_EXCEPTION\n${errMsg}\n`;
     const client = DisplayPerfRpcInterface.getClient();
     await client.consoleLog(msg);
     if (logFile)
       await client.writeExternalFile(logFile.dir, logFile.name, true, msg);
+    // test for exception messages that need to terminate app on and return true for any of those
+    return (msg.toLowerCase().includes("rendering context was lost") ||
+      msg.toLowerCase().includes("enospc") // ENOSPC no space left on device
+    );
   }
 }
 
@@ -73,7 +146,9 @@ async function signIn(): Promise<void> {
     return;
   let authorizationClient;
   if (ProcessDetector.isElectronAppFrontend)
-    authorizationClient = new ElectronRendererAuthorization();
+    authorizationClient = new ElectronRendererAuthorization({
+      clientId: process.env.IMJS_OIDC_CLIENT_ID!,
+    });
   else
     authorizationClient = new BrowserAuthorizationClient({
       clientId: process.env.IMJS_OIDC_CLIENT_ID!,
@@ -92,7 +167,7 @@ async function main() {
     if (props.signIn)
       await signIn();
 
-    const runner = new TestRunner(props);
+    runner = new TestRunner(props);
     await runner.run();
   } catch (err: any) {
     await DisplayPerfTestApp.logException(err);
@@ -110,7 +185,7 @@ window.onload = async () => {
 
   if (!ProcessDetector.isElectronAppFrontend && !ProcessDetector.isMobileAppFrontend) {
     const uriPrefix = "http://localhost:3001";
-    BentleyCloudRpcManager.initializeClient({ info: { title: "DisplayPerformanceTestApp", version: "v1.0" }, uriPrefix }, [DisplayPerfRpcInterface, IModelTileRpcInterface, SnapshotIModelRpcInterface, IModelReadRpcInterface]);
+    BentleyCloudRpcManager.initializeClient({ info: { title: "DisplayPerformanceTestApp", version: "v1.0" }, uriPrefix }, [DisplayPerfRpcInterface, IModelTileRpcInterface, IModelReadRpcInterface]);
   }
 
   await DisplayPerfTestApp.startup();

@@ -8,7 +8,7 @@
 
 import { assert, BeEvent, GeoServiceStatus, GuidString, Id64, Id64String, IModelStatus, Mutable, OpenMode } from "@itwin/core-bentley";
 import {
-  Angle, AxisIndex, AxisOrder, Constant, Geometry, Matrix3d, Point3d, Range3d, Range3dProps, Transform, Vector3d, XYAndZ, XYZProps,
+  Angle, AxisIndex, AxisOrder, Constant, Geometry, Matrix3d, Point3d, Range3d, Range3dProps, Transform, TransformProps, Vector3d, XYAndZ, XYZProps,
   YawPitchRollAngles, YawPitchRollProps,
 } from "@itwin/core-geometry";
 import { ChangesetIdWithIndex } from "./ChangesetProps";
@@ -46,7 +46,8 @@ export interface IModelRpcProps extends IModelRpcOpenProps {
  * of the origin property. This cartographicOrigin is offered as a convenient pre-calculated value representing the location of the ECEF origin.
  * The 3D coordinate system this class represents is positioned at specified origin and the axis positioned according to
  * the other properties.
- * If the xVector and yVector properties are defined then they take precedence over the YawPitchRoll orientation property. The xVector and yVector
+ * If transform property is defined then it will not be computed from other properties.
+ * If the xVector and yVector properties are defined (and transform is not defined) then they take precedence over the YawPitchRoll orientation property. The xVector and yVector
  * represent the direction and scale of the X and Y axes. The Z axis is always perpendicular (according to the right hand rule) to these X-Y axes.
  * The scaling in the Z direction is always unity. The scale of the X and Y axes is represented by the size of the vector length.
  * If the xVector and yVector are not present then the YawPitchRoll properties indicates the angles for all tree axes. Scaling in that case
@@ -68,6 +69,10 @@ export interface EcefLocationProps {
   readonly xVector?: XYZProps;
   /** Optional Y column vector used with [[xVector]] to calculate potentially non-rigid transform if a projection is present. */
   readonly yVector?: XYZProps;
+  /** Optional potentially non-rigid transform defining the ECEF location.
+   * @note If this property is supplied, the other properties are ignored.
+   */
+  readonly transform?: TransformProps;
 }
 
 /** Properties of the [Root Subject]($docs/bis/guide/references/glossary#subject-root).
@@ -121,13 +126,16 @@ export interface CreateIModelProps extends IModelProps {
 }
 
 /**
- * Encryption-related properties that can be supplied when creating or opening snapshot iModels.
+ * Sqlite options.
  * @public
- * @deprecated in 3.x. **NOTE**, encrypted iModels are no longer supported since they require licensed code.
  */
-export interface IModelEncryptionProps {
-  /** The password used to encrypt/decrypt the snapshot iModel. */
-  readonly password?: string;
+export interface OpenSqliteArgs {
+  /**
+   * Specify timeout after which SQLite stop retrying to acquire lock to database file and throw SQLITE_BUSY error.
+   * Timeout is specified in milliseconds.
+   * For more information https://www.sqlite.org/c3ref/busy_timeout.html.
+   * */
+  readonly busyTimeout?: number;
 }
 
 /**
@@ -150,7 +158,7 @@ export interface CloudContainerUri {
 /** Options to open a [SnapshotDb]($backend).
  * @public
  */
-export interface SnapshotOpenOptions extends IModelEncryptionProps, OpenDbKey { // eslint-disable-line deprecation/deprecation
+export interface SnapshotOpenOptions extends OpenDbKey {
   /**
    * The "base" name that can be used for creating temporary files related to this Db.
    * The string should be a name related to the current Db filename using some known pattern so that all files named "baseName*" can be deleted externally during cleanup.
@@ -170,8 +178,7 @@ export type StandaloneOpenOptions = OpenDbKey;
 /** Options that can be supplied when creating snapshot iModels.
  * @public
  */
-// eslint-disable-next-line deprecation/deprecation
-export interface CreateSnapshotIModelProps extends IModelEncryptionProps {
+export interface CreateSnapshotIModelProps {
   /** If true, then create SQLite views for Model, Element, ElementAspect, and Relationship classes.
    * These database views can often be useful for interoperability workflows.
    */
@@ -187,8 +194,7 @@ export type CreateEmptySnapshotIModelProps = CreateIModelProps & CreateSnapshotI
 /** Options that can be supplied when creating standalone iModels.
  * @internal
  */
-// eslint-disable-next-line deprecation/deprecation
-export interface CreateStandaloneIModelProps extends IModelEncryptionProps {
+export interface CreateStandaloneIModelProps {
   /** If present, file will allow local editing, but cannot be used to create changesets */
   readonly allowEdit?: string;
 }
@@ -226,8 +232,8 @@ export class EcefLocation implements EcefLocationProps {
   public readonly xVector?: Vector3d;
   /** Optional Y column vector used with [[xVector]] to calculate potentially non-rigid transform if a projection is present. */
   public readonly yVector?: Vector3d;
-
-  private readonly _transform: Transform;
+  /** The transform from iModel Spatial coordinates to ECEF from this EcefLocation */
+  private readonly _transform: Transform = Transform.createIdentity();
 
   /** Get the transform from iModel Spatial coordinates to ECEF from this EcefLocation */
   public getTransform(): Transform { return this._transform; }
@@ -242,17 +248,22 @@ export class EcefLocation implements EcefLocationProps {
       this.xVector = Vector3d.fromJSON(props.xVector).freeze();
       this.yVector = Vector3d.fromJSON(props.yVector).freeze();
     }
-    let matrix;
-    if (this.xVector && this.yVector) {
-      const zVector = this.xVector.crossProduct(this.yVector);
-      if (zVector.normalizeInPlace())
-        matrix = Matrix3d.createColumns(this.xVector, this.yVector, zVector);
-    }
-    if (!matrix)
-      matrix = this.orientation.toMatrix3d();
+    if (props.transform) {
+      this._transform.setFromJSON(props.transform);
+      this._transform.freeze();
+    } else {
+      let matrix;
+      if (this.xVector && this.yVector) {
+        const zVector = this.xVector.crossProduct(this.yVector);
+        if (zVector.normalizeInPlace())
+          matrix = Matrix3d.createColumns(this.xVector, this.yVector, zVector);
+      }
+      if (!matrix)
+        matrix = this.orientation.toMatrix3d();
 
-    this._transform = Transform.createOriginAndMatrix(this.origin, matrix);
-    this._transform.freeze();
+      this._transform = Transform.createOriginAndMatrix(this.origin, matrix);
+      this._transform.freeze();
+    }
   }
 
   /** Returns true if this EcefLocation is not located at the center of the Earth.
@@ -285,6 +296,16 @@ export class EcefLocation implements EcefLocationProps {
     return new EcefLocation({ origin: ecefOrigin, orientation: YawPitchRollAngles.createFromMatrix3d(matrix)!, cartographicOrigin: origin });
   }
 
+  /** Construct ECEF Location from transform with optional position on the earth used to establish the ECEF origin and orientation. */
+  public static createFromTransform(transform: Transform): EcefLocation {
+    const ecefOrigin = transform.getOrigin();
+    const angleFromInput = YawPitchRollAngles.createDegrees(0, 0, 0);
+    const locationOrientationFromInputT = YawPitchRollAngles.createFromMatrix3d(transform.getMatrix(), angleFromInput);
+    const transformProps = transform.toJSON();
+
+    return new EcefLocation({ origin: ecefOrigin, orientation: locationOrientationFromInputT ?? angleFromInput, transform: transformProps });
+  }
+
   /** Get the location center of the earth in the iModel coordinate system. */
   public get earthCenter(): Point3d {
     const matrix = this.orientation.toMatrix3d();
@@ -305,6 +326,9 @@ export class EcefLocation implements EcefLocationProps {
     if (this.yVector !== undefined && other.yVector !== undefined && !this.yVector.isAlmostEqual(other.yVector))
       return false;
 
+    if (!this.getTransform().isAlmostEqual(other.getTransform()))
+      return false;
+
     const thisCarto = this.cartographicOrigin;
     const otherCarto = other.cartographicOrigin;
     if (undefined === thisCarto || undefined === otherCarto)
@@ -317,6 +341,7 @@ export class EcefLocation implements EcefLocationProps {
     const props: Mutable<EcefLocationProps> = {
       origin: this.origin.toJSON(),
       orientation: this.orientation.toJSON(),
+      transform: this.getTransform().toJSON(),
     };
 
     if (this.cartographicOrigin)
@@ -344,6 +369,7 @@ export abstract class IModel implements IModelProps {
   private _ecefLocation?: EcefLocation;
   private _geographicCoordinateSystem?: GeographicCRS;
   private _iModelId?: GuidString;
+  private _changeset: ChangesetIdWithIndex;
 
   /** The Id of the repository model. */
   public static readonly repositoryModelId: Id64String = "0x1";
@@ -364,6 +390,8 @@ export abstract class IModel implements IModelProps {
   public readonly onEcefLocationChanged = new BeEvent<(previousLocation: EcefLocation | undefined) => void>();
   /** Event raised after [[geographicCoordinateSystem]] changes. */
   public readonly onGeographicCoordinateSystemChanged = new BeEvent<(previousGCS: GeographicCRS | undefined) => void>();
+  /** Event raised after [[changeset]] changes. */
+  public readonly onChangesetChanged = new BeEvent<(previousChangeset: ChangesetIdWithIndex) => void>();
 
   /** Name of the iModel */
   public get name(): string {
@@ -499,7 +527,7 @@ export abstract class IModel implements IModelProps {
     };
   }
 
-  /** @internal */
+  /** Convert this iModel to a JSON representation. */
   public toJSON(): IModelConnectionProps {
     return this.getConnectionProps();
   }
@@ -520,7 +548,16 @@ export abstract class IModel implements IModelProps {
   public get iModelId(): GuidString | undefined { return this._iModelId; }
 
   /** @public */
-  public changeset: ChangesetIdWithIndex;
+  public get changeset(): ChangesetIdWithIndex {
+    return { ...this._changeset };
+  }
+  public set changeset(changeset: ChangesetIdWithIndex) {
+    const prev = this._changeset;
+    if (prev.id !== changeset.id || prev.index !== changeset.index) {
+      this._changeset = { id: changeset.id, index: changeset.index };
+      this.onChangesetChanged.raiseEvent(prev);
+    }
+  }
 
   protected _openMode = OpenMode.Readonly;
   /** The [[OpenMode]] used for this IModel. */
@@ -551,14 +588,12 @@ export abstract class IModel implements IModelProps {
 
   /** @internal */
   protected constructor(tokenProps?: IModelRpcProps) {
-    this.changeset = { id: "", index: 0 };
+    this._changeset = tokenProps?.changeset ?? { id: "", index: 0 };
     this._fileKey = "";
     if (tokenProps) {
       this._fileKey = tokenProps.key;
       this._iTwinId = tokenProps.iTwinId;
       this._iModelId = tokenProps.iModelId;
-      if (tokenProps.changeset)
-        this.changeset = tokenProps.changeset;
     }
   }
 
@@ -598,7 +633,7 @@ export abstract class IModel implements IModelProps {
    * @returns A Point3d in ECEF coordinates
    * @throws IModelError if [[isGeoLocated]] is false.
    */
-  public spatialToEcef(spatial: XYAndZ, result?: Point3d): Point3d { return this.getEcefTransform().multiplyPoint3d(spatial, result)!; }
+  public spatialToEcef(spatial: XYAndZ, result?: Point3d): Point3d { return this.getEcefTransform().multiplyPoint3d(spatial, result); }
 
   /** Convert a point in ECEF coordinates to a point in this iModel's Spatial coordinates using its [[ecefLocation]].
    * @param ecef A point in ECEF coordinates

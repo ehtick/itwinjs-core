@@ -3,9 +3,9 @@
 * See LICENSE.md in the project root for license terms and full copyright notice.
 *--------------------------------------------------------------------------------------------*/
 
-import { expect } from "chai";
+import { describe, expect, it } from "vitest";
 import { HalfEdge, HalfEdgeGraph } from "../../topology/Graph";
-import { AbstractHalfEdgeGraphMarkSet, MarkedEdgeSet, MarkedFaceSet, MarkedHalfEdgeSt, MarkedVertexSet } from "../../topology/HalfEdgeMarkSet";
+import { AbstractHalfEdgeGraphMarkSet, MarkedEdgeSet, MarkedFaceSet, MarkedHalfEdgeSet, MarkedVertexSet } from "../../topology/HalfEdgeMarkSet";
 import { Checker } from "../Checker";
 
 describe("HalfEdgeMarkSet", () => {
@@ -13,7 +13,7 @@ describe("HalfEdgeMarkSet", () => {
   it("HelloWorld", () => {
     const ck = new Checker();
     const graph = new HalfEdgeGraph();
-    const halfEdgeSet = MarkedHalfEdgeSt.create(graph);
+    const halfEdgeSet = MarkedHalfEdgeSet.create(graph);
     const edgeSet = MarkedEdgeSet.create(graph);
     const faceSet = MarkedFaceSet.create(graph);
     const vertexSet = MarkedVertexSet.create(graph);
@@ -29,13 +29,13 @@ describe("HalfEdgeMarkSet", () => {
       vertexSet.teardown();
       faceSet.teardown();
     }
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
 
   it("SmallGraph", () => {
     const ck = new Checker();
     const graph = new HalfEdgeGraph();
-    const halfEdgeSet = MarkedHalfEdgeSt.create(graph);
+    const halfEdgeSet = MarkedHalfEdgeSet.create(graph);
     const edgeSet = MarkedEdgeSet.create(graph);
     const faceSet = MarkedFaceSet.create(graph);
     const vertexSet = MarkedVertexSet.create(graph);
@@ -137,11 +137,11 @@ describe("HalfEdgeMarkSet", () => {
     // drain the mask pool in the graph ...
     while (graph.grabMask() !== 0) { }
     // and all the mark set creations will fail ...
-    ck.testUndefined(MarkedHalfEdgeSt.create(graph));
+    ck.testUndefined(MarkedHalfEdgeSet.create(graph));
     ck.testUndefined(MarkedEdgeSet.create(graph));
     ck.testUndefined(MarkedFaceSet.create(graph));
     ck.testUndefined(MarkedVertexSet.create(graph));
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
 
 });

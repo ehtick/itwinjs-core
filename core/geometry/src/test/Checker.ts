@@ -23,6 +23,8 @@ import { IModelJson } from "../serialization/IModelJsonSchema";
 import { GeometryCoreTestIO } from "./GeometryCoreTestIO";
 import { prettyPrint } from "./testFunctions";
 
+type NonUndefined<T> = T extends undefined ? never : T;
+
 export class Checker {
   private _savedErrors: number;
   private _savedOK: number;
@@ -81,8 +83,24 @@ export class Checker {
     halfEdgeGraphFromIndexedLoops: false,
     offsetMesh: false,
   };
-  public constructor() { this._numErrors = 0; this._numOK = 0; this._savedErrors = 0; this._savedOK = 0; }
-  public getNumErrors(): number { return this._savedErrors + this._numErrors; }
+  /**
+   * Constructor that allows overriding debug statics in `GeometryCoreTestIO` as a convenience.
+   * * This is typically used with `.only` test scope.
+   * * Note that by default these statics are set to false.
+   * * Do not push to server an invocation that passes true.
+   * * We don't pass `enableLongTests`, as this static is typically set globally (and infrequently).
+   */
+  public constructor(enableConsole: boolean = false, enableSave: boolean = false) {
+    this._numErrors = 0;
+    this._numOK = 0;
+    this._savedErrors = 0;
+    this._savedOK = 0;
+    GeometryCoreTestIO.enableConsole = enableConsole;
+    GeometryCoreTestIO.enableSave = enableSave;
+  }
+  public getNumErrors(): number {
+    return this._savedErrors + this._numErrors;
+  }
   public getNumOK(): number { return this._numOK + this._savedOK; }
 
   // ===================================================================================
@@ -100,21 +118,22 @@ export class Checker {
   }
   public announceError(...params: any[]): boolean {
     this._numErrors++;
-    GeometryCoreTestIO.consoleLog("ERROR");
-    this.show(params);
+    GeometryCoreTestIO.consoleLogGo("ERROR");
+    this.showGo(params);
     return false;
   }
   public announceOK(): boolean {
     this._numOK++;
     return true;
   }
+  /** Test if 2 Point3ds are almost equal. */
   public testPoint3d(dataA: Point3d, dataB: Point3d, ...params: any[]): boolean {
     if (Geometry.isSamePoint3d(dataA, dataB))
       return this.announceOK();
     this.announceError("expect same Point3d", dataA, dataB, params);
     return false;
   }
-  /** test if `transformAToB * dataA` matches pointB */
+  /** Test if `transformAToB * dataA` matches pointB. */
   public testTransformedPoint3d(transformAToB: Transform, dataA: Point3d, dataB: Point3d, ...params: any[]): boolean {
     const dataA1 = transformAToB.multiplyPoint3d(dataA);
     if (Geometry.isSamePoint3d(dataA1, dataB))
@@ -132,63 +151,44 @@ export class Checker {
         return this.announceError(`mismatched point at array position ${i}`, dataA, dataB, params);
     return this.announceOK();
   }
-  /**
-   * Test if number arrays (either or both possibly undefined) match.
-   */
+  /** Test if number arrays match with tolerance. */
+  public testNumberArrayWithTol(dataA: number[] | GrowableFloat64Array | Float64Array | undefined, dataB: number[] | GrowableFloat64Array | Float64Array | undefined, tol: number = Geometry.smallMetricDistance, ...params: any[]): boolean {
+    const numA = dataA === undefined ? 0 : dataA.length;
+    const numB = dataB === undefined ? 0 : dataB.length;
+    if (numA !== numB)
+      return this.announceError("array length mismatch", dataA, dataB, params);
+    if (dataA && dataB) {
+      const aGrowable = dataA instanceof GrowableFloat64Array;
+      const bGrowable = dataB instanceof GrowableFloat64Array;
+      let numError = 0;
+      for (let i = 0; i < dataA.length; i++) {
+        const aVal = aGrowable ? dataA.atUncheckedIndex(i) : dataA[i];
+        const bVal = bGrowable ? dataB.atUncheckedIndex(i) : dataB[i];
+        if (!Geometry.isSameCoordinate(aVal, bVal, tol))
+          numError++;
+      }
+      if (numError !== 0)
+        return this.announceError("contents different", dataA, dataB, params);
+    }
+    return this.announceOK();
+  }
+  /** Test if fraction arrays (either or both possibly undefined) match. */
+  public testFractionArray(dataA: number[] | Float64Array | undefined, dataB: number[] | Float64Array | undefined, ...params: any[]): boolean {
+    return this.testNumberArrayWithTol(dataA, dataB, Geometry.smallFraction, params);
+  }
+  /** Test if coordinate arrays (either or both possibly undefined) match. */
   public testNumberArray(dataA: number[] | Float64Array | undefined, dataB: number[] | Float64Array | undefined, ...params: any[]): boolean {
-    const numA = dataA === undefined ? 0 : dataA.length;
-    const numB = dataB === undefined ? 0 : dataB.length;
-    if (numA !== numB)
-      return this.announceError("array length mismatch", dataA, dataB, params);
-    if (dataA && dataB) {
-      let numError = 0;
-      for (let i = 0; i < dataA.length; i++) {
-        if (!Geometry.isSameCoordinate(dataA[i], dataB[i]))
-          numError++;
-      }
-      if (numError !== 0)
-        return this.announceError("contents different", dataA, dataB, params);
-    }
-    return this.announceOK();
+    return this.testNumberArrayWithTol(dataA, dataB, Geometry.smallMetricDistance, params);
   }
-  /**
-   * Test if number arrays (either or both possibly undefined) match.
-   */
+  /** Test if coordinate arrays (either or both possibly undefined) match. */
   public testNumberArrayG(dataA: number[] | undefined, dataB: GrowableFloat64Array | undefined, ...params: any[]): boolean {
-    const numA = dataA === undefined ? 0 : dataA.length;
-    const numB = dataB === undefined ? 0 : dataB.length;
-    if (numA !== numB)
-      return this.announceError("array length mismatch", dataA, dataB, params);
-    if (dataA && dataB) {
-      let numError = 0;
-      for (let i = 0; i < dataA.length; i++) {
-        if (!Geometry.isSameCoordinate(dataA[i], dataB.atUncheckedIndex(i)))
-          numError++;
-      }
-      if (numError !== 0)
-        return this.announceError("contents different", dataA, dataB, params);
-    }
-    return this.announceOK();
+    return this.testNumberArrayWithTol(dataA, dataB, Geometry.smallMetricDistance, params);
   }
-  /**
-   * Test if number arrays (either or both possibly undefined) match.
-   */
+  /** Test if coordinate arrays (either or both possibly undefined) match. */
   public testNumberArrayGG(dataA: GrowableFloat64Array | undefined, dataB: GrowableFloat64Array | undefined, ...params: any[]): boolean {
-    const numA = dataA === undefined ? 0 : dataA.length;
-    const numB = dataB === undefined ? 0 : dataB.length;
-    if (numA !== numB)
-      return this.announceError("array length mismatch", dataA, dataB, params);
-    if (dataA && dataB) {
-      let numError = 0;
-      for (let i = 0; i < dataA.length; i++) {
-        if (!Geometry.isSameCoordinate(dataA.atUncheckedIndex(i), dataB.atUncheckedIndex(i)))
-          numError++;
-      }
-      if (numError !== 0)
-        return this.announceError("contents different", dataA, dataB, params);
-    }
-    return this.announceOK();
+    return this.testNumberArrayWithTol(dataA, dataB, Geometry.smallMetricDistance, params);
   }
+  /** Test if both ranges have equal low and high parts, or both are null ranges. */
   public testRange3d(dataA: Range3d, dataB: Range3d, ...params: any[]): boolean {
     if (dataA.isAlmostEqual(dataB))
       return this.announceOK();
@@ -207,12 +207,14 @@ export class Checker {
     this.announceError("expect same Range2d", dataA, dataB, params);
     return false;
   }
+  /** Test if 2 Point3ds have almost equal X and Y parts. */
   public testPoint3dXY(dataA: Point3d, dataB: Point3d, ...params: any[]): boolean {
     if (Geometry.isSamePoint3dXY(dataA, dataB))
       return this.announceOK();
     this.announceError("expect same Point3d XY", dataA, dataB, params);
     return false;
   }
+  /** Test if 2 Point2ds are almost equal. */
   public testPoint2d(dataA: Point2d, dataB: Point2d, ...params: any[]): boolean {
     if (Geometry.isSamePoint2d(dataA, dataB))
       return this.announceOK();
@@ -240,21 +242,23 @@ export class Checker {
 
     return false;
   }
-  public testUndefined(dataA: any, ...params: any[]): boolean {
+  public testUndefined(dataA: any, ...params: any[]): dataA is undefined {
     if (dataA === undefined)
       return this.announceOK();
     this.announceError("Expect undefined", dataA, params);
 
     return false;
   }
-  /** fails if dataA is undefined */
-  public testDefined(dataA: any, ...params: any[]): boolean {
+
+  /** Fails if dataA is undefined */
+  public testDefined<T>(dataA: T, ...params: any[]): dataA is NonUndefined<T> {
     if (dataA !== undefined)
       return this.announceOK();
     this.announceError("Expect defined", dataA, params);
 
     return false;
   }
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
   public testType<T extends Function>(data: any, classType: T, ...params: any[]): data is T["prototype"] {
     if (data !== undefined && data instanceof classType)
       return this.announceOK();
@@ -268,6 +272,7 @@ export class Checker {
 
     return false;
   }
+  /** Returns true if dataA is less than or equal to dataB. */
   public testLE(dataA: number, dataB: number, ...params: any[]): boolean {
     if (dataA <= dataB)
       return this.announceOK();
@@ -275,18 +280,24 @@ export class Checker {
 
     return false;
   }
+  /** Returns true if dataA is less than or almost equal to dataB. */
+  public testLETol(dataA: number, dataB: number, tol: number = Geometry.smallMetricDistance, ...params: any[]): boolean {
+    if (dataA <= dataB || Geometry.isSameCoordinate(dataA, dataB, tol))
+      return this.announceOK();
+    this.announceError("Expect dataA <= dataB + tol", dataA, dataB, params);
+    return false;
+  }
   public testBetween(dataA: number, dataB: number, dataC: number, ...params: any[]): boolean {
     if ((dataB - dataA) * (dataC - dataB) >= 0.0)
       return this.announceOK();
     this.announceError("Expect dataB in [dataA, dataC]", [dataA, dataB, dataC], params);
-
     return false;
   }
+  /** Returns true if dataA is less than dataB. */
   public testLT(dataA: number, dataB: number, ...params: any[]): boolean {
     if (dataA < dataB)
       return this.announceOK();
     this.announceError("Expect dataA < dataB", dataA, dataB, params);
-
     return false;
   }
   public testVector3d(dataA: Vector3d, dataB: Vector3d, ...params: any[]): boolean {
@@ -346,64 +357,102 @@ export class Checker {
       return this.announceOK();
     return this.announceError("expect same Transform", dataA, dataB, params);
   }
+  /**
+   * Return true if 2 numbers are almost equal within default fraction tolerance.
+   * * See also [[testExactNumber]], [[testNearNumber]], [[testSmallRelative]], [[testCoordinate]], [[testCoordinateWithToleranceFactor]]
+   */
+  public testFraction(dataA: number, dataB: number, ...params: any[]): boolean {
+    if (Geometry.isSameCoordinate(dataA, dataB, Geometry.smallFraction))
+      return this.announceOK();
+    return this.announceError("Expect same coordinate", dataA, dataB, params);
+  }
+  /**
+   * Return true if 2 numbers are almost equal within default metric tolerance.
+   * * See also [[testExactNumber]], [[testNearNumber]], [[testFraction]], [[testSmallRelative]], [[testCoordinateWithToleranceFactor]]
+   */
   public testCoordinate(dataA: number, dataB: number, ...params: any[]): boolean {
     if (Geometry.isSameCoordinate(dataA, dataB))
       return this.announceOK();
     return this.announceError("Expect same coordinate", dataA, dataB, params);
   }
+  /**
+   * Return true if 2 numbers are almost equal within scaled default metric tolerance.
+   * * See also [[testExactNumber]], [[testNearNumber]], [[testFraction]], [[testSmallRelative]], [[testCoordinate]]
+   */
   public testCoordinateWithToleranceFactor(dataA: number, dataB: number, toleranceFactor: number, ...params: any[]): boolean {
     if (Geometry.isSameCoordinateWithToleranceFactor(dataA, dataB, toleranceFactor))
       return this.announceOK();
-    return this.announceError("Expect same coordinate", dataA, dataB, params);
+    return this.announceError("Expect same coordinate with tol factor", dataA, dataB, params);
   }
+  public testNumberInRange1d(dataA: number, range: Range1d, ...params: any[]): boolean {
+    if (range.containsX(dataA))
+      return this.announceOK();
+    return this.announceError("Expect number in range", dataA, range, params);
+  }
+  /**
+   * Return true if the number is almost zero within default fraction tolerance.
+   * * See also [[testExactNumber]], [[testNearNumber]], [[testFraction]], [[testCoordinate]], [[testCoordinateWithToleranceFactor]]
+   */
   public testSmallRelative(dataA: number, ...params: any[]): boolean {
     if (Geometry.isSmallRelative(dataA))
       return this.announceOK();
     return this.announceError("Expect small relative", dataA, params);
   }
-  // return true if dataA is strictly before dataB as a signed toleranced coordinate value.
+  /** Return true if dataA is strictly before dataB as a signed toleranced coordinate value.. */
   public testCoordinateOrder(dataA: number, dataB: number, ...params: any[]): boolean {
     if (dataA + Geometry.smallMetricDistance < dataB)
       return this.announceOK();
     return this.announceError("Expect coordinate order", dataA, dataB, params);
   }
-  // return true if dataA is strictly before dataB as a signed toleranced coordinate value.
+  /** Return true if dataA is strictly before dataB as a signed toleranced coordinate value.. */
   public testParallel(dataA: Vector3d, dataB: Vector3d, ...params: any[]): boolean {
     if (dataA.isParallelTo(dataB))
       return this.announceOK();
     return this.announceError("Expect parallel", dataA, dataB, params);
   }
-  // return true if dataA is strictly before dataB as a signed toleranced coordinate value.
+  /** Return true if dataA is strictly before dataB as a signed toleranced coordinate value.. */
   public testPerpendicular(dataA: Vector3d, dataB: Vector3d, ...params: any[]): boolean {
     if (dataA.isPerpendicularTo(dataB))
       return this.announceOK();
     return this.announceError("Expect perpendicular", dataA, dataB, params);
   }
-  // return true if dataA is strictly before dataB as a signed toleranced coordinate value.
+  /** Return true if dataA is strictly before dataB as a signed toleranced coordinate value.. */
   public testParallel2d(dataA: Vector2d, dataB: Vector2d, ...params: any[]): boolean {
     if (dataA.isParallelTo(dataB))
       return this.announceOK();
     return this.announceError("Expect parallel", dataA, dataB, params);
   }
-  // return true if dataA is strictly before dataB as a signed toleranced coordinate value.
+  /** Return true if dataA is strictly before dataB as a signed toleranced coordinate value.. */
   public testPerpendicular2d(dataA: Vector2d, dataB: Vector2d, ...params: any[]): boolean {
     if (dataA.isPerpendicularTo(dataB))
       return this.announceOK();
     return this.announceError("Expect perpendicular", dataA, dataB, params);
   }
-  // return true for exact numeric equality
+  /**
+   * Return true for exact numeric equality.
+   * * See also [[testNearNumber]], [[testFraction]], [[testSmallRelative]], [[testCoordinate]], [[testCoordinateWithToleranceFactor]]
+   */
   public testExactNumber(dataA: number, dataB: number, ...params: any[]): boolean {
     if (dataA === dataB)
       return this.announceOK();
     return this.announceError("Expect exact number", dataA, dataB, params);
   }
-  // return true for exact numeric equality
+  /**
+   * Return true for numeric equality within tolerance.
+   * * See also [[testExactNumber]], [[testFraction]], [[testSmallRelative]], [[testCoordinate]], [[testCoordinateWithToleranceFactor]]
+   */
+  public testNearNumber(dataA: number, dataB: number, tolerance: number, ...params: any[]): boolean {
+    if (Geometry.isSameCoordinate(dataA, dataB, tolerance))
+      return this.announceOK();
+    return this.announceError("Expect nearby number", dataA, dataB, params);
+  }
+  /** Return true for exact numeric equality. */
   public testString(dataA: string, dataB: string, ...params: any[]): boolean {
     if (dataA === dataB)
       return this.announceOK();
     return this.announceError("Expect exact string", dataA, dataB, params);
   }
-  // return true if numbers are nearly identical, tolerance e * (1 + abs(dataA) + abs (dataB)) for e = 8e-16
+  /** Return true if numbers are nearly identical, tolerance e * (1 + abs(dataA) + abs (dataB)) for e = 8e-16. */
   public testTightNumber(dataA: number, dataB: number, ...params: any[]): boolean {
     const d = Math.abs(dataB - dataA);
     const tol = 8.0e-16 * (1.0 + Math.abs(dataA) + Math.abs(dataB));
@@ -411,7 +460,7 @@ export class Checker {
       return this.announceOK();
     return this.announceError("Expect exact number", dataA, dataB, params);
   }
-  // return true if dataA is strictly before dataB as a signed toleranced coordinate value.
+  /** Return true if dataA is strictly before dataB as a signed toleranced coordinate value.. */
   public testContainsCoordinate(dataA: GrowableFloat64Array, dataB: number, ...params: any[]): boolean {
     for (let i = 0; i < dataA.length; i++)
       if (Geometry.isSameCoordinate(dataA.atUncheckedIndex(i), dataB)) {
@@ -427,13 +476,13 @@ export class Checker {
       }
     return this.announceError("Expect containsCoordinate", dataA, dataB, params);
   }
-  // return true if dataA and dataB are almost equal as Segment1d.
+  /** Return true if dataA and dataB are almost equal as Segment1d. */
   public testSegment1d(dataA: Segment1d, dataB: Segment1d, ...params: any[]): boolean {
     if (dataA.isAlmostEqual(dataB))
       return this.announceOK();
     return this.announceError("Expect exact number", dataA, dataB, params);
   }
-  /** fails if value is undefined, null, NaN, empty string, 0, or false. */
+  /** Fails if value is undefined, null, NaN, empty string, 0, or false. */
   public testPointer<T>(value: T | undefined, ...params: any[]): value is T {
     if (value)
       return this.announceOK();
@@ -449,11 +498,18 @@ export class Checker {
       return this.announceOK();
     return this.announceError("Angle.isAlmostEqualNoPeriodShift", params);
   }
-  public testGeometry(dataA: GeometryQuery | GeometryQuery[] | undefined, dataB: GeometryQuery | GeometryQuery[] | undefined, ...params: any[]): boolean {
-
+  public testRadians(radiansA: number, radiansB: number, ...params: any[]): boolean {
+    if (Geometry.isSmallAngleRadians(radiansA - radiansB))
+      return this.announceOK();
+    return this.announceError("Expect same radian angle", params);
+  }
+  public testGeometry(
+    dataA: GeometryQuery | GeometryQuery[] | undefined,
+    dataB: GeometryQuery | GeometryQuery[] | undefined,
+    ...params: any[]
+  ): boolean {
     if (dataA === undefined && dataB === undefined)
       return false;
-
     if (dataA instanceof GeometryQuery && dataB instanceof GeometryQuery) {
       if (dataA.isAlmostEqual(dataB))
         return this.announceOK();
@@ -521,6 +577,8 @@ export class Checker {
 
   // ===================================================================================
   // Output
+  // ck.show () -- obeys enableConsole
+  // ck.showGo () -- ignores enableConsole
   // ===================================================================================
 
   public show(...params: any[]) {
@@ -529,6 +587,14 @@ export class Checker {
       GeometryCoreTestIO.consoleLog(p);
     }
   }
+
+  public showGo(...params: any[]) {
+    let p;
+    for (p of params) {
+      GeometryCoreTestIO.consoleLogGo(p);
+    }
+  }
+
   public static clearGeometry(name: string, outDir: string) {
     GeometryCoreTestIO.saveGeometry(Checker._cache, outDir, name);
 

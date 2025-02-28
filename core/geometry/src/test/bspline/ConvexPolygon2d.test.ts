@@ -3,7 +3,7 @@
 * See LICENSE.md in the project root for license terms and full copyright notice.
 *--------------------------------------------------------------------------------------------*/
 
-import { expect } from "chai";
+import { describe, expect, it } from "vitest";
 import { CurveLocationDetail } from "../../curve/CurveLocationDetail";
 import { GeometryQuery } from "../../curve/GeometryQuery";
 import { LineSegment3d } from "../../curve/LineSegment3d";
@@ -12,7 +12,9 @@ import { GrowableXYZArray } from "../../geometry3d/GrowableXYZArray";
 import { Point2d, Vector2d } from "../../geometry3d/Point2dVector2d";
 import { Point3d } from "../../geometry3d/Point3dVector3d";
 import { PolygonOps } from "../../geometry3d/PolygonOps";
-import { ConvexPolygon2d, Ray2d } from "../../numerics/ConvexPolygon2d";
+import { Ray2d } from "../../geometry3d/Ray2d";
+import { ConvexPolygon2d } from "../../numerics/ConvexPolygon2d";
+import { Sample } from "../../serialization/GeometrySamples";
 import { Checker } from "../Checker";
 import { GeometryCoreTestIO } from "../GeometryCoreTestIO";
 
@@ -61,11 +63,6 @@ function checkHullChords(hull: ConvexPolygon2d, step: number, ck: Checker) {
     }
   }
 }
-// cspell:word lisajoue
-function lisajoue(theta: number, a: number): Point2d {
-  const r = Math.cos(a * theta);
-  return Point2d.create(r * Math.cos(theta), r * Math.sin(theta));
-}
 
 function countPointsInHull(hull: ConvexPolygon2d, points: Point2d[]): number {
   let n = 0;
@@ -88,7 +85,7 @@ describe("ConvexPolygon2d", () => {
       Point2d.create(0, 10),
     ];
 
-    const hull = ConvexPolygon2d.createHull(points)!;
+    const hull = ConvexPolygon2d.createHull(points);
     checkHullRaysFromCentroid(hull, ck);
 
     const rayA = Ray2d.createOriginAndDirection(Point2d.create(0, 5), Vector2d.create(2, 0));
@@ -159,7 +156,7 @@ describe("ConvexPolygon2d", () => {
     }
 
     ck.checkpoint("ConvexHullQueries");
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
 
   // ---------------------------------------------------------------------------------------------------------
@@ -181,7 +178,7 @@ describe("ConvexPolygon2d", () => {
       Point2d.create(13, 5),
     ];
     const insideBase = 5;
-    const hull = ConvexPolygon2d.createHull(points)!;
+    const hull = ConvexPolygon2d.createHull(points);
 
     for (let i = insideBase; i < points.length; i++) {
       ck.testTrue(hull.containsPoint(points[i]), "Point inside hull");
@@ -191,7 +188,7 @@ describe("ConvexPolygon2d", () => {
     checkHullChords(hull, 2, ck);
 
     ck.checkpoint("ConvexHullQueriesConstruction");
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
 
   // ---------------------------------------------------------------------------------------------------------
@@ -203,10 +200,10 @@ describe("ConvexPolygon2d", () => {
     const dTheta = 0.34;
     const numPoints = 1000;
     for (let theta = 0.01; points.length < numPoints; theta += dTheta) {
-      points.push(lisajoue(theta * theta, a));
+      points.push(Sample.createRosePoint2d(theta * theta, a));
     }
 
-    const hull = ConvexPolygon2d.createHull(points)!;
+    const hull = ConvexPolygon2d.createHull(points);
 
     for (const i of points) {
       ck.testTrue(hull.containsPoint(i), "Point inside hull");
@@ -215,9 +212,9 @@ describe("ConvexPolygon2d", () => {
     // CheckHullChords (hull, hull.Points().size () / 3);   // This has nasty tolerance problems -- short edges, near-zero cross products
     checkHullRaysFromCentroid(hull, ck);
     const offsetDistance = 1.0;
-    const hull1 = ConvexPolygon2d.createHullIsValidCheck(hull.points)!;
+    const hull1 = ConvexPolygon2d.createHullIsValidCheck(hull.points);
     hull1.offsetInPlace(offsetDistance);
-    const hull2 = ConvexPolygon2d.createHullIsValidCheck(hull1.points)!;
+    const hull2 = ConvexPolygon2d.createHullIsValidCheck(hull1.points);
     hull2.offsetInPlace(0.01 * offsetDistance);
     const n = hull.points.length;
     ck.testExactNumber(n, countPointsInHull(hull1, hull.points));
@@ -254,12 +251,14 @@ describe("ConvexPolygon2d", () => {
     GeometryCoreTestIO.captureCloneGeometry(allGeometry, [GrowableXYZArray.create(hull.points), GrowableXYZArray.create(hull1.points), GrowableXYZArray.create(hull2.points)]);
     GeometryCoreTestIO.saveGeometry(allGeometry, "ConvexPolygon2d", "OffsetInPlace");
 
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
 
   it("Ray2d", () => {
     const ck = new Checker();
-    const ray0 = Ray2d.createOriginAndDirection(Point2d.create(2, 3), Vector2d.create(1, 4));
+    const origin = Point2d.create(2, 3);
+    const direction = Vector2d.create(1, 4);
+    const ray0 = Ray2d.createOriginAndDirection(origin, direction);
     const pointA = Point2d.create(1, 2);
     const ray1 = Ray2d.createOriginAndTarget(pointA, pointA);
     ck.testFalse(ray1.normalizeDirectionInPlace());
@@ -271,14 +270,40 @@ describe("ConvexPolygon2d", () => {
     ck.testPerpendicular2d(perp1.direction, ray0.direction, "CW rotate");
     ck.testLT(0, ray0.direction.crossProduct(perp0.direction));
     ck.testLT(ray0.direction.crossProduct(perp1.direction), 0, "CW rotate sense");
-    ck.checkpoint("Ray2d");
-    expect(ck.getNumErrors()).equals(0);
-
     for (const f0 of [-0.3, 0.5, 0.2]) {
       const point0 = ray0.fractionToPoint(f0);
       const f1 = ray0.projectionFraction(point0);
       ck.testCoordinate(f0, f1, "projection fraction");
     }
+    const ray2 = Ray2d.createOriginAndDirection(Point2d.createZero(), Vector2d.createZero());
+    ray2.set(ray0.origin, ray0.direction);
+    ck.testPoint2d(ray0.origin, ray2.origin, "Ray2d.set sets expected origin");
+    ck.testVector2d(ray0.direction, ray2.direction, "Ray2d.set sets expected direction");
+    // cover optional result args
+    const checkResultArgIsUsed = (functionName: string, resultArg: Ray2d, returnVal: Ray2d, expectedOrigin: Point2d, expectedDirection: Vector2d) => {
+      ck.testPoint2d(expectedOrigin, resultArg.origin, `Ray2d.${functionName} sets expected origin`);
+      ck.testVector2d(expectedDirection, resultArg.direction, `Ray2d.${functionName} sets expected direction`);
+      ck.testTrue(returnVal.origin === resultArg.origin, `Ray2d.${functionName} uses result.origin`);
+      ck.testTrue(returnVal.direction === resultArg.direction, `Ray2d.${functionName} uses result.direction`);
+    };
+    let ray3 = Ray2d.createOriginAndTarget(ray0.origin, pointA, ray1);
+    checkResultArgIsUsed("createOriginAndTarget", ray1, ray3, ray0.origin, Vector2d.createStartEnd(ray0.origin, pointA));
+    ray3 = Ray2d.createOriginAndDirection(pointA, ray0.direction, ray1);
+    checkResultArgIsUsed("createOriginAndDirection", ray1, ray3, pointA, ray0.direction);
+    const pt = Point2d.create(7, 11);
+    const vec = Vector2d.create(4, -5);
+    ray3 = Ray2d.createOriginAndDirectionCapture(pt, vec, ray1);
+    ck.testTrue(pt === ray3.origin, "Ray2d.createOriginAndDirectionCapture captures origin");
+    ck.testTrue(vec === ray3.direction, "Ray2d.createOriginAndDirectionCapture captures direction");
+    checkResultArgIsUsed("createOriginAndDirectionCapture", ray1, ray3, pt, vec);
+    ray3 = ray0.parallelRay(1.0, ray1);
+    checkResultArgIsUsed("parallelRay", ray1, ray3, Point2d.create(-2, 4), ray0.direction);
+    ray3 = ray0.ccwPerpendicularRay(ray1);
+    checkResultArgIsUsed("ccwPerpendicularRay", ray1, ray3, ray0.origin, Vector2d.create(-4, 1));
+    ray3 = ray0.cwPerpendicularRay(ray1);
+    checkResultArgIsUsed("cwPerpendicularRay", ray1, ray3, ray0.origin, Vector2d.create(4, -1));
+    ck.checkpoint("Ray2d");
+    expect(ck.getNumErrors()).toBe(0);
   });
 
   it("ConvexPolygon2dEmptyCases", () => {
@@ -296,6 +321,6 @@ describe("ConvexPolygon2d", () => {
       const rayRange = hull1.clipRay(highRay);
       ck.testTrue(rayRange.isNull);
     }
-    expect(ck.getNumErrors()).equals(0);
+    expect(ck.getNumErrors()).toBe(0);
   });
 });

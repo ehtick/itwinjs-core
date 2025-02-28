@@ -6,7 +6,7 @@
  * @module Views
  */
 
-import { BeEvent, CompressedId64Set, Id64String } from "@itwin/core-bentley";
+import { BeEvent, CompressedId64Set, Id64String, OrderedId64Iterable } from "@itwin/core-bentley";
 import { Constant, Matrix3d, Range3d, XYAndZ } from "@itwin/core-geometry";
 import { AxisAlignedBox3d, HydrateViewStateRequestProps, HydrateViewStateResponseProps, SpatialViewDefinitionProps, ViewStateProps } from "@itwin/core-common";
 import { AuxCoordSystemSpatialState, AuxCoordSystemState } from "./AuxCoordSys";
@@ -18,6 +18,14 @@ import { SceneContext } from "./ViewContext";
 import { IModelConnection } from "./IModelConnection";
 import { AttachToViewportArgs, ViewState3d } from "./ViewState";
 import { SpatialTileTreeReferences, TileTreeReference } from "./tile/internal";
+
+/** Options supplied to [[SpatialViewState.computeFitRange]].
+ * @public
+ */
+export interface ComputeSpatialViewFitRangeOptions {
+  /** The minimal extents. The computed range will be unioned with this range if supplied. */
+  baseExtents?: Range3d;
+}
 
 /** Defines a view of one or more SpatialModels.
  * The list of viewed models is stored in the ModelSelector.
@@ -53,6 +61,8 @@ export class SpatialViewState extends ViewState3d {
       this.registerModelSelectorListeners();
       this.onViewedModelsChanged.raiseEvent();
     }
+
+    this.markModelSelectorChanged();
   }
 
   /** Create a new *blank* SpatialViewState. The returned SpatialViewState will nave non-persistent empty [[CategorySelectorState]] and [[ModelSelectorState]],
@@ -99,7 +109,6 @@ export class SpatialViewState extends ViewState3d {
     this._treeRefs = SpatialTileTreeReferences.create(this);
   }
 
-  /** @internal */
   public override isSpatialView(): this is SpatialViewState { return true; }
 
   public override equals(other: this): boolean { return super.equals(other) && this.modelSelector.equals(other.modelSelector); }
@@ -110,17 +119,6 @@ export class SpatialViewState extends ViewState3d {
   /** @internal */
   public markModelSelectorChanged(): void {
     this._treeRefs.update();
-  }
-
-  /** Get world-space viewed extents based on the iModel's project extents.
-   * @deprecated in 3.6. These extents are based on [[IModelConnection.displayedExtents]], which is deprecated. Consider using [[computeFitRange]] or [[getViewedExtents]] instead.
-   */
-  protected getDisplayedExtents(): AxisAlignedBox3d {
-    /* eslint-disable-next-line deprecation/deprecation */
-    const extents = Range3d.fromJSON<AxisAlignedBox3d>(this.iModel.displayedExtents);
-    extents.scaleAboutCenterInPlace(1.0001); // projectExtents. lying smack up against the extents is not excluded by frustum...
-    extents.extendRange(this.getGroundExtents());
-    return extents;
   }
 
   private computeBaseExtents(): AxisAlignedBox3d {
@@ -135,13 +133,21 @@ export class SpatialViewState extends ViewState3d {
     return extents;
   }
 
-  /** Compute world-space range appropriate for fitting the view. If that range is null, use the displayed extents. */
-  public computeFitRange(): AxisAlignedBox3d {
+  /** Compute a volume in world coordinates tightly encompassing the contents of the view. The volume is computed from the union of the volumes of the
+   * view's viewed models, including [GeometricModel]($backend)s and reality models.
+   * Those volumes are obtained from the [[TileTree]]s used to render those models, so any tile tree that has not yet been loaded will not contribute to the computation.
+   * If `options.baseExtents` is defined, it will be unioned with the computed volume.
+   * If the computed volume is null (empty), a default volume will be computed from [IModel.projectExtents]($common), which may be a looser approximation of the
+   * models' volumes.
+   * @param options Options used to customize how the volume is computed.
+   * @returns A non-null volume in world coordinates encompassing the contents of the view.
+   */
+  public computeFitRange(options?: ComputeSpatialViewFitRangeOptions): AxisAlignedBox3d {
     // Fit to the union of the ranges of all loaded tile trees.
-    const range = new Range3d();
-    this.forEachTileTreeRef((ref) => {
+    const range = options?.baseExtents?.clone() ?? new Range3d();
+    for (const ref of this.getTileTreeRefs()) {
       ref.unionFitRange(range);
-    });
+    }
 
     // Fall back to the project extents if necessary.
     if (range.isNull)
@@ -201,9 +207,10 @@ export class SpatialViewState extends ViewState3d {
   }
 
   /** @internal */
-  public override forEachModelTreeRef(func: (treeRef: TileTreeReference) => void): void {
-    for (const ref of this._treeRefs)
-      func(ref);
+  public override * getModelTreeRefs(): Iterable<TileTreeReference> {
+    for (const ref of this._treeRefs) {
+      yield ref;
+    }
   }
 
   /** @internal */
@@ -213,14 +220,14 @@ export class SpatialViewState extends ViewState3d {
     context.viewport.target.updateSolarShadows(this.getDisplayStyle3d().wantShadows ? context : undefined);
   }
 
-  /** @internal */
+  /** See [[ViewState.attachToViewport]]. */
   public override attachToViewport(args: AttachToViewportArgs): void {
     super.attachToViewport(args);
     this.registerModelSelectorListeners();
     this._treeRefs.attachToViewport(args);
   }
 
-  /** @internal */
+  /** See [[ViewState.detachFromViewport]]. */
   public override detachFromViewport(): void {
     super.detachFromViewport();
     this._treeRefs.detachFromViewport();
@@ -236,6 +243,25 @@ export class SpatialViewState extends ViewState3d {
    */
   public setTileTreeReferencesDeactivated(modelIds: Id64String | Id64String[] | undefined, deactivated: boolean | undefined, which: "all" | "animated" | "primary" | "section" | number[]): void {
     this._treeRefs.setDeactivated(modelIds, deactivated, which);
+  }
+
+  /** For getting the [TileTreeReference]s that are in the modelIds, for planar classification.
+   * @param modelIds modelIds for which to get the TileTreeReferences
+   * @param maskTreeRefs where to store the TileTreeReferences
+   * @param maskRange range to extend for the maskRefs
+   * @internal
+   */
+  public collectMaskRefs(modelIds: OrderedId64Iterable, maskTreeRefs: TileTreeReference[], maskRange: Range3d): void {
+    this._treeRefs.collectMaskRefs(modelIds, maskTreeRefs, maskRange);
+  }
+
+  /** For getting a list of modelIds which do not participate in masking for planar classification.
+   * @param maskModels models which DO participate in planar clip masking
+   * @param useVisible when true, use visible models to set flag
+   * @internal
+   */
+  public getModelsNotInMask(maskModels: OrderedId64Iterable | undefined, useVisible: boolean): Id64String[] | undefined {
+    return this._treeRefs.getModelsNotInMask(maskModels, useVisible);
   }
 
   private registerModelSelectorListeners(): void {

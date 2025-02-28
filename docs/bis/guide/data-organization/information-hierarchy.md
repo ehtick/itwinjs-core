@@ -14,8 +14,8 @@ There are several mechanisms available in BIS that domain authors can take advan
 * A Model can contain Elements.
 * An Element can be sub-modeled by a Model.
 * An Element can own child Elements.
-* A *Spatial Organizer* can hold an Element as part of a hierarchical spatial decomposition of a *Facility*, from the perspective of a specific discipline.
-* A *Physical System* can group member Elements as part of a hierarchical organization by sub-systems, from the perspective of a specific discipline.
+* An Element can be spatially organized by a *Spatial Organizer* into a hierarchy according to a specific discipline.
+* A *Physical System* can group member Elements as part of a hierarchical organization by sub-systems, according to a specific discipline.
 * The provenance of an Element can be traced back to an *External Source*, whose organization may be hierarchical.
 
 Each of these mechanism is intended to be used in specific circumstances which are explained in this chapter.
@@ -42,9 +42,9 @@ For example, a `DrawingModel` sub-models a `Drawing` Element and contains the `D
 
 An Element can own child Elements. This is useful for modeling *assembly* relationships or for modeling cases where one Element exclusively controls the lifetime of other Elements. An Element can have 0 or 1 parent Elements as defined by the `ElementOwnsChildElements` relationship. An Element without a parent is considered a *top-level* Element. An Element with a parent is considered a *child* Element. These hierarchies can go N levels deep, which means that an Element can be both a parent and a child. A parent Element and all its children are required to be contained in the same model.
 
-### Element Held by Spatial Organizer
+### Element Organized by Spatial Organizer
 
-A Spatial Organizer, typically a subclass of `spcomp:SpatialStructureElement` or `spcomp:Zone`, can *hold* Spatial Elements and aggregate other Spatial Structure elements.
+A [Spatial Organizer](../../domains/SpatialComposition.ecschema.md#ispatialorganizer), typically a subclass of `spcomp:SpatialStructureElement` or `spcomp:Zone`, can *organize* (i.e. either *hold* or *reference*) Spatial Elements and aggregate other Spatial Structure elements.
 
 These concepts are part of the rules and patterns introduced by the [SpatialComposition](../../domains/spatialcomposition.ecschema/) schema. They aim to enable the modeling of the Spatial Structure of infrastructure.
 
@@ -80,33 +80,29 @@ The top of the information hierarchy is strictly controlled and is very similar 
 
 ## Typical Repository Organization
 
-Two examples of repository organizations are described below. It should be noted that a single BIS repository may have multiple uses. When that occurs each use (often corresponding to an application) adds the hierarchy; the resulting hierarchy is similar to a union of the uses' hierarchies.
+Two examples of repository organizations are described below. It should be noted that a single BIS repository may have multiple uses. When that occurs each use (often corresponding to an application) adds its hierarchy on a corresponding [Editing Channel](../../../learning/backend/Channel.md) within the BIS repository. The resulting total hierarchy for the single BIS repository is then the union of the uses' hierarchies.
 
 ## Example Information Hierarchy
 
-The following instance-diagram depicts the information hierarchy for an hypothetical campus. It shows the organization of data in two modeling perspectives: Physical and Functional, as well as catalog-data in Definition models. See [Instance-diagram Conventions](../references/instance-diagram-conventions.md) for details about the conventions used.
+The following instance-diagram depicts the information hierarchy for an hypothetical campus. The data is assumed to have been written by a single application, thus, it is organized into a one `Editing Channel`. It shows the organization of data in two main modeling perspectives: Physical and Functional, as well as catalog-data in Definition models and associated Drawings under a Document perspective. See [Instance-diagram Conventions](../references/instance-diagram-conventions.md) for details about the conventions used.
 
 &nbsp;
-![Information Hierarchy](../media/information-hierarchy.webp)
+![Information Hierarchy](../media/information-hierarchy.png)
 &nbsp;
 
 ### iModel Connector Repository Organization
 
 iModel Connectors transform data in an external format into an iModel. As part of that job, they need to organize the resulting data in a way that is comprehensible by both humans and software.
 
-The following instance diagram depicts the organization of information in one iModel target by three iModel Connectors: IFC, OpenBuilding Designer and Bentley Civil. The last two are shown with more detail, including their parallel `Model`, `ExternalSource` and `SpatialComposition` hierarchies. The sample iModel shows data synchronized from three different datasets, two .dgn-based and one .ifc.
+The following instance diagram depicts the organization of information in one iModel targeted by three iModel Connectors: IFC, OpenBuilding Designer and Bentley Civil, which synchronized data from three different datasets, two .dgn-based and one .ifc. The last two are shown with more detail, including their parallel `Model`, `ExternalSource` and `SpatialComposition` hierarchies. As a result, the resulting hierarchy of the BIS repository is organized into three `Editing Channels`.
 
 &nbsp;
-![iModel Connector Repository Organization](../media/imodel-connector-repository-organization.webp)
+![iModel Connector Repository Organization](../media/imodel-connector-repository-organization.png)
 &nbsp;
 
 Since iModel Connectors run headless without user-input, they need to organize data they write into iModels based on their understanding about it. In the example above, data synchronized by each iModel Connector is stored under a specific branch of the Subject hierarchy. Each iModel Connector lays out the next levels according to the structure and discoverable semantics about the data on the source. In the case of dgn files, both the OpenBuilding Designer and Bentley Civil iModel Connectors create child Subjects for every referenced dgn & model on the external dataset, mirroring the division of labor among teams and disciplines that drive the organization of data in those external products.
 
 See [iModel Connectors](../../../learning/imodel-connectors.md) for more details.
-
-<!-- TODO:
-### Editing Application Repository Organization
--->
 
 ---
 | Next: [Modeling Perspectives](./modeling-perspectives.md)

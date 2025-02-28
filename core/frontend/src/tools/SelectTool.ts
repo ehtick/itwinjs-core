@@ -18,7 +18,7 @@ import { HitDetail } from "../HitDetail";
 import { IModelApp } from "../IModelApp";
 import { Pixel } from "../render/Pixel";
 import { DecorateContext } from "../ViewContext";
-import { ViewRect } from "../ViewRect";
+import { ViewRect } from "../common/ViewRect";
 import { PrimitiveTool } from "./PrimitiveTool";
 import { BeButton, BeButtonEvent, BeModifierKeys, BeTouchEvent, CoordinateLockOverrides, CoreTools, EventHandled, InputSource } from "./Tool";
 import { ManipulatorToolEvent } from "./ToolAdmin";
@@ -486,6 +486,26 @@ export class SelectionTool extends PrimitiveTool {
     return EventHandled.No;
   }
 
+  public async processHit(ev: BeButtonEvent, hit: HitDetail): Promise<EventHandled> {
+    if (hit.isModelHit || hit.isMapHit)
+      return EventHandled.No; // model hit = terrain, reality models, background maps, etc - not selectable
+
+    switch (this.selectionMode) {
+      case SelectionMode.Replace:
+        await this.processSelection(hit.sourceId, ev.isControlKey ? SelectionProcessing.InvertElementInSelection : SelectionProcessing.ReplaceSelectionWithElement);
+        break;
+
+      case SelectionMode.Add:
+        await this.processSelection(hit.sourceId, SelectionProcessing.AddElementToSelection);
+        break;
+
+      case SelectionMode.Remove:
+        await this.processSelection(hit.sourceId, SelectionProcessing.RemoveElementFromSelection);
+        break;
+    }
+    return EventHandled.Yes;
+  }
+
   public override async onMouseStartDrag(ev: BeButtonEvent): Promise<EventHandled> {
     IModelApp.accuSnap.clear(); // Need to test hit at start drag location, not current AccuSnap...
     if (EventHandled.Yes === await this.selectDecoration(ev))
@@ -515,24 +535,12 @@ export class SelectionTool extends PrimitiveTool {
     }
 
     const hit = await IModelApp.locateManager.doLocate(new LocateResponse(), true, ev.point, ev.viewport, ev.inputSource);
-    if (hit !== undefined && !hit.isModelHit && !hit.isMapHit) { // model hit = terrain, reality models, background maps, etc - not selectable
+    if (hit !== undefined) {
       if (EventHandled.Yes === await this.selectDecoration(ev, hit))
         return EventHandled.Yes;
 
-      switch (this.selectionMode) {
-        case SelectionMode.Replace:
-          await this.processSelection(hit.sourceId, ev.isControlKey ? SelectionProcessing.InvertElementInSelection : SelectionProcessing.ReplaceSelectionWithElement);
-          break;
-
-        case SelectionMode.Add:
-          await this.processSelection(hit.sourceId, SelectionProcessing.AddElementToSelection);
-          break;
-
-        case SelectionMode.Remove:
-          await this.processSelection(hit.sourceId, SelectionProcessing.RemoveElementFromSelection);
-          break;
-      }
-      return EventHandled.Yes;
+      if (EventHandled.Yes === await this.processHit(ev, hit))
+        return EventHandled.Yes;
     }
 
     if (!ev.isControlKey && this.wantSelectionClearOnMiss(ev) && this.processMiss(ev))
@@ -551,7 +559,7 @@ export class SelectionTool extends PrimitiveTool {
 
     // Check for overlapping hits...
     const lastHit = SelectionMode.Remove === this.selectionMode ? undefined : IModelApp.locateManager.currHit;
-    if (lastHit && this.iModel.selectionSet.has(lastHit.sourceId)) {
+    if (lastHit && this.iModel.selectionSet.elements.has(lastHit.sourceId)) {
       const autoHit = IModelApp.accuSnap.currHit;
 
       // Play nice w/auto-locate, only remove previous hit if not currently auto-locating or over previous hit
@@ -630,7 +638,7 @@ export class SelectionTool extends PrimitiveTool {
     if (SelectionMode.Replace === mode)
       return LocateFilterStatus.Accept;
 
-    const isSelected = this.iModel.selectionSet.has(hit.sourceId);
+    const isSelected = this.iModel.selectionSet.elements.has(hit.sourceId);
     const status = ((SelectionMode.Add === mode ? !isSelected : isSelected) ? LocateFilterStatus.Accept : LocateFilterStatus.Reject);
     if (out && LocateFilterStatus.Reject === status)
       out.explanation = CoreTools.translate(`ElementSet.Error.${isSelected ? "AlreadySelected" : "NotSelected"}`);

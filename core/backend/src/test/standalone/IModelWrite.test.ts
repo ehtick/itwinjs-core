@@ -3,21 +3,33 @@
 * See LICENSE.md in the project root for license terms and full copyright notice.
 *--------------------------------------------------------------------------------------------*/
 
-import { assert, expect } from "chai";
-import * as semver from "semver";
 import { AccessToken, DbResult, GuidString, Id64, Id64String } from "@itwin/core-bentley";
 import {
-  Code, ColorDef, GeometricElement2dProps, GeometryStreamProps, IModel, QueryRowFormat, RequestNewBriefcaseProps, SchemaState, SubCategoryAppearance,
+  ChangesetIdWithIndex, Code, ColorDef,
+  GeometricElement2dProps, GeometryStreamProps, IModel, LockState, QueryRowFormat, RequestNewBriefcaseProps, SchemaState, SubCategoryAppearance,
 } from "@itwin/core-common";
 import { Arc3d, IModelJson, Point2d, Point3d } from "@itwin/core-geometry";
+import * as chai from "chai";
+import { assert, expect } from "chai";
+import * as chaiAsPromised from "chai-as-promised";
+import * as fs from "fs";
+import * as semver from "semver";
+import * as sinon from "sinon";
 import { HubWrappers, KnownTestLocations } from "../";
 import { DrawingCategory } from "../../Category";
-import {
-  BriefcaseDb, BriefcaseManager, DefinitionModel, DictionaryModel, DocumentListModel, Drawing, DrawingGraphic, IModelHost, IModelJsFs, SpatialCategory, SqliteStatement, SqliteValue, SqliteValueType, Subject,
-} from "../../core-backend";
 import { ECSqlStatement } from "../../ECSqlStatement";
 import { HubMock } from "../../HubMock";
+import {
+  _nativeDb,
+  BriefcaseDb,
+  BriefcaseManager,
+  ChannelControl,
+  CodeService, DefinitionModel, DictionaryModel, DocumentListModel, Drawing, DrawingGraphic, OpenBriefcaseArgs, SpatialCategory, Subject,
+} from "../../core-backend";
 import { IModelTestUtils, TestUserType } from "../IModelTestUtils";
+import { ServerBasedLocks } from "../../internal/ServerBasedLocks";
+
+chai.use(chaiAsPromised);
 
 export async function createNewModelAndCategory(rwIModel: BriefcaseDb, parent?: Id64String) {
   // Create a new physical model.
@@ -37,45 +49,248 @@ export async function createNewModelAndCategory(rwIModel: BriefcaseDb, parent?: 
 describe("IModelWriteTest", () => {
   let managerAccessToken: AccessToken;
   let superAccessToken: AccessToken;
-  let testITwinId: string;
-  let readWriteTestIModelId: GuidString;
+  let iTwinId: GuidString;
 
-  let readWriteTestIModelName: string;
-
-  before(async () => {
-    // IModelTestUtils.setupDebugLogLevels();
+  before(() => {
     HubMock.startup("IModelWriteTest", KnownTestLocations.outputDir);
+    iTwinId = HubMock.iTwinId;
+  });
+  after(() => HubMock.shutdown());
 
-    testITwinId = HubMock.iTwinId;
-    readWriteTestIModelName = IModelTestUtils.generateUniqueName("ReadWriteTest");
-    readWriteTestIModelId = await HubWrappers.recreateIModel({ accessToken: managerAccessToken, iTwinId: testITwinId, iModelName: readWriteTestIModelName });
+  it("Check busyTimeout option", async () => {
+    const iModelProps = {
+      iModelName: "ReadWriteTest",
+      iTwinId,
+    };
 
-    // Purge briefcases that are close to reaching the acquire limit
-    await HubWrappers.purgeAcquiredBriefcasesById(managerAccessToken, readWriteTestIModelId);
+    const iModelId = await HubMock.createNewIModel(iModelProps);
+    const briefcaseProps = await BriefcaseManager.downloadBriefcase({ accessToken: "test token", iTwinId, iModelId });
+
+    const tryOpen = async (args: OpenBriefcaseArgs) => {
+      const start = performance.now();
+      let didThrow = false;
+      try {
+        await BriefcaseDb.open(args);
+
+      } catch (e: any) {
+        assert.strictEqual(e.errorNumber, DbResult.BE_SQLITE_BUSY, "Expect error 'Db is busy'");
+        didThrow = true;
+      }
+      assert.isTrue(didThrow);
+      return performance.now() - start;
+    };
+    const seconds = (s: number) => s * 1000;
+
+    const db = await BriefcaseDb.open({ fileName: briefcaseProps.fileName });
+    db.saveChanges();
+    // lock db so another connection cannot write to it.
+    db.saveFileProperty({ name: "test", namespace: "test" }, "");
+
+    assert.isAtMost(await tryOpen({ fileName: briefcaseProps.fileName, busyTimeout: seconds(0) }), seconds(1), "open should fail with busy error instantly");
+    assert.isAtLeast(await tryOpen({ fileName: briefcaseProps.fileName, busyTimeout: seconds(1) }), seconds(1), "open should fail with atleast 1 sec delay due to retry");
+    assert.isAtLeast(await tryOpen({ fileName: briefcaseProps.fileName, busyTimeout: seconds(2) }), seconds(2), "open should fail with atleast 2 sec delay due to retry");
+    assert.isAtLeast(await tryOpen({ fileName: briefcaseProps.fileName, busyTimeout: seconds(3) }), seconds(3), "open should fail with atleast 3 sec delay due to retry");
+
+    db.abandonChanges();
+    db.close();
   });
 
-  after(async () => {
-    try {
-      await HubWrappers.deleteIModel(managerAccessToken, "iModelJsIntegrationTest", readWriteTestIModelName);
-      HubMock.shutdown();
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.log(err);
-    }
+  it("WatchForChanges", async () => {
+    const iModelProps = {
+      iModelName: "ReadWriteTest",
+      iTwinId,
+    };
+
+    const iModelId = await HubMock.createNewIModel(iModelProps);
+    const briefcaseProps = await BriefcaseManager.downloadBriefcase({ accessToken: "test token", iTwinId, iModelId });
+
+    let nClosed = 0;
+    const fsWatcher = {
+      callback: () => { },
+      close: () => ++nClosed,
+    };
+    const watchStub: any = (_filename: fs.PathLike, _opts: fs.WatchOptions, fn: () => void) => {
+      fsWatcher.callback = fn;
+      return fsWatcher;
+    };
+    sinon.stub(fs, "watch").callsFake(watchStub);
+
+    const bc = await BriefcaseDb.open({ fileName: briefcaseProps.fileName });
+    bc.channels.addAllowedChannel(ChannelControl.sharedChannelName);
+    const roBC = await BriefcaseDb.open({ fileName: briefcaseProps.fileName, watchForChanges: true });
+
+    const code1 = IModelTestUtils.getUniqueModelCode(bc, "newPhysicalModel1");
+    await IModelTestUtils.createAndInsertPhysicalPartitionAndModelAsync(bc, code1, true);
+    bc.saveChanges();
+
+    // immediately after save changes the current txnId in the writeable briefcase changes, but it isn't reflected
+    // in the readonly briefcase until the file watcher fires.
+    expect(bc[_nativeDb].getCurrentTxnId()).not.equal(roBC[_nativeDb].getCurrentTxnId());
+
+    // trigger watcher via stub
+    fsWatcher.callback();
+
+    // now they should match because restartDefaultTxn in the readonly briefcase reads the changes from the writeable connection
+    expect(bc[_nativeDb].getCurrentTxnId()).equal(roBC[_nativeDb].getCurrentTxnId());
+
+    roBC.close();
+    expect(nClosed).equal(1);
+
+    bc.close();
+    sinon.restore();
+  });
+
+  function expectEqualChangesets(a: ChangesetIdWithIndex, b: ChangesetIdWithIndex): void {
+    expect(a.id).to.equal(b.id);
+    expect(a.index).to.equal(b.index);
+  }
+
+  it("WatchForChanges - push", async () => {
+    const adminAccessToken = await HubWrappers.getAccessToken(TestUserType.SuperManager);
+    const iModelProps = {
+      iModelName: "ReadWriteTest",
+      iTwinId,
+    };
+
+    const iModelId = await HubMock.createNewIModel(iModelProps);
+    const briefcaseProps = await BriefcaseManager.downloadBriefcase({ accessToken: adminAccessToken, iTwinId, iModelId });
+
+    let nClosed = 0;
+    const fsWatcher = {
+      callback: () => { },
+      close: () => ++nClosed,
+    };
+    const watchStub: any = (_filename: fs.PathLike, _opts: fs.WatchOptions, fn: () => void) => {
+      fsWatcher.callback = fn;
+      return fsWatcher;
+    };
+    sinon.stub(fs, "watch").callsFake(watchStub);
+
+    const bc = await BriefcaseDb.open({ fileName: briefcaseProps.fileName });
+    bc.channels.addAllowedChannel(ChannelControl.sharedChannelName);
+    const roBC = await BriefcaseDb.open({ fileName: briefcaseProps.fileName, watchForChanges: true });
+
+    const code1 = IModelTestUtils.getUniqueModelCode(bc, "newPhysicalModel1");
+    await IModelTestUtils.createAndInsertPhysicalPartitionAndModelAsync(bc, code1, true);
+    bc.saveChanges();
+
+    // immediately after save changes the current txnId in the writeable briefcase changes, but it isn't reflected
+    // in the readonly briefcase until the file watcher fires.
+    expect(bc[_nativeDb].getCurrentTxnId()).not.equal(roBC[_nativeDb].getCurrentTxnId());
+
+    // trigger watcher via stub
+    fsWatcher.callback();
+
+    // now they should match because restartDefaultTxn in the readonly briefcase reads the changes from the writeable connection
+    expect(bc[_nativeDb].getCurrentTxnId()).equal(roBC[_nativeDb].getCurrentTxnId());
+
+    // Push the changes to the hub
+
+    const prePushChangeset = bc.changeset;
+    let eventRaised = false;
+    roBC.onChangesetChanged.addOnce((prevCS) => {
+      expectEqualChangesets(prevCS, prePushChangeset);
+      eventRaised = true;
+    });
+
+    await bc.pushChanges({ accessToken: adminAccessToken, description: "test" });
+    const postPushChangeset = bc.changeset;
+    assert(!!postPushChangeset);
+    expect(prePushChangeset !== postPushChangeset, "changes should be pushed");
+
+    // trigger watcher via stub
+    fsWatcher.callback();
+
+    expectEqualChangesets(roBC.changeset, postPushChangeset);
+    expect(roBC[_nativeDb].getCurrentTxnId(), "txn should be updated").equal(bc[_nativeDb].getCurrentTxnId());
+    expect(eventRaised).to.be.true;
+
+    roBC.close();
+    expect(nClosed).equal(1);
+
+    bc.close();
+    sinon.restore();
+  });
+
+  it("WatchForChanges - pull", async () => {
+    const adminAccessToken = await HubWrappers.getAccessToken(TestUserType.SuperManager);
+
+    const pathname = IModelTestUtils.resolveAssetFile("CompatibilityTestSeed.bim");
+    const hubName = "CompatibilityTest";
+    const iModelId = await HubWrappers.pushIModel(managerAccessToken, iTwinId, pathname, hubName, true);
+
+    // Download two copies of the briefcase - manager and super
+    const args: RequestNewBriefcaseProps = { iTwinId, iModelId };
+    const initialDb = await BriefcaseManager.downloadBriefcase({ accessToken: adminAccessToken, ...args });
+    const briefcaseProps = await BriefcaseManager.downloadBriefcase({ accessToken: adminAccessToken, ...args });
+
+    // Push some changes - prep for pull workflow.
+    const bc1 = await BriefcaseDb.open({ fileName: initialDb.fileName });
+    bc1.channels.addAllowedChannel(ChannelControl.sharedChannelName);
+    const code2 = IModelTestUtils.getUniqueModelCode(bc1, "newPhysicalModel2");
+    await IModelTestUtils.createAndInsertPhysicalPartitionAndModelAsync(bc1, code2, true);
+    const prePushChangeset = bc1.changeset;
+    bc1.saveChanges();
+    await bc1.pushChanges({ accessToken: adminAccessToken, description: "test" });
+    const postPushChangeset = bc1.changeset;
+    assert(!!prePushChangeset);
+    expect(prePushChangeset !== postPushChangeset, "changes should be pushed");
+
+    bc1.close();
+
+    // Writer that pulls + watcher.
+    let nClosed = 0;
+    const fsWatcher = {
+      callback: () => { },
+      close: () => ++nClosed,
+    };
+    const watchStub: any = (_filename: fs.PathLike, _opts: fs.WatchOptions, fn: () => void) => {
+      fsWatcher.callback = fn;
+      return fsWatcher;
+    };
+    sinon.stub(fs, "watch").callsFake(watchStub);
+
+    const bc = await BriefcaseDb.open({ fileName: briefcaseProps.fileName });
+    bc.channels.addAllowedChannel(ChannelControl.sharedChannelName);
+    const roBC = await BriefcaseDb.open({ fileName: briefcaseProps.fileName, watchForChanges: true });
+
+    const prePullChangeset = bc.changeset;
+    let eventRaised = false;
+    roBC.onChangesetChanged.addOnce((prevCS) => {
+      expectEqualChangesets(prevCS, prePushChangeset);
+      eventRaised = true;
+    });
+
+    await bc.pullChanges();
+
+    const postPullChangeset = bc.changeset;
+    assert(!!postPullChangeset);
+    expect(prePullChangeset !== postPullChangeset, "changes should be pulled");
+
+    // trigger watcher via stub
+    fsWatcher.callback();
+
+    expectEqualChangesets(roBC.changeset, postPullChangeset);
+    expect(roBC[_nativeDb].getCurrentTxnId(), "txn should be updated").equal(bc[_nativeDb].getCurrentTxnId());
+    expect(eventRaised).to.be.true;
+
+    roBC.close();
+    expect(nClosed).equal(1);
+
+    bc.close();
+    sinon.restore();
   });
 
   it("should handle undo/redo", async () => {
     const adminAccessToken = await HubWrappers.getAccessToken(TestUserType.SuperManager);
     // Delete any existing iModels with the same name as the read-write test iModel
     const iModelName = "CodesUndoRedoPushTest";
-    const iModelId = await IModelHost.hubAccess.queryIModelByName({ accessToken: adminAccessToken, iTwinId: testITwinId, iModelName });
-    if (iModelId)
-      await IModelHost.hubAccess.deleteIModel({ accessToken: adminAccessToken, iTwinId: testITwinId, iModelId });
 
     // Create a new empty iModel on the Hub & obtain a briefcase
-    const rwIModelId = await IModelHost.hubAccess.createNewIModel({ accessToken: adminAccessToken, iTwinId: testITwinId, iModelName, description: "TestSubject" });
+    const rwIModelId = await HubMock.createNewIModel({ accessToken: adminAccessToken, iTwinId, iModelName, description: "TestSubject" });
     assert.isNotEmpty(rwIModelId);
-    const rwIModel = await HubWrappers.downloadAndOpenBriefcase({ accessToken: adminAccessToken, iTwinId: testITwinId, iModelId: rwIModelId });
+    const rwIModel = await HubWrappers.downloadAndOpenBriefcase({ accessToken: adminAccessToken, iTwinId, iModelId: rwIModelId });
+    rwIModel.channels.addAllowedChannel(ChannelControl.sharedChannelName);
 
     // create and insert a new model with code1
     const code1 = IModelTestUtils.getUniqueModelCode(rwIModel, "newPhysicalModel1");
@@ -93,7 +308,7 @@ describe("IModelWriteTest", () => {
       const theNewModel = rwIModel.elements.getElement(code1); // throws if element is not found
       assert.isTrue(theNewModel === undefined); // really should not be here.
       assert.fail(); // should not be here.
-    } catch (_err) {
+    } catch {
       // this is what I expect
     }
 
@@ -113,127 +328,9 @@ describe("IModelWriteTest", () => {
     expect(prePushChangeset !== postPushChangeset);
 
     rwIModel.close();
-    // The iModel should have code1 marked as used and not code2
-    // timer = new Timer("querying codes");
-    // const codes = await IModelHubAccess.iModelClient.codes.get(adminRequestContext, rwIModelId);
-    // timer.end();
-    // assert.isTrue(codes.find((code) => (code.value === "newPhysicalModel2" && code.state === CodeState.Used)) !== undefined);
-    // assert.isFalse(codes.find((code) => (code.value === "newPhysicalModel" && code.state === CodeState.Used)) !== undefined);
-  });
-
-  it("Run plain SQL against fixed version connection", async () => {
-    const iModel = await HubWrappers.downloadAndOpenBriefcase({ accessToken: managerAccessToken, iTwinId: testITwinId, iModelId: readWriteTestIModelId });
-    try {
-      iModel.withPreparedSqliteStatement("CREATE TABLE Test(Id INTEGER PRIMARY KEY, Name TEXT NOT NULL, Code INTEGER)", (stmt: SqliteStatement) => {
-        assert.equal(stmt.step(), DbResult.BE_SQLITE_DONE);
-      });
-
-      iModel.withPreparedSqliteStatement("INSERT INTO Test(Name,Code) VALUES(?,?)", (stmt: SqliteStatement) => {
-        stmt.bindValue(1, "Dummy 1");
-        stmt.bindValue(2, 100);
-        assert.equal(stmt.step(), DbResult.BE_SQLITE_DONE);
-      });
-
-      iModel.withPreparedSqliteStatement("INSERT INTO Test(Name,Code) VALUES(?,?)", (stmt: SqliteStatement) => {
-        stmt.bindValues(["Dummy 2", 200]);
-        assert.equal(stmt.step(), DbResult.BE_SQLITE_DONE);
-      });
-
-      iModel.withPreparedSqliteStatement("INSERT INTO Test(Name,Code) VALUES(:p1,:p2)", (stmt: SqliteStatement) => {
-        stmt.bindValue(":p1", "Dummy 3");
-        stmt.bindValue(":p2", 300);
-        assert.equal(stmt.step(), DbResult.BE_SQLITE_DONE);
-      });
-
-      iModel.withPreparedSqliteStatement("INSERT INTO Test(Name,Code) VALUES(:p1,:p2)", (stmt: SqliteStatement) => {
-        stmt.bindValues({ ":p1": "Dummy 4", ":p2": 400 });
-        assert.equal(stmt.step(), DbResult.BE_SQLITE_DONE);
-      });
-
-      iModel.saveChanges();
-
-      iModel.withPreparedSqliteStatement("SELECT Id,Name,Code FROM Test ORDER BY Id", (stmt: SqliteStatement) => {
-        for (let i: number = 1; i <= 4; i++) {
-          assert.equal(stmt.step(), DbResult.BE_SQLITE_ROW);
-          assert.equal(stmt.getColumnCount(), 3);
-          const val0: SqliteValue = stmt.getValue(0);
-          assert.equal(val0.columnName, "Id");
-          assert.equal(val0.type, SqliteValueType.Integer);
-          assert.isFalse(val0.isNull);
-          assert.equal(val0.getInteger(), i);
-
-          const val1: SqliteValue = stmt.getValue(1);
-          assert.equal(val1.columnName, "Name");
-          assert.equal(val1.type, SqliteValueType.String);
-          assert.isFalse(val1.isNull);
-          assert.equal(val1.getString(), `Dummy ${i}`);
-
-          const val2: SqliteValue = stmt.getValue(2);
-          assert.equal(val2.columnName, "Code");
-          assert.equal(val2.type, SqliteValueType.Integer);
-          assert.isFalse(val2.isNull);
-          assert.equal(val2.getInteger(), i * 100);
-
-          const row: any = stmt.getRow();
-          assert.equal(row.id, i);
-          assert.equal(row.name, `Dummy ${i}`);
-          assert.equal(row.code, i * 100);
-        }
-        assert.equal(stmt.step(), DbResult.BE_SQLITE_DONE);
-      });
-    } finally {
-      // delete the briefcase as the test modified it locally.
-      let briefcasePath: string | undefined;
-      if (iModel.isOpen)
-        briefcasePath = iModel.pathName;
-
-      await HubWrappers.closeAndDeleteBriefcaseDb(managerAccessToken, iModel);
-      if (!!briefcasePath && IModelJsFs.existsSync(briefcasePath))
-        IModelJsFs.unlinkSync(briefcasePath);
-    }
-  });
-
-  it("Run plain SQL against readonly connection", async () => {
-    const iModel = await HubWrappers.downloadAndOpenCheckpoint({ accessToken: managerAccessToken, iTwinId: testITwinId, iModelId: readWriteTestIModelId });
-
-    iModel.withPreparedSqliteStatement("SELECT Name,StrData FROM be_Prop WHERE Namespace='ec_Db'", (stmt: SqliteStatement) => {
-      let rowCount = 0;
-      while (stmt.step() === DbResult.BE_SQLITE_ROW) {
-        rowCount++;
-        assert.equal(stmt.getColumnCount(), 2);
-        const nameVal: SqliteValue = stmt.getValue(0);
-        assert.equal(nameVal.columnName, "Name");
-        assert.equal(nameVal.type, SqliteValueType.String);
-        assert.isFalse(nameVal.isNull);
-        const name: string = nameVal.getString();
-
-        const versionVal = stmt.getValue(1);
-        assert.equal(versionVal.columnName, "StrData");
-        assert.equal(versionVal.type, SqliteValueType.String);
-        assert.isFalse(versionVal.isNull);
-        const profileVersion: any = JSON.parse(versionVal.getString());
-
-        assert.isTrue(name === "SchemaVersion" || name === "InitialSchemaVersion");
-        if (name === "SchemaVersion") {
-          assert.equal(profileVersion.major, 4);
-          assert.equal(profileVersion.minor, 0);
-          assert.equal(profileVersion.sub1, 0);
-          assert.isAtLeast(profileVersion.sub2, 1);
-        } else if (name === "InitialSchemaVersion") {
-          assert.equal(profileVersion.major, 4);
-          assert.equal(profileVersion.minor, 0);
-          assert.equal(profileVersion.sub1, 0);
-          assert.isAtLeast(profileVersion.sub2, 1);
-        }
-      }
-      assert.equal(rowCount, 2);
-    });
-    iModel.close();
   });
 
   it("should be able to upgrade a briefcase with an older schema", async () => {
-    const iTwinId = HubMock.iTwinId;
-
     /**
      * Test validates that -
      * - User "manager" upgrades the BisCore schema in the briefcase from version 1.0.0 to 1.0.10+
@@ -242,7 +339,7 @@ describe("IModelWriteTest", () => {
 
     /* Setup test - Push an iModel with an old BisCore schema up to the Hub */
     const pathname = IModelTestUtils.resolveAssetFile("CompatibilityTestSeed.bim");
-    const hubName = IModelTestUtils.generateUniqueName("CompatibilityTest");
+    const hubName = "CompatibilityTest";
     const iModelId = await HubWrappers.pushIModel(managerAccessToken, iTwinId, pathname, hubName, true);
 
     // Download two copies of the briefcase - manager and super
@@ -256,7 +353,7 @@ describe("IModelWriteTest", () => {
     let iModel = await BriefcaseDb.open({ fileName: managerBriefcaseProps.fileName });
     const beforeVersion = iModel.querySchemaVersion("BisCore");
     assert.isTrue(semver.satisfies(beforeVersion!, "= 1.0.0"));
-    assert.isFalse(iModel.nativeDb.hasPendingTxns());
+    assert.isFalse(iModel[_nativeDb].hasPendingTxns());
     iModel.close();
 
     // Validate that the BisCore schema is recognized as a recommended upgrade
@@ -270,9 +367,9 @@ describe("IModelWriteTest", () => {
     iModel = await BriefcaseDb.open({ fileName: managerBriefcaseProps.fileName });
     const afterVersion = iModel.querySchemaVersion("BisCore");
     assert.isTrue(semver.satisfies(afterVersion!, ">= 1.0.10"));
-    assert.isFalse(iModel.nativeDb.hasPendingTxns());
+    assert.isFalse(iModel[_nativeDb].hasPendingTxns());
     assert.isFalse(iModel.holdsSchemaLock);
-    assert.isFalse(iModel.nativeDb.hasUnsavedChanges());
+    assert.isFalse(iModel[_nativeDb].hasUnsavedChanges());
     iModel.close();
 
     /* User "super" can get the upgrade "manager" made */
@@ -281,23 +378,13 @@ describe("IModelWriteTest", () => {
     schemaState = BriefcaseDb.validateSchemas(superBriefcaseProps.fileName, true);
     assert.strictEqual(schemaState, SchemaState.UpgradeRecommended);
 
-    // SKIPPED FOR NOW - locking not mocked yet
-    // Upgrade the schemas - should fail, since user hasn't pulled changes done by manager
-    // // let result: IModelHubStatus = IModelHubStatus.Success;
-    // try {
-    //   await BriefcaseDb.upgradeSchemas(superRequestContext, superBriefcaseProps);
-    // } catch (err) {
-    //   // result = err.errorNumber;
-    // }
-    // assert.strictEqual(result, IModelHubStatus.PullIsRequired);
-
     // Open briefcase and pull change sets to upgrade
     const superIModel = await BriefcaseDb.open({ fileName: superBriefcaseProps.fileName });
     (superBriefcaseProps.changeset as any) = await superIModel.pullChanges({ accessToken: superAccessToken });
     const superVersion = superIModel.querySchemaVersion("BisCore");
     assert.isTrue(semver.satisfies(superVersion!, ">= 1.0.10"));
-    assert.isFalse(superIModel.nativeDb.hasUnsavedChanges()); // Validate no changes were made
-    assert.isFalse(superIModel.nativeDb.hasPendingTxns()); // Validate no changes were made
+    assert.isFalse(superIModel[_nativeDb].hasUnsavedChanges()); // Validate no changes were made
+    assert.isFalse(superIModel[_nativeDb].hasPendingTxns()); // Validate no changes were made
     superIModel.close();
 
     // Validate that there are no upgrades required
@@ -306,17 +393,16 @@ describe("IModelWriteTest", () => {
 
     // Upgrade the schemas - ensure this is a no-op
     await BriefcaseDb.upgradeSchemas(superBriefcaseProps);
-    await IModelHost.hubAccess.deleteIModel({ accessToken: managerAccessToken, iTwinId, iModelId });
+    await HubMock.deleteIModel({ accessToken: managerAccessToken, iTwinId, iModelId });
   });
 
   it("changeset size and ec schema version change", async () => {
     const adminToken = "super manager token";
-    const iTwinId = HubMock.iTwinId;
-    const iModelName = IModelTestUtils.generateUniqueName("changeset_size");
-    const rwIModelId = await IModelHost.hubAccess.createNewIModel({ iTwinId, iModelName, description: "TestSubject", accessToken: adminToken });
+    const iModelName = "changeset_size";
+    const rwIModelId = await HubMock.createNewIModel({ iTwinId, iModelName, description: "TestSubject", accessToken: adminToken });
     assert.isNotEmpty(rwIModelId);
     const rwIModel = await HubWrappers.downloadAndOpenBriefcase({ iTwinId, iModelId: rwIModelId, accessToken: adminToken });
-    assert.equal(rwIModel.nativeDb.enableChangesetSizeStats(true), DbResult.BE_SQLITE_OK);
+    assert.equal(rwIModel[_nativeDb].enableChangesetSizeStats(true), DbResult.BE_SQLITE_OK);
     const schema = `<?xml version="1.0" encoding="UTF-8"?>
     <ECSchema schemaName="TestDomain" alias="ts" version="01.00" xmlns="http://www.bentley.com/schemas/Bentley.ECXML.3.1">
         <ECSchemaReference name="BisCore" version="01.00" alias="bis"/>
@@ -326,15 +412,16 @@ describe("IModelWriteTest", () => {
         </ECEntityClass>
     </ECSchema>`;
     await rwIModel.importSchemaStrings([schema]);
+    rwIModel.channels.addAllowedChannel(ChannelControl.sharedChannelName);
     rwIModel.saveChanges("user 1: schema changeset");
-    if ("push changes") {
+    if (true || "push changes") {
       // Push the changes to the hub
       const prePushChangeSetId = rwIModel.changeset.id;
       await rwIModel.pushChanges({ description: "push schema changeset", accessToken: adminToken });
       const postPushChangeSetId = rwIModel.changeset.id;
       assert(!!postPushChangeSetId);
       expect(prePushChangeSetId !== postPushChangeSetId);
-      const changesets = await IModelHost.hubAccess.queryChangesets({ iModelId: rwIModelId, accessToken: superAccessToken });
+      const changesets = await HubMock.queryChangesets({ iModelId: rwIModelId, accessToken: superAccessToken });
       assert.equal(changesets.length, 1);
     }
     await rwIModel.locks.acquireLocks({ shared: IModel.dictionaryId });
@@ -376,31 +463,81 @@ describe("IModelWriteTest", () => {
     insertElements(rwIModel, "Test2dElement", 1024, () => {
       return { s: str };
     });
-    assert.equal(1357661, rwIModel.nativeDb.getChangesetSize());
+    assert.equal(1357648, rwIModel[_nativeDb].getChangesetSize());
 
     rwIModel.saveChanges("user 1: data");
-    assert.equal(0, rwIModel.nativeDb.getChangesetSize());
+    assert.equal(0, rwIModel[_nativeDb].getChangesetSize());
     await rwIModel.pushChanges({ description: "schema changeset", accessToken: adminToken });
     rwIModel.close();
+  });
+
+  it("should set a fake verifyCode for codeService that throws error for operations that affect code, if failed to open codeService ", async () => {
+    const iModelProps = {
+      iModelName: "codeServiceTest",
+      iTwinId,
+    };
+    const iModelId = await HubMock.createNewIModel(iModelProps);
+    const briefcaseProps = await BriefcaseManager.downloadBriefcase({ accessToken: "codeServiceTest", iTwinId, iModelId });
+    const originalCreateForIModel = CodeService.createForIModel;
+    // can be any errors except 'NoCodeIndex'
+    CodeService.createForIModel = async () => {
+      throw new CodeService.Error("MissingCode", 0x10000 + 1, " ");
+    };
+    const briefcaseDb = await BriefcaseDb.open({ fileName: briefcaseProps.fileName });
+    briefcaseDb.channels.addAllowedChannel(ChannelControl.sharedChannelName);
+    let firstNonRootElement = { id: undefined, codeValue: "test" };
+    briefcaseDb.withPreparedStatement("SELECT * from Bis.Element LIMIT 1 OFFSET 1", (stmt: ECSqlStatement) => {
+      if (stmt.step() === DbResult.BE_SQLITE_ROW) {
+        firstNonRootElement = stmt.getRow();
+      }
+    });
+    // make change to the briefcaseDb that does not affect code, e.g., save file property
+    // expect no error from verifyCode
+    expect(() => briefcaseDb.saveFileProperty({ name: "codeServiceProp", namespace: "codeService", id: 1, subId: 1 }, "codeService test")).to.not.throw();
+    // make change to the briefcaseDb that affects code that will invoke verifyCode, e.g., update an element with a non-null code
+    // expect error from verifyCode
+    let newProps = { id: firstNonRootElement.id, code: { ...Code.createEmpty(), value: firstNonRootElement.codeValue }, classFullName: undefined, model: undefined };
+    await briefcaseDb.locks.acquireLocks({ exclusive: firstNonRootElement.id });
+    expect(() => briefcaseDb.elements.updateElement(newProps)).to.throw(CodeService.Error);
+    // make change to the briefcaseDb that will invoke verifyCode with a null(empty) code, e.g., update an element with a null(empty) code
+    // expect no error from verifyCode
+    newProps = { id: firstNonRootElement.id, code: Code.createEmpty(), classFullName: undefined, model: undefined };
+    expect(() => briefcaseDb.elements.updateElement(newProps)).to.not.throw();
+    briefcaseDb.close();
+    // throw "NoCodeIndex", this error should get ignored because it means the iModel isn't enforcing codes. updating an element with an empty code and a non empty code should work without issue.
+    CodeService.createForIModel = async () => {
+      throw new CodeService.Error("NoCodeIndex", 0x10000 + 1, " ");
+    };
+    const briefcaseDb2 = await BriefcaseDb.open({ fileName: briefcaseProps.fileName });
+    briefcaseDb2.channels.addAllowedChannel(ChannelControl.sharedChannelName);
+    await briefcaseDb2.locks.acquireLocks({ exclusive: firstNonRootElement.id });
+    // expect no error from verifyCode for empty code
+    expect(() => briefcaseDb2.elements.updateElement(newProps)).to.not.throw();
+    newProps = { id: firstNonRootElement.id, code: { ...Code.createEmpty(), value: firstNonRootElement.codeValue }, classFullName: undefined, model: undefined };
+    // make change to the briefcaseDb that affects code that will invoke verifyCode, e.g., update an element with a non-null code
+    // expect no error from verifyCode
+    expect(() => briefcaseDb2.elements.updateElement(newProps)).to.not.throw();
+    // clean up
+    CodeService.createForIModel = originalCreateForIModel;
+    briefcaseDb2.close();
   });
 
   it("clear cache on schema changes", async () => {
     const adminToken = await HubWrappers.getAccessToken(TestUserType.SuperManager);
     const userToken = await HubWrappers.getAccessToken(TestUserType.Super);
-    const iTwinId = HubMock.iTwinId;
     // Delete any existing iModels with the same name as the OptimisticConcurrencyTest iModel
-    const iModelName = IModelTestUtils.generateUniqueName("SchemaChanges");
+    const iModelName = "SchemaChanges";
 
     // Create a new empty iModel on the Hub & obtain a briefcase
-    const rwIModelId = await IModelHost.hubAccess.createNewIModel({ iTwinId, iModelName, description: "TestSubject" });
+    const rwIModelId = await HubMock.createNewIModel({ iTwinId, iModelName, description: "TestSubject" });
     assert.isNotEmpty(rwIModelId);
     const rwIModel = await HubWrappers.downloadAndOpenBriefcase({ iTwinId, iModelId: rwIModelId, accessToken: adminToken });
 
     const rwIModel2 = await HubWrappers.downloadAndOpenBriefcase({ iTwinId, iModelId: rwIModelId, accessToken: userToken });
 
     // enable change tracking
-    assert.equal(rwIModel.nativeDb.enableChangesetSizeStats(true), DbResult.BE_SQLITE_OK);
-    assert.equal(rwIModel2.nativeDb.enableChangesetSizeStats(true), DbResult.BE_SQLITE_OK);
+    assert.equal(rwIModel[_nativeDb].enableChangesetSizeStats(true), DbResult.BE_SQLITE_OK);
+    assert.equal(rwIModel2[_nativeDb].enableChangesetSizeStats(true), DbResult.BE_SQLITE_OK);
 
     const schema = `<?xml version="1.0" encoding="UTF-8"?>
     <ECSchema schemaName="TestDomain" alias="ts" version="01.00" xmlns="http://www.bentley.com/schemas/Bentley.ECXML.3.1">
@@ -411,16 +548,18 @@ describe("IModelWriteTest", () => {
         </ECEntityClass>
     </ECSchema>`;
     await rwIModel.importSchemaStrings([schema]);
+    rwIModel.channels.addAllowedChannel(ChannelControl.sharedChannelName);
+    rwIModel2.channels.addAllowedChannel(ChannelControl.sharedChannelName);
 
     rwIModel.saveChanges("user 1: schema changeset");
-    if ("push changes") {
+    if (true || "push changes") {
       // Push the changes to the hub
       const prePushChangeSetId = rwIModel.changeset.id;
       await rwIModel.pushChanges({ description: "schema changeset", accessToken: adminToken });
       const postPushChangeSetId = rwIModel.changeset.id;
       assert(!!postPushChangeSetId);
       expect(prePushChangeSetId !== postPushChangeSetId);
-      const changesets = await IModelHost.hubAccess.queryChangesets({ iModelId: rwIModelId, accessToken: superAccessToken });
+      const changesets = await HubMock.queryChangesets({ iModelId: rwIModelId, accessToken: superAccessToken });
       assert.equal(changesets.length, 1);
     }
     const codeProps = Code.createEmpty();
@@ -463,17 +602,17 @@ describe("IModelWriteTest", () => {
       return { s: `s-${n}` };
     });
 
-    assert.equal(3902, rwIModel.nativeDb.getChangesetSize());
+    assert.equal(3889, rwIModel[_nativeDb].getChangesetSize());
     rwIModel.saveChanges("user 1: data changeset");
 
-    if ("push changes") {
+    if (true || "push changes") {
       // Push the changes to the hub
       const prePushChangeSetId = rwIModel.changeset.id;
       await rwIModel.pushChanges({ description: "10 instances of test2dElement", accessToken: adminToken });
       const postPushChangeSetId = rwIModel.changeset.id;
       assert(!!postPushChangeSetId);
       expect(prePushChangeSetId !== postPushChangeSetId);
-      const changesets = await IModelHost.hubAccess.queryChangesets({ iModelId: rwIModelId, accessToken: superAccessToken });
+      const changesets = await HubMock.queryChangesets({ iModelId: rwIModelId, accessToken: superAccessToken });
       assert.equal(changesets.length, 2);
     }
     let rows: any[] = [];
@@ -490,8 +629,7 @@ describe("IModelWriteTest", () => {
     }
     assert.equal(rows.length, 10);
     assert.equal(rows.map((r) => r.s).filter((v) => v).length, 10);
-    // ====================================================================================================
-    if ("user pull/merge") {
+    if (true || "user pull/merge") {
       // pull and merge changes
       await rwIModel2.pullChanges({ accessToken: userToken });
       rows = [];
@@ -513,17 +651,17 @@ describe("IModelWriteTest", () => {
       insertElements(rwIModel2, "Test2dElement", 10, (n: number) => {
         return { s: `s-${n}` };
       });
-      assert.equal(13, rwIModel.nativeDb.getChangesetSize());
+      assert.equal(0, rwIModel[_nativeDb].getChangesetSize());
       rwIModel2.saveChanges("user 2: data changeset");
 
-      if ("push changes") {
+      if (true || "push changes") {
         // Push the changes to the hub
         const prePushChangeSetId = rwIModel2.changeset.id;
         await rwIModel2.pushChanges({ accessToken: userToken, description: "10 instances of test2dElement" });
         const postPushChangeSetId = rwIModel2.changeset.id;
         assert(!!postPushChangeSetId);
         expect(prePushChangeSetId !== postPushChangeSetId);
-        const changesets = await IModelHost.hubAccess.queryChangesets({ iModelId: rwIModelId, accessToken: userToken });
+        const changesets = await HubMock.queryChangesets({ iModelId: rwIModelId, accessToken: userToken });
         assert.equal(changesets.length, 3);
       }
     }
@@ -544,16 +682,16 @@ describe("IModelWriteTest", () => {
         </ECEntityClass>
     </ECSchema>`;
     await rwIModel.importSchemaStrings([schemaV2]);
-    assert.equal(0, rwIModel.nativeDb.getChangesetSize());
+    assert.equal(0, rwIModel[_nativeDb].getChangesetSize());
     rwIModel.saveChanges("user 1: schema changeset2");
-    if ("push changes") {
+    if (true || "push changes") {
       // Push the changes to the hub
       const prePushChangeSetId = rwIModel.changeset.id;
       await rwIModel.pushChanges({ accessToken: adminToken, description: "schema changeset" });
       const postPushChangeSetId = rwIModel.changeset.id;
       assert(!!postPushChangeSetId);
       expect(prePushChangeSetId !== postPushChangeSetId);
-      const changesets = await IModelHost.hubAccess.queryChangesets({ iModelId: rwIModelId, accessToken: superAccessToken });
+      const changesets = await HubMock.queryChangesets({ iModelId: rwIModelId, accessToken: superAccessToken });
       assert.equal(changesets.length, 4);
     }
     // create some element and push those changes
@@ -570,17 +708,17 @@ describe("IModelWriteTest", () => {
         t: `t-${n}`, r: `r-${n}`,
       };
     });
-    assert.equal(6279, rwIModel.nativeDb.getChangesetSize());
+    assert.equal(6266, rwIModel[_nativeDb].getChangesetSize());
     rwIModel.saveChanges("user 1: data changeset");
 
-    if ("push changes") {
+    if (true || "push changes") {
       // Push the changes to the hub
       const prePushChangeSetId = rwIModel.changeset.id;
       await rwIModel.pushChanges({ accessToken: adminToken, description: "10 instances of test2dElement" });
       const postPushChangeSetId = rwIModel.changeset.id;
       assert(!!postPushChangeSetId);
       expect(prePushChangeSetId !== postPushChangeSetId);
-      const changesets = await IModelHost.hubAccess.queryChangesets({ iModelId: rwIModelId, accessToken: superAccessToken });
+      const changesets = await HubMock.queryChangesets({ iModelId: rwIModelId, accessToken: superAccessToken });
       assert.equal(changesets.length, 5);
     }
     rows = [];
@@ -617,8 +755,7 @@ describe("IModelWriteTest", () => {
     assert.equal(rows.map((r) => r.t).filter((v) => v).length, 10);
     assert.equal(rows.map((r) => r.r).filter((v) => v).length, 10);
 
-    // ====================================================================================================
-    if ("user pull/merge") {
+    if (true || "user pull/merge") {
       // pull and merge changes
       await rwIModel2.pullChanges({ accessToken: userToken });
       rows = [];
@@ -704,27 +841,31 @@ describe("IModelWriteTest", () => {
 
   it("parent lock should suffice when inserting into deeply nested sub-model", async () => {
     const version0 = IModelTestUtils.resolveAssetFile("test.bim");
-    const iModelId = await IModelHost.hubAccess.createNewIModel({ iTwinId: testITwinId, iModelName: "subModelCoveredByParentLockTest", version0 });
-    const iModel = await HubWrappers.downloadAndOpenBriefcase({ iTwinId: testITwinId, iModelId });
+    const iModelId = await HubMock.createNewIModel({ iTwinId, iModelName: "subModelCoveredByParentLockTest", version0 });
+    let iModel = await HubWrappers.downloadAndOpenBriefcase({ iTwinId, iModelId });
+    iModel.channels.addAllowedChannel(ChannelControl.sharedChannelName);
 
     /*
-      Job Subject
-        +- DefinitionPartition  --  [DefinitionModel]
-    */
+    Job Subject
+      +- DefinitionPartition  --  [DefinitionModel]
+  */
 
     await iModel.locks.acquireLocks({ shared: IModel.repositoryModelId });
     const jobSubjectId = IModelTestUtils.createJobSubjectElement(iModel, "JobSubject").insert();
     const definitionModelId = DefinitionModel.insert(iModel, jobSubjectId, "Definition");
 
     iModel.saveChanges();
+    const locks = iModel.locks;
+    expect(locks.isServerBased).true;
     await iModel.pushChanges({ description: "create model" });
+    expect(iModel.locks).equal(locks); // pushing should not change your locks
 
     /*
-      Job Subject                                           <--- Lock this
-        +- DefinitionPartition  --  [DefinitionModel]
-                                        SpatialCategory     <=== insert this
-                                        DrawingCategory             "
-    */
+    Job Subject                                           <--- Lock this
+      +- DefinitionPartition  --  [DefinitionModel]
+                                      SpatialCategory     <=== insert this
+                                      DrawingCategory             "
+  */
     assert.isFalse(iModel.locks.holdsExclusiveLock(jobSubjectId));
     assert.isFalse(iModel.locks.holdsExclusiveLock(definitionModelId));
     assert.isFalse(iModel.locks.holdsSharedLock(definitionModelId));
@@ -744,15 +885,15 @@ describe("IModelWriteTest", () => {
     await iModel.pushChanges({ description: "insert category" });
 
     /*
-      Create some more nesting.
+    Create some more nesting.
 
-      Job Subject                                           <--- Lock this
-        +- DefinitionPartition  --  [DefinitionModel]
-          |                             SpatialCategory
-          +- Child Subject                                                            <== Insert
-              +- DocumentList         --    [DocumentListModel]                           "
-                                              Drawing             -- [DrawingModel]       "
-    */
+    Job Subject                                           <--- Lock this
+      +- DefinitionPartition  --  [DefinitionModel]
+        |                             SpatialCategory
+        +- Child Subject                                                            <== Insert
+            +- DocumentList         --    [DocumentListModel]                           "
+                                            Drawing             -- [DrawingModel]       "
+  */
     assert.isFalse(iModel.locks.holdsExclusiveLock(jobSubjectId));
     assert.isFalse(iModel.locks.holdsExclusiveLock(definitionModelId));
     assert.isFalse(iModel.locks.holdsSharedLock(definitionModelId));
@@ -776,16 +917,16 @@ describe("IModelWriteTest", () => {
     await iModel.pushChanges({ description: "insert doc list with nested drawing model" });
 
     /*
-      Verify that even a deeply nested insertion is covered by the exclusive lock on the top-level parent.
+    Verify that even a deeply nested insertion is covered by the exclusive lock on the top-level parent.
 
-      Job Subject                                           <--- Lock this
-        +- DefinitionPartition  --  DefinitionModel
-          |                             SpatialCategory
-          +- Child Subject
-              +- DocumentList         --    [DocumentListModel]
-                                              Drawing             -- [DrawingModel]
-                                                                        DrawingGraphic   <== Insert this
-    */
+    Job Subject                                           <--- Lock this
+      +- DefinitionPartition  --  DefinitionModel
+        |                             SpatialCategory
+        +- Child Subject
+            +- DocumentList         --    [DocumentListModel]
+                                            Drawing             -- [DrawingModel]
+                                                                      DrawingGraphic   <== Insert this
+  */
     assert.isFalse(iModel.locks.holdsExclusiveLock(jobSubjectId));
     assert.isFalse(iModel.locks.holdsExclusiveLock(definitionModelId));
     assert.isFalse(iModel.locks.holdsSharedLock(definitionModelId));
@@ -809,11 +950,30 @@ describe("IModelWriteTest", () => {
     const drawingGraphicId1 = iModel.elements.insertElement(drawingGraphicProps1);
 
     assert.isTrue(iModel.elements.getElement(drawingGraphicId1).model === drawingModelId);
-
     iModel.saveChanges();
+    expect(iModel.locks.holdsExclusiveLock(drawingModelId)).true;
+
+    const fileName = iModel[_nativeDb].getFilePath();
+    iModel.close(); // close rw
+    iModel = await BriefcaseDb.open({ fileName, readonly: true }); // reopen readonly
+    expect(iModel.locks.isServerBased).false; // readonly sessions should not have server based locks
+
+    // verify we can push changes from a readonly briefcase
     await iModel.pushChanges({ description: "insert graphic into nested sub-model" });
 
+    // try it again to verify we can get the ServerBasedLocks again
+    await iModel.pushChanges({ description: "should do nothing" });
     iModel.close();
+
+    // reopen readwrite to verify we released all locks from readonly briefcase
+    iModel = await BriefcaseDb.open({ fileName });
+    expect(iModel.locks.isServerBased).true;
+    const serverLocks = iModel.locks as ServerBasedLocks;
+    expect(serverLocks.holdsExclusiveLock(drawingModelId)).false;
+    expect(serverLocks.getLockCount(LockState.Shared)).equal(0);
+    expect(serverLocks.getLockCount(LockState.Exclusive)).equal(0);
+    iModel.close();
+
   });
 
 });

@@ -7,7 +7,7 @@
  */
 
 import { BeTimePoint, dispose } from "@itwin/core-bentley";
-import { ClipMaskXYZRangePlanes, ClipShape, ClipVector, Point3d, Polyface, Transform } from "@itwin/core-geometry";
+import { ClipMaskXYZRangePlanes, ClipShape, ClipVector, IndexedPolyface, Point3d, Transform } from "@itwin/core-geometry";
 import { ColorDef, Frustum } from "@itwin/core-common";
 import { IModelApp } from "../IModelApp";
 import { GraphicBranch, GraphicBranchOptions } from "../render/GraphicBranch";
@@ -31,11 +31,13 @@ export interface RealityTileParams extends TileParams {
   readonly geometricError?: number;
 }
 
-/** The geometry representing the contents of a reality tile.  Currently only polyfaces are returned
- * @alpha
+/** The geometry representing the contents of a reality tile. Currently only polyfaces are returned.
+ * @see [[RealityTile.geometry]] to access a particular tile's geometry.
+ * @public
  */
 export interface RealityTileGeometry {
-  polyfaces?: Polyface[];
+  /** Polyfaces representing the tile's geometry. */
+  polyfaces?: IndexedPolyface[];
 }
 
 /** @internal */
@@ -102,6 +104,15 @@ export class RealityTile extends Tile {
   }
 
   /** @internal */
+  public override freeMemory(): void {
+    // Prevent freeing if AdditiveRefinementStepChildren are present, since they depend on the parent tile to draw.
+    // This assumes at least one of the step children is currently selected, which is not necessarily the case.  Eventually the
+    // normal periodic pruning of expired tiles will clean up that case, but it could be held them in memory longer than necessary.
+    if (!this.realityChildren?.some((child) => child.isStepChild))
+      super.freeMemory();
+  }
+
+  /** @internal */
   public get realityChildren(): RealityTile[] | undefined { return this.children as RealityTile[] | undefined; }
   /** @internal */
   public get realityParent(): RealityTile { return this.parent as RealityTile; }
@@ -115,7 +126,9 @@ export class RealityTile extends Tile {
   public get isPointCloud() { return this.realityRoot.loader.containsPointClouds; }
   /** @internal */
   public get isLoaded() { return this.loadStatus === TileLoadStatus.Ready; }      // Reality tiles may depend on secondary tiles (maps) so can ge loaded but not ready.
-  /** @internal */
+  /** A representation of the tile's geometry.
+   * This property is only available when using [[TileGeometryCollector]].
+   */
   public get geometry(): RealityTileGeometry | undefined { return this._geometry; }
 
   /** @internal */

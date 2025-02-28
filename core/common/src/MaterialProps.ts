@@ -62,15 +62,19 @@ export interface TextureMapProps {
   pattern_mapping?: TextureMapping.Mode;
   /** Weight at which to combine diffuse image and color; if undefined, defaults to 1.0 */
   pattern_weight?: number;
-  /** If true, override the mapping mode with constant LOD mapping for the normal map, defaults to false. */
+  /** If true, override the mapping mode with constant LOD mapping for the normal map, defaults to false.
+   * @deprecated in 4.4. It never functioned properly - use [[pattern_useconstantlod]] instead.
+   */
   pattern_useConstantLod?: boolean;
-  /** The number of times the texture is repeated if pattern_useConstantLod is true.  Increasing this will make the texture pattern appear smaller, decreasing it will make it larger. Defaults to 1.*/
+  /** If true, override the mapping mode with constant LOD mapping for the normal map, defaults to false. */
+  pattern_useconstantlod?: boolean;
+  /** The number of times the texture is repeated if pattern_useconstantlod is true.  Increasing this will make the texture pattern appear smaller, decreasing it will make it larger. Defaults to 1.*/
   pattern_constantlod_repetitions?: number;
-  /** An offset in world units used to shift the texture when pattern_useConstantLod is true. Defaults to (0, 0). */
+  /** An offset in world units used to shift the texture when pattern_useconstantlod is true. Defaults to (0, 0). */
   pattern_constantlod_offset?: Point2dProps;
-  /** The minimum distance (from the eye to the surface) at which to clamp the texture size when pattern_useConstantLod is true. Defaults to 1. */
+  /** The minimum distance (from the eye to the surface) at which to clamp the texture size when pattern_useconstantlod is true. Defaults to 1. */
   pattern_constantlod_mindistanceclamp?: number;
-  /** The maximum distance (from the eye to the surface) at which to clamp the texture size when pattern_useConstantLod is true. Defaults to 2^32. */
+  /** The maximum distance (from the eye to the surface) at which to clamp the texture size when pattern_useconstantlod is true. Defaults to 2^32. */
   pattern_constantlod_maxdistanceclamp?: number;
   /** The Id of the persistent [Texture]($backend) element defining the texture image. */
   TextureId: Id64String;
@@ -112,6 +116,24 @@ export interface RenderMaterialAssetMapsProps {
    * present in the surface's geometry.
    */
   Normal?: NormalMapProps;
+  /** Maps an image describing detailed minor height variation of the surface geometry. */
+  Bump?: TextureMapProps;
+  /** Maps an image describing the diffuse color of the surface, replacing or mixing with the surface's own color. */
+  Diffuse?: TextureMapProps;
+  /** Maps an image describing the glossiness of the surface's finish */
+  Finish?: TextureMapProps;
+  /** Maps an image describing glowing parts of the surface */
+  GlowColor?: TextureMapProps;
+  /** Maps an image describing the reflectiveness of the surface */
+  Reflect?: TextureMapProps;
+  /** Maps an image describing the specular component of the surface */
+  Specular?: TextureMapProps;
+  /** Maps an image describing the translucency of the surface, how much light comes out the back of the surface */
+  TranslucencyColor?: TextureMapProps;
+  /** Maps an image describing the transparency of the surface, how visible objects behind this object are */
+  TransparentColor?: TextureMapProps;
+  /** Maps an image describing the displacement of the surface geometry */
+  Displacement?: TextureMapProps;
 }
 
 /** Describes the graphical properties of a [RenderMaterialElement]($backend) as part of a [[RenderMaterialProps]].

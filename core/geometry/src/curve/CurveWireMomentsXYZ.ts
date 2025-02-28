@@ -14,7 +14,7 @@ import { IStrokeHandler } from "../geometry3d/GeometryHandler";
 import { Point3d, Vector3d } from "../geometry3d/Point3dVector3d";
 import { MomentData } from "../geometry4d/MomentData";
 import { GaussMapper } from "../numerics/Quadrature";
-import { AnyCurve } from "./CurveChain";
+import { AnyCurve } from "./CurveTypes";
 import { CurveCollection } from "./CurveCollection";
 import { CurvePrimitive } from "./CurvePrimitive";
 
@@ -52,7 +52,7 @@ export class CurveWireMomentsXYZ implements IStrokeHandler {
       const numGauss = this._gaussMapper.mapXAndW(fractionA, fractionB);
       for (let k = 0; k < numGauss; k++) {
         fraction = this._gaussMapper.gaussX[k];
-        const ray = cp.fractionToPointAndDerivative(fraction)!;
+        const ray = cp.fractionToPointAndDerivative(fraction);
         scaleFactor = this._gaussMapper.gaussW[k] * ray.direction.magnitude();
         this._activeMomentData.accumulateScaledOuterProduct(ray.origin, scaleFactor);
       }
@@ -76,10 +76,8 @@ export class CurveWireMomentsXYZ implements IStrokeHandler {
     if (root instanceof CurvePrimitive)
       root.emitStrokableParts(this);
     else if (root instanceof CurveCollection) {
-      if (root.children !== undefined)
-        for (const child of root.children) {
-          this.visitLeaves(child as AnyCurve);
-        }
+      for (const child of root.children)
+        this.visitLeaves(child);
     }
   }
 }

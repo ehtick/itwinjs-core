@@ -12,10 +12,11 @@ import { AxisOrder, BilinearPatch, ClipPlane, ClipPrimitive, ClipShape, ClipVect
 import { IModelApp } from "../../IModelApp";
 import { GraphicBuilder } from "../../render/GraphicBuilder";
 import { RealityMeshParams } from "../../render/RealityMeshParams";
-import { upsampleRealityMeshParams } from "../../render/UpsampleRealityMeshParams";
+import { upsampleRealityMeshParams } from "../../internal/render/UpsampleRealityMeshParams";
 import { RenderGraphic } from "../../render/RenderGraphic";
 import { RenderMemory } from "../../render/RenderMemory";
-import { RenderSystem, RenderTerrainGeometry, TerrainTexture } from "../../render/RenderSystem";
+import { RenderSystem } from "../../render/RenderSystem";
+import { RenderTerrainGeometry, TerrainTexture } from "../../internal/render/RenderTerrain";
 import { ViewingSpace } from "../../ViewingSpace";
 import {
   ImageryMapTile, MapCartoRectangle, MapTileLoader, MapTileTree, QuadId, RealityTile, RealityTileParams, Tile, TileContent, TileDrawArgs, TileGraphicType,
@@ -531,7 +532,7 @@ export class MapTile extends RealityTile {
 
     const textures = this.getDrapeTextures();
     const { baseColor, baseTransparent, layerClassifiers } = this.mapTree;
-    const graphic = IModelApp.renderSystem.createRealityMeshGraphic({ realityMesh: geometry, projection: this.getProjection(), tileRectangle: this.rectangle, featureTable: PackedFeatureTable.pack(this.mapLoader.featureTable), tileId: this.contentId, baseColor, baseTransparent, textures, layerClassifiers }, true);
+    const graphic = IModelApp.renderSystem.createRealityMeshGraphic({ realityMesh: geometry, projection: this.getProjection(), tileRectangle: this.rectangle, featureTable: PackedFeatureTable.pack(this.mapLoader.featureTable), tileId: this.contentId, baseColor, baseTransparent, textures, layerClassifiers, disableClipStyle: true }, true);
 
     // If there are no layer classifiers then we can save this graphic for re-use.  If layer classifiers exist they are regenerated based on view and we must collate them with the imagery.
     if (this.imageryIsReady && 0 === this.mapTree.layerClassifiers.size)
@@ -554,7 +555,7 @@ export class MapTile extends RealityTile {
       stats.addTerrain(this._mesh.indices.byteLength
         + this._mesh.positions.points.byteLength
         + this._mesh.uvs.points.byteLength
-        + (this._mesh.normals ? this._mesh.normals.byteLength : 0)
+        + (this._mesh.normals ? this._mesh.normals.byteLength : 0),
       );
     }
   }
@@ -635,7 +636,7 @@ export class MapTile extends RealityTile {
     for (const layerImageryTree of this.mapTree.layerImageryTrees) {
       let tmpTiles = new Array<ImageryMapTile>();
       const tmpLeafTiles = new Array<ImageryMapTile>();
-      if (TileTreeLoadStatus.Loaded !== layerImageryTree.tree.selectCartoDrapeTiles(tmpTiles, tmpLeafTiles, this, args,)) {
+      if (TileTreeLoadStatus.Loaded !== layerImageryTree.tree.selectCartoDrapeTiles(tmpTiles, tmpLeafTiles, this, args)) {
         this._imageryTiles = undefined;
         return;
       }
@@ -769,7 +770,17 @@ export class MapTile extends RealityTile {
 
   /** @internal */
   public override setContent(content: TerrainTileContent): void {
-    this._mesh = content.terrain?.mesh;
+
+    if (this.quadId.level < this.maxDepth) {
+      const childIds = this.quadId.getChildIds();
+      for (const childId of childIds) {
+        if (!this.mapLoader.isTileAvailable(childId)) {
+          this._mesh = content.terrain?.mesh; // If a child is unavailable retain mesh for upsampling.
+          break;
+        }
+      }
+    }
+
     if (this.mapTree.produceGeometry) {
       const iModelTransform = this.mapTree.iModelTransform;
       const geometryTransform = content.terrain?.renderGeometry?.transform;

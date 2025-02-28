@@ -2,6 +2,7 @@
 * Copyright (c) Bentley Systems, Incorporated. All rights reserved.
 * See LICENSE.md in the project root for license terms and full copyright notice.
 *--------------------------------------------------------------------------------------------*/
+import "./setup";
 import { assert } from "chai";
 import * as fs from "fs-extra";
 import * as path from "path";
@@ -9,8 +10,10 @@ import { AccessToken, Id64String } from "@itwin/core-bentley";
 import { ElementAspectProps, IModel, SubCategoryAppearance } from "@itwin/core-common";
 import { TestUsers, TestUtility } from "@itwin/oidc-signin-tool";
 import { Reporter } from "@itwin/perf-tools";
-import { DictionaryModel, ElementAspect, IModelDb, SnapshotDb, SpatialCategory } from "@itwin/core-backend";
+import { DictionaryModel, ElementAspect, IModelDb, IModelHost, IModelHostOptions, SnapshotDb, SpatialCategory } from "@itwin/core-backend";
 import { HubWrappers, IModelTestUtils, KnownTestLocations } from "@itwin/core-backend/lib/cjs/test/index";
+import { IModelsClient } from "@itwin/imodels-client-authoring";
+import { BackendIModelsAccess } from "@itwin/imodels-access-backend";
 
 /* eslint-disable @typescript-eslint/naming-convention */
 
@@ -33,9 +36,15 @@ describe("ElementAspectPerformance", () => {
     if (!fs.existsSync(KnownTestLocations.outputDir))
       fs.mkdirSync(KnownTestLocations.outputDir);
     // TODO: Update config to use iTwin terminology
-    const configData = require(path.join(__dirname, "CSPerfConfig.json")); // eslint-disable-line @typescript-eslint/no-var-requires
+    const configData = require(path.join(__dirname, "CSPerfConfig.json")); // eslint-disable-line @typescript-eslint/no-require-imports
     const iTwinId = configData.basicTest.projectId;
     const imodelId = configData.basicTest.aspectIModelId;
+
+    const iModelHost: IModelHostOptions = {};
+    const iModelClient = new IModelsClient({ api: { baseUrl: `https://${process.env.IMJS_URL_PREFIX ?? ""}api.bentley.com/imodels` } });
+    iModelHost.hubAccess = new BackendIModelsAccess(iModelClient);
+    iModelHost.cacheDir = path.join(__dirname, ".cache");  // Set local cache dir
+    await IModelHost.startup(iModelHost);
 
     accessToken = await TestUtility.getAccessToken(TestUsers.regular);
     iModelDbHub = await HubWrappers.downloadAndOpenCheckpoint({ accessToken, iTwinId, iModelId: imodelId });
@@ -47,6 +56,7 @@ describe("ElementAspectPerformance", () => {
     reporter.exportCSV(csvPath);
 
     iModelDbHub.close();
+    await IModelHost.shutdown();
   });
 
   it("SimpleElement-Insert-Update-Delete-Read", async () => {
