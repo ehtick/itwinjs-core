@@ -7,6 +7,7 @@ publish: false
   - [@itwin/core-bentley](#itwincore-bentley)
     - [BeUnorderedEvent](#beunorderedevent)
   - [@itwin/core-backend](#itwincore-backend)
+    - [IdSet virtual table performance improvements](#idset-virtual-table-performance-improvements)
     - [WithQueryReader API](#withqueryreader-api)
     - [CRS unit metadata and filtering](#crs-unit-metadata-and-filtering)
     - [Bulk element deletion with `deleteElements`](#bulk-element-deletion-with-deleteelements)
@@ -54,6 +55,26 @@ remove(); // O(1) removal
 This is intentional — it avoids a class of bugs where `removeListener()` silently fails to match due to inline closures or binding mismatches (e.g. `event.addListener(() => this.onFoo())` followed by `event.removeListener(() => this.onFoo())` removes nothing because the two arrow functions are different objects). Capturing the returned closure is a reliable unsubscription pattern and enables O(1) removal via `Set.delete`.
 
 ## @itwin/core-backend
+
+### IdSet virtual table performance improvements
+
+The `IdSet` virtual table now uses a sorted vector internally, enabling O(log n) point lookups (`id = ?`) and efficient single-pass `IN` filtering instead of full scans.
+
+```sql
+-- Point lookup — binary search, O(log n)
+SELECT id FROM IdSet('[1,2,3,4,5]') WHERE id = 3
+-- returns: 0x3
+
+-- IN filter — single Filter call for all values
+SELECT id FROM IdSet('[1,2,3,4,5,6,7,8,9,10]') WHERE id IN (3, 5, 7)
+-- returns: 0x3, 0x5, 0x7
+
+-- Sorted deduplication — unsorted input with duplicates
+SELECT id FROM IdSet('[50,10,30,20,40,10]')
+-- returns: 0xa, 0x14, 0x1e, 0x28, 0x32
+```
+
+Output is always returned in ascending ID order and deduplicated, regardless of input order. This is a behavioral change — previously, output order was unspecified.
 
 ### WithQueryReader API
 
